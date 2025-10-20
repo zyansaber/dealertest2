@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: dealer-portal
+    env: static
+    buildCommand: pnpm install && pnpm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: 18
