@@ -1,474 +1,347 @@
-// src/pages/DealerYard.tsx
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
-import Sidebar from "@/components/Sidebar";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// src/lib/firebase.ts
+import { initializeApp } from "firebase/app";
 import {
-  subscribeToPGIRecords,
-  subscribeToYardStock,
-  receiveChassisToYard,
-  dispatchFromYard,
-  subscribeToSchedule,
-} from "@/lib/firebase";
-import type { ScheduleItem } from "@/types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  getDatabase,
+  ref,
+  onValue,
+  off,
+  set,
+  get,
+  remove,
+  DataSnapshot,
+} from "firebase/database";
+import type { ScheduleItem, SpecPlan, DateTrack } from "@/types";
 
-const toStr = (v: any) => String(v ?? "");
-const lower = (v: any) => toStr(v).toLowerCase();
+const firebaseConfig = {
+  apiKey: "AIzaSyBcczqGj5X1_w9aCX1lOK4-kgz49Oi03Bg",
+  authDomain: "scheduling-dd672.firebaseapp.com",
+  databaseURL: "https://scheduling-dd672-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "scheduling-dd672",
+  storageBucket: "scheduling-dd672.firebasestorage.app",
+  messagingSenderId: "432092773012",
+  appId: "1:432092773012:web:ebc7203ea570b0da2ad281",
+};
 
-function normalizeDealerSlug(raw?: string): string {
-  const slug = lower(raw);
-  const m = slug?.match(/^(.*?)-([a-z0-9]{6})$/);
-  return m ? m[1] : slug;
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
+
+export { database };
+
+/** -------------------- schedule -------------------- */
+/**
+ * 默认行为（不传 options）：
+ *  - 过滤掉 "Regent Production" = Finished/Finish
+ *  - 必须有 Chassis（存在且非空）
+ *  - 必须有 Customer（存在且非空）
+ *
+ * 只有 UnsignedEmptySlots 页面需要放开时，才传 options：
+ *  subscribeToSchedule(cb, {
+ *    includeNoChassis: true,
+ *    includeNoCustomer: true,
+ *    includeFinished: true,
+ *  })
+ */
+export const subscribeToSchedule = (
+  callback: (data: ScheduleItem[]) => void,
+  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
+) => {
+  const { includeNoChassis = false, includeNoCustomer = false, includeFinished = false } = options;
+
+  const scheduleRef = ref(database, "schedule");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const raw = snapshot.val();
+
+    // 统一成数组，兼容对象/数组两种形态，并过滤掉空值
+    const list: any[] = raw
+      ? Array.isArray(raw)
+        ? raw.filter(Boolean)
+        : Object.values(raw).filter(Boolean)
+      : [];
+
+    const filtered: ScheduleItem[] = list.filter((item: any) => {
+      // 1) 过滤 Finished（除非放开）
+      if (!includeFinished) {
+        const rp = String(item?.["Regent Production"] ?? "").toLowerCase();
+        if (rp === "finished" || rp === "finish") return false;
+      }
+      // 2) 必须有 Chassis（除非放开）
+      if (!includeNoChassis) {
+        if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
+      }
+      // 3) 必须有 Customer（除非放开）
+      if (!includeNoCustomer) {
+        if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
+      }
+      return true;
+    });
+
+    callback(filtered);
+  };
+
+  onValue(scheduleRef, handler);
+  return () => off(scheduleRef, "value", handler);
+};
+
+/** -------------------- spec_plan -------------------- */
+/** 同时订阅 spec_plan / specPlan / specplan，任一路径有数据就回调（与 DealerPortal 对齐） */
+export const subscribeToSpecPlan = (
+  callback: (data: SpecPlan | Record<string, any> | any[]) => void
+) => {
+  const paths = ["spec_plan", "specPlan", "specplan"];
+  const unsubs: Array<() => void> = [];
+
+  paths.forEach((p) => {
+    const r = ref(database, p);
+    const handler = (snap: DataSnapshot) => {
+      const val = snap.exists() ? snap.val() : null;
+      if (val && (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)) {
+        callback(val);
+      }
+    };
+    onValue(r, handler);
+    unsubs.push(() => off(r, "value", handler));
+  });
+
+  return () => unsubs.forEach((u) => u && u());
+};
+
+/** -------------------- dateTrack -------------------- */
+/** 同时订阅 dateTrack 与 datetrack，任一路径有数据就回调（兼容大小写差异） */
+export const subscribeToDateTrack = (
+  callback: (data: DateTrack | Record<string, any> | any[]) => void
+) => {
+  const paths = ["dateTrack", "datetrack"];
+  const unsubs: Array<() => void> = [];
+
+  paths.forEach((p) => {
+    const r = ref(database, p);
+    const handler = (snap: DataSnapshot) => {
+      const val = snap.exists() ? snap.val() : null;
+      if (val && (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)) {
+        callback(val);
+      }
+    };
+    onValue(r, handler);
+    unsubs.push(() => off(r, "value", handler));
+  });
+
+  return () => unsubs.forEach((u) => u && u());
+};
+
+/** -------------------- Dealer Config Functions -------------------- */
+// 订阅所有经销商配置
+export const subscribeAllDealerConfigs = (callback: (data: any) => void) => {
+  const configsRef = ref(database, "dealerConfigs");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const data = snapshot.val();
+    callback(data || {});
+  };
+
+  onValue(configsRef, handler);
+  return () => off(configsRef, "value", handler);
+};
+
+// 订阅单个经销商配置
+export const subscribeDealerConfig = (dealerSlug: string, callback: (data: any) => void) => {
+  const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
+
+  const handler = (snapshot: DataSnapshot) => {
+    const data = snapshot.val();
+    callback(data || null);
+  };
+
+  onValue(configRef, handler);
+  return () => off(configRef, "value", handler);
+};
+
+// 设置经销商配置
+export const setDealerConfig = async (dealerSlug: string, config: any) => {
+  const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
+  await set(configRef, {
+    ...config,
+    slug: dealerSlug,
+    updatedAt: new Date().toISOString(),
+  });
+};
+
+// 删除经销商配置
+export const removeDealerConfig = async (dealerSlug: string) => {
+  const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
+  await remove(configRef);
+};
+
+// 设置PowerBI URL
+export const setPowerbiUrl = async (dealerSlug: string, url: string) => {
+  const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
+  await set(urlRef, url);
+
+  // 同时更新 updatedAt
+  const updatedAtRef = ref(database, `dealerConfigs/${dealerSlug}/updatedAt`);
+  await set(updatedAtRef, new Date().toISOString());
+};
+
+// 获取PowerBI URL
+export const getPowerbiUrl = async (dealerSlug: string): Promise<string | null> => {
+  const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
+  const snapshot = await get(urlRef);
+  return snapshot.exists() ? snapshot.val() : null;
+};
+
+// 生成随机6位字符串
+export function generateRandomCode(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 }
-function slugifyDealerName(name?: string): string {
-  return toStr(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+// 将dealer名称转换为slug
+export function dealerNameToSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
-function prettifyDealerName(slug: string): string {
-  const s = slug.replace(/-/g, " ").trim();
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-function parseDDMMYYYY(dateStr?: string | null): Date | null {
-  if (!dateStr) return null;
+
+/** -------------------- 工具函数（保留你的排序/格式化） -------------------- */
+// 解析 dd/mm/yyyy 格式的日期
+const parseDDMMYYYY = (dateStr: string | null): Date => {
+  if (!dateStr || dateStr.trim() === "") return new Date(9999, 11, 31);
   try {
-    const parts = String(dateStr).split("/");
+    const parts = dateStr.split("/");
     if (parts.length === 3) {
       const day = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10) - 1;
       const year = parseInt(parts[2], 10);
-      const d = new Date(year, month, day);
-      if (!isNaN(d.getTime())) return d;
+      const date = new Date(year, month, day);
+      if (isNaN(date.getTime())) return new Date(9999, 11, 31);
+      return date;
     }
   } catch {}
-  return null;
-}
-function daysSince(dateStr?: string | null): number {
-  const d = parseDDMMYYYY(dateStr);
-  if (!d) return 0;
-  const ms = Date.now() - d.getTime();
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
-}
-function isWithinDays(dateStr?: string | null, days: number = 7): boolean {
-  const d = parseDDMMYYYY(dateStr);
-  if (!d) return false;
-  const diffDays = daysSince(dateStr);
-  return diffDays >= 0 && diffDays <= days;
-}
-type PGIRecord = {
-  pgidate?: string | null;
-  dealer?: string | null;
-  model?: string | null;
-  customer?: string | null;
+  return new Date(9999, 11, 31);
 };
 
-type TrendPoint = { label: string; count: number };
+export const sortOrders = (orders: ScheduleItem[]): ScheduleItem[] => {
+  return orders.sort((a, b) => {
+    const dateA = parseDDMMYYYY(a["Forecast Production Date"]);
+    const dateB = parseDDMMYYYY(b["Forecast Production Date"]);
+    const dateCompare = dateA.getTime() - dateB.getTime();
+    if (dateCompare !== 0) return dateCompare;
 
-function makeWeeklyBuckets(weeks: number = 12): Date[] {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  // set to Monday of current week
-  const day = start.getDay(); // 0=Sun
-  const diffToMonday = (day + 6) % 7;
-  start.setDate(start.getDate() - diffToMonday);
-  const buckets: Date[] = [];
-  for (let i = weeks - 1; i >= 0; i--) {
-    const d = new Date(start);
-    d.setDate(start.getDate() - i * 7);
-    buckets.push(d);
-  }
-  return buckets;
-}
-function formatWeekLabel(d: Date): string {
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  return `${m}/${day}`;
-}
-function groupCountsByWeek(dates: Date[], values: Date[]): TrendPoint[] {
-  const points: TrendPoint[] = dates.map((d) => ({ label: formatWeekLabel(d), count: 0 }));
-  for (const v of values) {
-    // find bucket where v >= bucket start and < next bucket start
-    for (let i = 0; i < dates.length; i++) {
-      const start = dates[i];
-      const end = i + 1 < dates.length ? dates[i + 1] : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
-      if (v >= start && v < end) {
-        points[i].count += 1;
-        break;
+    const safeString = (value: any): string => (value == null ? "" : String(value));
+
+    const index1Compare = safeString(a.Index1).localeCompare(safeString(b.Index1));
+    if (index1Compare !== 0) return index1Compare;
+
+    const rank1Compare = safeString(a.Rank1).localeCompare(safeString(b.Rank1));
+    if (rank1Compare !== 0) return rank1Compare;
+
+    return safeString(a.Rank2).localeCompare(safeString(b.Rank2));
+  });
+};
+
+export const formatDateDDMMYYYY = (dateStr: string | null): string => {
+  if (!dateStr || dateStr.trim() === "") return "Not set";
+  try {
+    const parts = dateStr.split("/");
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const year = parseInt(parts[2], 10);
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        return `${day.toString().padStart(2, "0")}/${month
+          .toString()
+          .padStart(2, "0")}/${year}`;
       }
     }
-  }
-  return points;
-}
-function MiniBarChart({ points }: { points: TrendPoint[] }) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <div className="flex items-end gap-2 h-24">
-      {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center">
-          <div
-            className="w-4 bg-blue-600 rounded-sm"
-            style={{ height: `${Math.round((p.count / max) * 100)}%` }}
-            title={`${p.label}: ${p.count}`}
-          />
-          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
-        </div>
-      ))}
-    </div>
-  );
+  } catch {}
+  return dateStr as string;
+};
+
+/** -------------------- stock / reallocation -------------------- */
+export function subscribeToStock(cb: (value: any) => void) {
+  const r = ref(database, "stockorder");
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? snap.val() ?? {} : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
 }
 
-export default function DealerYard() {
-  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
-  const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+export function subscribeToReallocation(cb: (value: any) => void) {
+  const r = ref(database, "reallocation");
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? snap.val() ?? {} : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
 
-  const [pgi, setPgi] = useState<Record<string, PGIRecord>>({});
-  const [yard, setYard] = useState<Record<string, any>>({});
-  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+/** -------------------- PGI / Yard Stock -------------------- */
+/**
+ * 订阅 PGI 记录（上路在途）
+ * 结构：pgirecord/{chassis} = { pgidate: 'dd/mm/yyyy', dealer: string|null, model: string|null, customer: string|null }
+ */
+export function subscribeToPGIRecords(cb: (value: Record<string, any>) => void) {
+  const r = ref(database, "pgirecord");
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
 
-  // Modal for new PGI
-  const [showNewPgiDialog, setShowNewPgiDialog] = useState(false);
-  const [newPgiList, setNewPgiList] = useState<Array<{ chassis: string; pgidate?: string | null; model?: string | null; customer?: string | null }>>([]);
+/**
+ * 订阅 Yard Stock（按经销商分组）
+ * 结构：yardstock/{dealerSlug}/{chassis} = { receivedAt, from_pgidate, dealer, model, customer, manual? }
+ */
+export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<string, any>) => void) {
+  const r = ref(database, `yardstock/${dealerSlug}`);
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
 
-  useEffect(() => {
-    const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
-    const unsubSched = subscribeToSchedule((data) => setSchedule(Array.isArray(data) ? data : []), {
-      includeNoChassis: true,
-      includeNoCustomer: true,
-      includeFinished: true,
-    });
-    let unsubYard: (() => void) | undefined;
-    if (dealerSlug) {
-      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
-    }
-    return () => {
-      unsubPGI?.();
-      unsubYard?.();
-      unsubSched?.();
-    };
-  }, [dealerSlug]);
+/**
+ * 将 PGI 车辆接收入 Yard
+ * - 写入 yardstock/{dealerSlug}/{chassis}
+ * - 移除 pgirecord/{chassis}
+ */
+export async function receiveChassisToYard(
+  dealerSlug: string,
+  chassis: string,
+  pgiData: { pgidate?: string | null; dealer?: string | null; model?: string | null; customer?: string | null }
+) {
+  const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
+  const now = new Date().toISOString();
+  await set(targetRef, {
+    receivedAt: now,
+    from_pgidate: pgiData?.pgidate ?? null,
+    dealer: pgiData?.dealer ?? null,
+    model: pgiData?.model ?? null,
+    customer: pgiData?.customer ?? null,
+  });
 
-  const scheduleByChassis = useMemo(() => {
-    const map: Record<string, ScheduleItem> = {};
-    for (const item of schedule) {
-      const ch = toStr((item as any)?.Chassis);
-      if (ch) map[ch] = item;
-    }
-    return map;
-  }, [schedule]);
+  // 从在途记录中删除该底盘
+  const pgiRef = ref(database, `pgirecord/${chassis}`);
+  await remove(pgiRef);
+}
 
-  const onTheRoadAll = useMemo(() => {
-    const entries = Object.entries(pgi || {});
-    return entries
-      .filter(([chassis, rec]) => slugifyDealerName(rec?.dealer || "") === dealerSlug)
-      .map(([chassis, rec]) => ({ chassis, ...rec }));
-  }, [pgi, dealerSlug]);
+/**
+ * 手动添加一个 Chassis 到 Yard（不依赖 PGI，其他字段留空）
+ */
+export async function addManualChassisToYard(dealerSlug: string, chassis: string) {
+  const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
+  const now = new Date().toISOString();
+  await set(targetRef, {
+    receivedAt: now,
+    dealer: null,
+    model: null,
+    customer: null,
+    manual: true,
+  });
+}
 
-  const onTheRoadWeekly = useMemo(() => {
-    return onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7));
-  }, [onTheRoadAll]);
-
-  // detect new PGI within last 7 days and not dismissed yet
-  useEffect(() => {
-    if (!dealerSlug) return;
-    const dismissedKey = `pgiDismissed:${dealerSlug}`;
-    const dismissed: string[] = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
-    const newcomers = onTheRoadWeekly.filter((row) => !dismissed.includes(row.chassis));
-    if (newcomers.length > 0) {
-      setNewPgiList(
-        newcomers.map((row) => ({
-          chassis: row.chassis,
-          pgidate: row.pgidate,
-          model: row.model,
-          customer: row.customer,
-        }))
-      );
-      setShowNewPgiDialog(true);
-    }
-  }, [onTheRoadWeekly, dealerSlug]);
-
-  const yardList = useMemo(() => {
-    const entries = Object.entries(yard || {});
-    return entries.map(([chassis, rec]) => {
-      const sch = scheduleByChassis[chassis];
-      const customer = toStr(sch?.Customer || rec?.customer);
-      const type = customer.toLowerCase().endsWith("stock") ? "Stock" : "Customer";
-      return {
-        chassis,
-        receivedAt: rec?.receivedAt,
-        model: toStr(sch?.Model || rec?.model),
-        customer,
-        type,
-      };
-    });
-  }, [yard, scheduleByChassis]);
-
-  const dealerDisplayName = useMemo(() => {
-    const anyPGI = onTheRoadAll.find(Boolean);
-    if (anyPGI?.dealer) return toStr(anyPGI.dealer);
-    const anyYard = yardList.find(Boolean);
-    if (anyYard?.customer) return prettifyDealerName(dealerSlug);
-    return prettifyDealerName(dealerSlug);
-  }, [onTheRoadAll, yardList, dealerSlug]);
-
-  const handleReceive = async (chassis: string, rec: PGIRecord) => {
-    try {
-      await receiveChassisToYard(dealerSlug, chassis, rec);
-      // mark dismissed so it won't re-appear
-      const key = `pgiDismissed:${dealerSlug}`;
-      const dismissed: string[] = JSON.parse(localStorage.getItem(key) || "[]");
-      if (!dismissed.includes(chassis)) {
-        dismissed.push(chassis);
-        localStorage.setItem(key, JSON.stringify(dismissed));
-      }
-    } catch (e) {
-      console.error("receive failed", e);
-    }
-  };
-
-  const handleDispatch = async (chassis: string) => {
-    try {
-      await dispatchFromYard(dealerSlug, chassis);
-    } catch (e) {
-      console.error("dispatch failed", e);
-    }
-  };
-
-  const dismissAllNewPgi = () => {
-    const key = `pgiDismissed:${dealerSlug}`;
-    const dismissed: string[] = JSON.parse(localStorage.getItem(key) || "[]");
-    const merged = Array.from(new Set([...dismissed, ...newPgiList.map((n) => n.chassis)]));
-    localStorage.setItem(key, JSON.stringify(merged));
-    setShowNewPgiDialog(false);
-    setNewPgiList([]);
-  };
-
-  // KPI cards
-  const yardTotal = yardList.length;
-  const yearPGICount = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    return onTheRoadAll.filter((row) => {
-      const d = parseDDMMYYYY(row.pgidate);
-      return d && d.getFullYear() === currentYear;
-    }).length;
-  }, [onTheRoadAll]);
-  const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
-  const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
-
-  // Trends (weekly for last 12 weeks)
-  const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
-  const yardDates = useMemo(() => {
-    return yardList
-      .map((x) => {
-        const d = x.receivedAt ? new Date(x.receivedAt) : null;
-        if (!d || isNaN(d.getTime())) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [yardList]);
-  const pgiDates = useMemo(() => {
-    return onTheRoadAll
-      .map((x) => {
-        const d = parseDDMMYYYY(x.pgidate);
-        if (!d) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [onTheRoadAll]);
-
-  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
-  const pgiTrend = useMemo(() => groupCountsByWeek(weekBuckets, pgiDates), [weekBuckets, pgiDates]);
-
-  return (
-    <div className="flex min-h-screen">
-      <Sidebar
-        orders={[]}
-        selectedDealer="locked"
-        onDealerSelect={() => {}}
-        hideOtherDealers
-        currentDealerName={dealerDisplayName}
-        showStats={false}
-      />
-      <main className="flex-1 p-6 space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold">Yard Inventory & On The Road — {dealerDisplayName}</h1>
-          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
-        </header>
-
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Yard Inventory Total</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold">{yardTotal}</div></CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">PGI This Year</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold">{yearPGICount}</div></CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Inventory: Stock</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold text-blue-700">{yardStockCount}</div></CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Inventory: Customer</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold text-emerald-700">{yardCustomerCount}</div></CardContent>
-          </Card>
-        </div>
-
-        {/* On The Road - last 7 days only */}
-        <Card>
-          <CardHeader>
-            <CardTitle>On The Road (PGI) — Last 7 Days</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {onTheRoadWeekly.length === 0 ? (
-              <div className="text-sm text-slate-500">No PGI records in the last 7 days for this dealer.</div>
-            ) : (
-              <div className="rounded-lg border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">Chassis</TableHead>
-                      <TableHead className="font-semibold">PGI Date</TableHead>
-                      <TableHead className="font-semibold">Dealer</TableHead>
-                      <TableHead className="font-semibold">Model</TableHead>
-                      <TableHead className="font-semibold">Customer</TableHead>
-                      <TableHead className="font-semibold">Days Since PGI</TableHead>
-                      <TableHead className="font-semibold">Received</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {onTheRoadWeekly.map((row) => (
-                      <TableRow key={row.chassis}>
-                        <TableCell className="font-medium">{row.chassis}</TableCell>
-                        <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
-                        <TableCell>{toStr(row.dealer) || "-"}</TableCell>
-                        <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>{daysSince(row.pgidate)}</TableCell>
-                        <TableCell>
-                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
-                            Receive
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Yard Inventory */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Yard Inventory</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {yardList.length === 0 ? (
-              <div className="text-sm text-slate-500">No units in yard inventory.</div>
-            ) : (
-              <div className="rounded-lg border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">Chassis</TableHead>
-                      <TableHead className="font-semibold">Received At</TableHead>
-                      <TableHead className="font-semibold">Model</TableHead>
-                      <TableHead className="font-semibold">Customer</TableHead>
-                      <TableHead className="font-semibold">Type</TableHead>
-                      <TableHead className="font-semibold">Dispatch</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {yardList.map((row) => (
-                      <TableRow key={row.chassis}>
-                        <TableCell className="font-medium">{row.chassis}</TableCell>
-                        <TableCell>{toStr(row.receivedAt).replace("T", " ").replace("Z", "")}</TableCell>
-                        <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>
-                          <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
-                            {row.type}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Button size="sm" variant="destructive" onClick={() => handleDispatch(row.chassis)}>
-                            Dispatch
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Trends */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent><MiniBarChart points={yardTrend} /></CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">PGI Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent><MiniBarChart points={pgiTrend} /></CardContent>
-          </Card>
-        </div>
-
-        {/* New PGI Dialog */}
-        <Dialog open={showNewPgiDialog} onOpenChange={setShowNewPgiDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>New PGI Arrivals</DialogTitle>
-            </DialogHeader>
-            {newPgiList.length === 0 ? (
-              <div className="text-sm text-slate-500">No new PGI records.</div>
-            ) : (
-              <div className="space-y-2">
-                <div className="text-sm text-slate-600">You have {newPgiList.length} new PGI in the last 7 days:</div>
-                <div className="rounded-md border overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Chassis</TableHead>
-                        <TableHead>PGI Date</TableHead>
-                        <TableHead>Model</TableHead>
-                        <TableHead>Customer</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {newPgiList.map((item) => (
-                        <TableRow key={item.chassis}>
-                          <TableCell className="font-medium">{item.chassis}</TableCell>
-                          <TableCell>{toStr(item.pgidate) || "-"}</TableCell>
-                          <TableCell>{toStr(item.model) || "-"}</TableCell>
-                          <TableCell>{toStr(item.customer) || "-"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="secondary" onClick={() => setShowNewPgiDialog(false)}>Close</Button>
-              <Button onClick={dismissAllNewPgi}>Dismiss All</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </main>
-    </div>
-  );
+/**
+ * 从 Yard 发车（派送）
+ * - 删除 yardstock/{dealerSlug}/{chassis}
+ */
+export async function dispatchFromYard(dealerSlug: string, chassis: string) {
+  const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
+  await remove(yardRef);
 }
