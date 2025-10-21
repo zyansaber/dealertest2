@@ -1,6 +1,6 @@
-// src/pages/DealerGroupYard.tsx
+// src/pages/DealerYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +12,9 @@ import {
   receiveChassisToYard,
   dispatchFromYard,
   subscribeToSchedule,
-  subscribeDealerConfig,
-  subscribeAllDealerConfigs,
   addManualChassisToYard,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
-import { isDealerGroup } from "@/types/dealer";
 import {
   Dialog,
   DialogContent,
@@ -79,7 +76,8 @@ type TrendPoint = { label: string; count: number };
 function makeWeeklyBuckets(weeks: number = 12): Date[] {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  const day = start.getDay();
+  // set to Monday of current week
+  const day = start.getDay(); // 0=Sun
   const diffToMonday = (day + 6) % 7;
   start.setDate(start.getDate() - diffToMonday);
   const buckets: Date[] = [];
@@ -98,6 +96,7 @@ function formatWeekLabel(d: Date): string {
 function groupCountsByWeek(dates: Date[], values: Date[]): TrendPoint[] {
   const points: TrendPoint[] = dates.map((d) => ({ label: formatWeekLabel(d), count: 0 }));
   for (const v of values) {
+    // find bucket where v >= bucket start and < next bucket start
     for (let i = 0; i < dates.length; i++) {
       const start = dates[i];
       const end = i + 1 < dates.length ? dates[i + 1] : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -173,14 +172,9 @@ function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
   );
 }
 
-export default function DealerGroupYard() {
-  const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
-  const navigate = useNavigate();
-  const groupSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
-
-  const [dealerConfig, setDealerConfig] = useState<any>(null);
-  const [allDealerConfigs, setAllDealerConfigs] = useState<any>({});
-  const [configLoading, setConfigLoading] = useState(true);
+export default function DealerYard() {
+  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
+  const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
   const [pgi, setPgi] = useState<Record<string, PGIRecord>>({});
   const [yard, setYard] = useState<Record<string, any>>({});
@@ -195,44 +189,22 @@ export default function DealerGroupYard() {
   const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
 
   useEffect(() => {
-    const unsubConfig = subscribeDealerConfig(groupSlug, (cfg) => {
-      setDealerConfig(cfg);
-      setConfigLoading(false);
-    });
-    const unsubAll = subscribeAllDealerConfigs((data) => setAllDealerConfigs(data || {}));
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
     const unsubSched = subscribeToSchedule((data) => setSchedule(Array.isArray(data) ? data : []), {
       includeNoChassis: true,
       includeNoCustomer: true,
       includeFinished: true,
     });
+    let unsubYard: (() => void) | undefined;
+    if (dealerSlug) {
+      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
+    }
     return () => {
-      unsubConfig?.();
-      unsubAll?.();
       unsubPGI?.();
+      unsubYard?.();
       unsubSched?.();
     };
-  }, [groupSlug]);
-
-  const includedDealerSlugs = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) return [groupSlug];
-    return dealerConfig.includedDealers || [];
-  }, [dealerConfig, groupSlug]);
-
-  useEffect(() => {
-    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !selectedDealerSlug) {
-      const first = includedDealerSlugs[0];
-      if (first) navigate(`/dealergroup/${rawDealerSlug}/${first}/yard`, { replace: true });
-    }
-  }, [configLoading, dealerConfig, selectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
-
-  const currentDealerSlug = selectedDealerSlug || includedDealerSlugs[0] || groupSlug;
-
-  useEffect(() => {
-    if (!currentDealerSlug) return;
-    const unsubYard = subscribeToYardStock(currentDealerSlug, (data) => setYard(data || {}));
-    return () => unsubYard?.();
-  }, [currentDealerSlug]);
+  }, [dealerSlug]);
 
   const scheduleByChassis = useMemo(() => {
     const map: Record<string, ScheduleItem> = {};
@@ -246,9 +218,9 @@ export default function DealerGroupYard() {
   const onTheRoadAll = useMemo(() => {
     const entries = Object.entries(pgi || {});
     return entries
-      .filter(([chassis, rec]) => slugifyDealerName(rec?.dealer || "") === currentDealerSlug)
+      .filter(([chassis, rec]) => slugifyDealerName(rec?.dealer || "") === dealerSlug)
       .map(([chassis, rec]) => ({ chassis, ...rec }));
-  }, [pgi, currentDealerSlug]);
+  }, [pgi, dealerSlug]);
 
   const onTheRoadWeekly = useMemo(() => {
     return onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7));
@@ -256,8 +228,8 @@ export default function DealerGroupYard() {
 
   // detect new PGI within last 7 days and not dismissed yet
   useEffect(() => {
-    if (!currentDealerSlug) return;
-    const dismissedKey = `pgiDismissed:${currentDealerSlug}`;
+    if (!dealerSlug) return;
+    const dismissedKey = `pgiDismissed:${dealerSlug}`;
     const dismissed: string[] = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
     const newcomers = onTheRoadWeekly.filter((row) => !dismissed.includes(row.chassis));
     if (newcomers.length > 0) {
@@ -271,7 +243,7 @@ export default function DealerGroupYard() {
       );
       setShowNewPgiDialog(true);
     }
-  }, [onTheRoadWeekly, currentDealerSlug]);
+  }, [onTheRoadWeekly, dealerSlug]);
 
   const yardList = useMemo(() => {
     const entries = Object.entries(yard || {});
@@ -289,29 +261,19 @@ export default function DealerGroupYard() {
     });
   }, [yard, scheduleByChassis]);
 
-  const includedDealerNames = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) return null;
-    return includedDealerSlugs.map((slug: string) => {
-      const cfg = allDealerConfigs[slug];
-      return { slug, name: cfg?.name || prettifyDealerName(slug) };
-    });
-  }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
-
   const dealerDisplayName = useMemo(() => {
-    if (selectedDealerSlug) {
-      const selectedConfig = allDealerConfigs[selectedDealerSlug];
-      if (selectedConfig?.name) return selectedConfig.name;
-      const any = onTheRoadAll.find(Boolean);
-      return any?.dealer || prettifyDealerName(selectedDealerSlug);
-    }
-    if (dealerConfig?.name) return dealerConfig.name;
-    return prettifyDealerName(groupSlug);
-  }, [selectedDealerSlug, allDealerConfigs, onTheRoadAll, dealerConfig, groupSlug]);
+    const anyPGI = onTheRoadAll.find(Boolean);
+    if (anyPGI?.dealer) return toStr(anyPGI.dealer);
+    const anyYard = yardList.find(Boolean);
+    if (anyYard?.customer) return prettifyDealerName(dealerSlug);
+    return prettifyDealerName(dealerSlug);
+  }, [onTheRoadAll, yardList, dealerSlug]);
 
   const handleReceive = async (chassis: string, rec: PGIRecord) => {
     try {
-      await receiveChassisToYard(currentDealerSlug, chassis, rec);
-      const key = `pgiDismissed:${currentDealerSlug}`;
+      await receiveChassisToYard(dealerSlug, chassis, rec);
+      // mark dismissed so it won't re-appear
+      const key = `pgiDismissed:${dealerSlug}`;
       const dismissed: string[] = JSON.parse(localStorage.getItem(key) || "[]");
       if (!dismissed.includes(chassis)) {
         dismissed.push(chassis);
@@ -324,14 +286,14 @@ export default function DealerGroupYard() {
 
   const handleDispatch = async (chassis: string) => {
     try {
-      await dispatchFromYard(currentDealerSlug, chassis);
+      await dispatchFromYard(dealerSlug, chassis);
     } catch (e) {
       console.error("dispatch failed", e);
     }
   };
 
   const dismissAllNewPgi = () => {
-    const key = `pgiDismissed:${currentDealerSlug}`;
+    const key = `pgiDismissed:${dealerSlug}`;
     const dismissed: string[] = JSON.parse(localStorage.getItem(key) || "[]");
     const merged = Array.from(new Set([...dismissed, ...newPgiList.map((n) => n.chassis)]));
     localStorage.setItem(key, JSON.stringify(merged));
@@ -346,7 +308,7 @@ export default function DealerGroupYard() {
       return;
     }
     try {
-      await addManualChassisToYard(currentDealerSlug, ch);
+      await addManualChassisToYard(dealerSlug, ch);
       setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
       setManualChassis("");
     } catch (e) {
@@ -379,6 +341,7 @@ export default function DealerGroupYard() {
       })
       .filter(Boolean) as Date[];
   }, [yardList]);
+
   const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
 
   // PGI monthly trend for current year
@@ -404,15 +367,13 @@ export default function DealerGroupYard() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
-        isGroup={isDealerGroup(dealerConfig)}
-        includedDealers={includedDealerNames}
       />
       <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
           <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 via-blue-700 to-sky-600">
             Yard Inventory & On The Road — {dealerDisplayName}
           </h1>
-          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for the selected dealer</p>
+          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
         </header>
 
         {/* KPI Cards */}
