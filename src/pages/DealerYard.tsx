@@ -135,14 +135,15 @@ function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
   return points;
 }
 
-function MiniBarChart({ points }: { points: TrendPoint[] }) {
+function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.count));
   return (
-    <div className="flex items-end gap-2 h-24">
+    <div className="flex items-end gap-3 h-32">
       {points.map((p, idx) => (
         <div key={idx} className="flex flex-col items-center">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
           <div
-            className="w-4 bg-blue-600 rounded-sm"
+            className="w-5 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
             style={{ height: `${Math.round((p.count / max) * 100)}%` }}
             title={`${p.label}: ${p.count}`}
           />
@@ -341,7 +342,6 @@ export default function DealerYard() {
       })
       .filter(Boolean) as Date[];
   }, [yardList]);
-
   const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
 
   // PGI monthly trend for current year
@@ -508,7 +508,7 @@ export default function DealerYard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent><MiniBarChart points={yardTrend} /></CardContent>
+            <CardContent><WeeklyBarChart points={yardTrend} /></CardContent>
           </Card>
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
