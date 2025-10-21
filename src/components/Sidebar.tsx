@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Package, BarChart3, Factory, FileX, LayoutDashboard } from "lucide-react";
+import { Package, BarChart3, Factory, FileX, LayoutDashboard, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
@@ -59,12 +59,13 @@ export default function Sidebar({
     return selectedDealer || "Dealer Portal";
   }, [selectedDealer, hideOtherDealers, currentDealerName]);
 
-  // 获取当前页面类型（dashboard, dealerorders, inventorystock, unsigned）
+  // 获取当前页面类型（dashboard, dealerorders, inventorystock, unsigned, yard）
   const getCurrentPage = () => {
     const path = location.pathname;
     if (path.includes('/inventorystock')) return 'inventorystock';
     if (path.includes('/unsigned')) return 'unsigned';
     if (path.includes('/dealerorders')) return 'dealerorders';
+    if (path.includes('/yard')) return 'yard';
     if (path.includes('/dashboard')) return 'dashboard';
     return 'dealerorders';
   };
@@ -96,6 +97,7 @@ export default function Sidebar({
     { path: `${basePath}/dashboard`, label: "Dashboard", icon: LayoutDashboard, end: true },
     { path: isGroup ? `${basePath}/dealerorders` : basePath, label: "Dealer Orders", icon: BarChart3, end: !isGroup },
     { path: `${basePath}/inventorystock`, label: "Factory Inventory", icon: Factory, end: true },
+    { path: `${basePath}/yard`, label: "Yard Inventory & On The Road", icon: Truck, end: true },
     { path: `${basePath}/unsigned`, label: "Unsigned & Empty Slots", icon: FileX, end: true },
   ];
 
