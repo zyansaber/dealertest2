@@ -288,7 +288,7 @@ export function subscribeToPGIRecords(cb: (value: Record<string, any>) => void) 
 
 /**
  * 订阅 Yard Stock（按经销商分组）
- * 结构：yardstock/{dealerSlug}/{chassis} = { receivedAt, from_pgidate, dealer, model, customer }
+ * 结构：yardstock/{dealerSlug}/{chassis} = { receivedAt, from_pgidate, dealer, model, customer, manual? }
  */
 export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<string, any>) => void) {
   const r = ref(database, `yardstock/${dealerSlug}`);
@@ -320,6 +320,21 @@ export async function receiveChassisToYard(
   // 从在途记录中删除该底盘
   const pgiRef = ref(database, `pgirecord/${chassis}`);
   await remove(pgiRef);
+}
+
+/**
+ * 手动添加一个 Chassis 到 Yard（不依赖 PGI，其他字段留空）
+ */
+export async function addManualChassisToYard(dealerSlug: string, chassis: string) {
+  const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
+  const now = new Date().toISOString();
+  await set(targetRef, {
+    receivedAt: now,
+    dealer: null,
+    model: null,
+    customer: null,
+    manual: true,
+  });
 }
 
 /**
