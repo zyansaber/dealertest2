@@ -141,13 +141,21 @@ function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
   return (
     <div className="flex items-end gap-3 h-32">
       {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center">
+        <div key={idx} className="flex flex-col items-center h-full justify-end">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-5 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%` }}
-            title={`${p.label}: ${p.count}`}
-          />
+
+          {/* 固定高度的包裹层，里面的条用百分比高度 */}
+          <div className="w-5 h-full relative">
+            <div
+              className="absolute bottom-0 left-0 right-0 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
+              style={{
+                height: `${Math.round((p.count / max) * 100)}%`,
+                minHeight: p.count > 0 ? 4 : 0, // 防止被 round 成 0%
+              }}
+              title={`${p.label}: ${p.count}`}
+            />
+          </div>
+
           <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
         </div>
       ))}
@@ -160,19 +168,27 @@ function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
   return (
     <div className="flex items-end gap-3 h-32">
       {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center">
+        <div key={idx} className="flex flex-col items-center h-full justify-end">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-5 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%` }}
-            title={`${p.label}: ${p.count}`}
-          />
+
+          <div className="w-5 h-full relative">
+            <div
+              className="absolute bottom-0 left-0 right-0 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
+              style={{
+                height: `${Math.round((p.count / max) * 100)}%`,
+                minHeight: p.count > 0 ? 4 : 0,
+              }}
+              title={`${p.label}: ${p.count}`}
+            />
+          </div>
+
           <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
         </div>
       ))}
     </div>
   );
 }
+
 
 export default function DealerGroupYard() {
   const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
