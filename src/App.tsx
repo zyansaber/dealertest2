@@ -23,6 +23,8 @@ import DealerGroupPortal from "./pages/DealerGroupPortal";
 import DealerGroupDashboard from "./pages/DealerGroupDashboard";
 import DealerGroupInventoryStock from "./pages/DealerGroupInventoryStock";
 import DealerGroupUnsigned from "./pages/DealerGroupUnsigned";
+import DealerYard from "./pages/DealerYard";
+import DealerGroupYard from "./pages/DealerGroupYard";
 
 const queryClient = new QueryClient();
 
@@ -70,6 +72,11 @@ const App = () => (
               <UnsignedEmptySlots />
             </ProtectedDealerRoute>
           } />
+          <Route path="/dealer/:dealerSlug/yard" element={
+            <ProtectedDealerRoute>
+              <DealerYard />
+            </ProtectedDealerRoute>
+          } />
 
           {/* Dealer Group 路由 - 使用 /dealergroup/ 前缀 */}
           {/* 不带选中dealer的路由（会自动重定向到第一个dealer） */}
@@ -93,6 +100,11 @@ const App = () => (
               <DealerGroupUnsigned />
             </ProtectedDealerGroupRoute>
           } />
+          <Route path="/dealergroup/:dealerSlug/yard" element={
+            <ProtectedDealerGroupRoute>
+              <DealerGroupYard />
+            </ProtectedDealerGroupRoute>
+          } />
 
           {/* 带选中dealer的路由 */}
           <Route path="/dealergroup/:dealerSlug/:selectedDealerSlug/dashboard" element={
@@ -113,6 +125,11 @@ const App = () => (
           <Route path="/dealergroup/:dealerSlug/:selectedDealerSlug/unsigned" element={
             <ProtectedDealerGroupRoute>
               <DealerGroupUnsigned />
+            </ProtectedDealerGroupRoute>
+          } />
+          <Route path="/dealergroup/:dealerSlug/:selectedDealerSlug/yard" element={
+            <ProtectedDealerGroupRoute>
+              <DealerGroupYard />
             </ProtectedDealerGroupRoute>
           } />
 
