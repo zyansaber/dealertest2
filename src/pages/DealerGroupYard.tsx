@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -13,6 +14,7 @@ import {
   subscribeToSchedule,
   subscribeDealerConfig,
   subscribeAllDealerConfigs,
+  addManualChassisToYard,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import { isDealerGroup } from "@/types/dealer";
@@ -107,6 +109,33 @@ function groupCountsByWeek(dates: Date[], values: Date[]): TrendPoint[] {
   }
   return points;
 }
+
+function makeMonthBucketsCurrentYear(): Date[] {
+  const y = new Date().getFullYear();
+  const arr: Date[] = [];
+  for (let m = 0; m < 12; m++) {
+    arr.push(new Date(y, m, 1));
+  }
+  return arr;
+}
+function monthLabel(d: Date): string {
+  return d.toLocaleString("en-US", { month: "short" });
+}
+function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
+  const points: TrendPoint[] = months.map((m) => ({ label: monthLabel(m), count: 0 }));
+  for (const v of values) {
+    for (let i = 0; i < months.length; i++) {
+      const start = months[i];
+      const end = i + 1 < months.length ? months[i + 1] : new Date(start.getFullYear() + 1, 0, 1);
+      if (v >= start && v < end) {
+        points[i].count += 1;
+        break;
+      }
+    }
+  }
+  return points;
+}
+
 function MiniBarChart({ points }: { points: TrendPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.count));
   return (
@@ -115,6 +144,25 @@ function MiniBarChart({ points }: { points: TrendPoint[] }) {
         <div key={idx} className="flex flex-col items-center">
           <div
             className="w-4 bg-blue-600 rounded-sm"
+            style={{ height: `${Math.round((p.count / max) * 100)}%` }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-32">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-5 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
             style={{ height: `${Math.round((p.count / max) * 100)}%` }}
             title={`${p.label}: ${p.count}`}
           />
@@ -141,6 +189,10 @@ export default function DealerGroupYard() {
   // Modal for new PGI
   const [showNewPgiDialog, setShowNewPgiDialog] = useState(false);
   const [newPgiList, setNewPgiList] = useState<Array<{ chassis: string; pgidate?: string | null; model?: string | null; customer?: string | null }>>([]);
+
+  // Manual add chassis
+  const [manualChassis, setManualChassis] = useState("");
+  const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
 
   useEffect(() => {
     const unsubConfig = subscribeDealerConfig(groupSlug, (cfg) => {
@@ -287,6 +339,22 @@ export default function DealerGroupYard() {
     setNewPgiList([]);
   };
 
+  const handleAddManual = async () => {
+    const ch = manualChassis.trim().toUpperCase();
+    if (!ch) {
+      setManualStatus({ type: "err", msg: "Please enter chassis number" });
+      return;
+    }
+    try {
+      await addManualChassisToYard(currentDealerSlug, ch);
+      setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
+      setManualChassis("");
+    } catch (e) {
+      console.error(e);
+      setManualStatus({ type: "err", msg: "Failed to add. Please try again." });
+    }
+  };
+
   // KPI cards
   const yardTotal = yardList.length;
   const yearPGICount = useMemo(() => {
@@ -299,7 +367,7 @@ export default function DealerGroupYard() {
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
 
-  // Trends (weekly for last 12 weeks)
+  // Trends
   const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
   const yardDates = useMemo(() => {
     return yardList
@@ -311,6 +379,10 @@ export default function DealerGroupYard() {
       })
       .filter(Boolean) as Date[];
   }, [yardList]);
+  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
+
+  // PGI monthly trend for current year
+  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
   const pgiDates = useMemo(() => {
     return onTheRoadAll
       .map((x) => {
@@ -321,9 +393,7 @@ export default function DealerGroupYard() {
       })
       .filter(Boolean) as Date[];
   }, [onTheRoadAll]);
-
-  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
-  const pgiTrend = useMemo(() => groupCountsByWeek(weekBuckets, pgiDates), [weekBuckets, pgiDates]);
+  const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
 
   return (
     <div className="flex min-h-screen">
@@ -337,34 +407,36 @@ export default function DealerGroupYard() {
         isGroup={isDealerGroup(dealerConfig)}
         includedDealers={includedDealerNames}
       />
-      <main className="flex-1 p-6 space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold">Yard Inventory & On The Road — {dealerDisplayName}</h1>
+      <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <header className="pb-2">
+          <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 via-blue-700 to-sky-600">
+            Yard Inventory & On The Road — {dealerDisplayName}
+          </h1>
           <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for the selected dealer</p>
         </header>
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
+          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Yard Inventory Total</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold">{yardTotal}</div></CardContent>
           </Card>
-          <Card>
+          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">PGI This Year</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold">{yearPGICount}</div></CardContent>
           </Card>
-          <Card>
+          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Inventory: Stock</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold text-blue-700">{yardStockCount}</div></CardContent>
           </Card>
-          <Card>
+          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Inventory: Customer</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold text-emerald-700">{yardCustomerCount}</div></CardContent>
           </Card>
         </div>
 
         {/* On The Road - last 7 days only */}
-        <Card>
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader>
             <CardTitle>On The Road (PGI) — Last 7 Days</CardTitle>
           </CardHeader>
@@ -408,12 +480,28 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* Yard Inventory */}
-        <Card>
+        {/* Yard Inventory - manual add */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader>
             <CardTitle>Yard Inventory</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+              <Input
+                placeholder="Enter chassis number manually"
+                value={manualChassis}
+                onChange={(e) => setManualChassis(e.target.value)}
+              />
+              <Button onClick={handleAddManual} className="bg-sky-600 hover:bg-sky-700">
+                Add to Yard
+              </Button>
+              {manualStatus && (
+                <div className={`text-sm ${manualStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
+                  {manualStatus.msg}
+                </div>
+              )}
+            </div>
+
             {yardList.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
             ) : (
@@ -457,13 +545,13 @@ export default function DealerGroupYard() {
 
         {/* Trends */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
             <CardContent><MiniBarChart points={yardTrend} /></CardContent>
           </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">PGI Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent><MiniBarChart points={pgiTrend} /></CardContent>
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
+            <CardContent><MonthlyBarChart points={pgiMonthlyTrend} /></CardContent>
           </Card>
         </div>
 
