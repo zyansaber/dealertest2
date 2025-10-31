@@ -1,22 +1,23 @@
 // src/components/ProductRegistrationForm.tsx
 import React, { useMemo, useRef, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { saveProductRegistration } from "@/lib/firebase";
 
 type RegistrationData = {
   chassis: string;
   model?: string | null;
   dealerName?: string | null;
+  dealerSlug?: string | null;
   handoverAt: string; // ISO
 };
 
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  mode?: "choose" | "assist" | "email";
   initial?: RegistrationData | null;
 };
 
@@ -28,6 +29,8 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
   const [custEmail, setCustEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   const data = useMemo(() => {
@@ -35,6 +38,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
       chassis: "",
       model: "",
       dealerName: "",
+      dealerSlug: "",
       handoverAt: new Date().toISOString(),
     };
   }, [initial]);
@@ -48,7 +52,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     }
   }, [data.handoverAt]);
 
-  const resetAndClose = () => {
+  const resetStates = () => {
     setStep("choose");
     setEmailTo("");
     setFirstName("");
@@ -56,6 +60,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     setCustEmail("");
     setPhone("");
     setAddress("");
+    setSubmitting(false);
+    setSubmitMsg(null);
+  };
+  const resetAndClose = () => {
+    resetStates();
     onOpenChange(false);
   };
 
@@ -66,12 +75,15 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     if (!printWindow) return;
     const styles = `
       <style>
-        body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 24px; color: #0f172a; }
-        h1 { font-size: 20px; margin: 0 0 12px 0; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
-        .label { font-size: 12px; color: #475569; }
+        :root {
+          color-scheme: light dark;
+        }
+        body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 32px; color: #0f172a; background: #fff; }
+        h1 { font-size: 22px; margin: 0 0 12px 0; letter-spacing: 0.2px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+        .label { font-size: 12px; color: #475569; letter-spacing: 0.3px; }
         .value { font-size: 14px; font-weight: 600; color: #0f172a; }
-        .section { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+        .section { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
       </style>
     `;
     printWindow.document.write(`
@@ -85,11 +97,52 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     printWindow.close();
   };
 
+  const canSubmit = () => {
+    return Boolean(firstName && lastName && custEmail && phone && address);
+  };
+
+  const handleSubmitAssist = async () => {
+    if (!canSubmit()) {
+      setSubmitMsg("Please complete all customer fields before submitting.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitMsg(null);
+    try {
+      await saveProductRegistration(
+        (data.dealerSlug || "") as string,
+        data.chassis,
+        {
+          chassis: data.chassis,
+          model: data.model || null,
+          dealerName: data.dealerName || null,
+          dealerSlug: data.dealerSlug || null,
+          handoverAt: data.handoverAt,
+          customer: {
+            firstName,
+            lastName,
+            email: custEmail,
+            phone,
+            address,
+          },
+          createdAt: new Date().toISOString(),
+          method: "dealer_assist",
+        }
+      );
+      setSubmitMsg("Registration saved to Firebase successfully.");
+      setSubmitting(false);
+    } catch (e) {
+      console.error(e);
+      setSubmitMsg("Failed to save registration. Please try again.");
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => (v ? setStep("choose") : resetAndClose())}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="bg-clip-text text-transparent bg-gradient-to-r from-slate-800 via-blue-700 to-sky-600">
+          <DialogTitle className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
             Product Registration Form
           </DialogTitle>
         </DialogHeader>
@@ -97,56 +150,54 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
         {step === "choose" && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              请选择注册方式：发送邮件让客户自行填写，或由经销商代客户完成。
+              Choose registration method: send an email for customer self-service, or dealer-assisted completion.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Card className="hover:shadow-md transition backdrop-blur-sm bg-white/80">
                 <CardHeader>
-                  <CardTitle className="text-sm">发送邮件给客户</CardTitle>
+                  <CardTitle className="text-sm">Send Email to Customer</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <Label htmlFor="emailTo">Customer Email</Label>
                   <Input id="emailTo" placeholder="customer@example.com" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} />
-                  <p className="text-xs text-slate-500">提交后将发送链接，客户可自行填写。</p>
+                  <p className="text-xs text-slate-500">This will send a link for the customer to complete the form.</p>
                   <Button className="bg-sky-600 hover:bg-sky-700" disabled={!emailTo} onClick={() => setStep("email")}>
-                    下一步
+                    Next
                   </Button>
                 </CardContent>
               </Card>
 
               <Card className="hover:shadow-md transition backdrop-blur-sm bg-white/80">
                 <CardHeader>
-                  <CardTitle className="text-sm">经销商协助填写</CardTitle>
+                  <CardTitle className="text-sm">Dealer-Assisted Registration</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-xs text-slate-500">由经销商现场协助客户完成登记。</p>
-                  <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setStep("assist")}>开始</Button>
+                  <p className="text-xs text-slate-500">Complete the registration with the customer on-site.</p>
+                  <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setStep("assist")}>Start</Button>
                 </CardContent>
               </Card>
             </div>
           </div>
         )}
 
-      <DialogFooter />
-
         {step === "email" && (
           <div className="space-y-3">
-            <p className="text-sm text-slate-600">已准备发送注册邀请到：</p>
+            <p className="text-sm text-slate-600">Prepared to send registration invite to:</p>
             <div className="text-sm font-medium">{emailTo}</div>
             <p className="text-xs text-slate-500">
-              邮件发送功能可后续接入（当前为流程预览）。你可以返回选择“经销商协助填写”继续。
+              Email sending can be integrated later. You can go back and choose "Dealer-Assisted Registration" to proceed now.
             </p>
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setStep("choose")}>返回</Button>
-              <Button className="bg-sky-600 hover:bg-sky-700" onClick={resetAndClose}>完成</Button>
+              <Button variant="secondary" onClick={() => setStep("choose")}>Back</Button>
+              <Button className="bg-sky-600 hover:bg-sky-700" onClick={resetAndClose}>Done</Button>
             </div>
           </div>
         )}
 
         {step === "assist" && (
           <div className="space-y-4">
-            <div ref={printRef}>
-              <h1>Product Registration</h1>
+            <div ref={printRef} className="rounded-lg border bg-white/70 p-4">
+              <h1 className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">Product Registration</h1>
               <div className="grid">
                 <div>
                   <div className="label">Dealer</div>
@@ -167,7 +218,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
               </div>
 
               <div className="section">
-                <h1>Customer Information</h1>
+                <h1 className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">Customer Information</h1>
                 <div className="grid">
                   <div>
                     <div className="label">First Name</div>
@@ -216,10 +267,18 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
               </div>
             </div>
 
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setStep("choose")}>返回</Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handlePrint}>打印 PDF</Button>
-              <Button className="bg-sky-600 hover:bg-sky-700" onClick={resetAndClose}>完成</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setStep("choose")}>Back</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handlePrint}>Print PDF</Button>
+              <Button
+                className="bg-indigo-600 hover:bg-indigo-700"
+                disabled={submitting || !canSubmit()}
+                onClick={handleSubmitAssist}
+              >
+                {submitting ? "Saving..." : "Save to Firebase"}
+              </Button>
+              <Button className="bg-sky-600 hover:bg-sky-700" onClick={resetAndClose}>Done</Button>
+              {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
             </div>
           </div>
         )}
