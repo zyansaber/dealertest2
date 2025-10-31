@@ -345,3 +345,32 @@ export async function dispatchFromYard(dealerSlug: string, chassis: string) {
   const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   await remove(yardRef);
 }
+
+/** -------------------- Product Registration -------------------- */
+/**
+ * 保存经销商协助的产品登记数据
+ * Realtime Database 路径：registrations/{dealerSlug}/{chassis}
+ */
+export async function saveProductRegistration(
+  dealerSlug: string,
+  chassis: string,
+  data: {
+    chassis: string;
+    model: string | null;
+    dealerName: string | null;
+    dealerSlug: string | null;
+    handoverAt: string;
+    customer: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      address: string;
+    };
+    createdAt: string;
+    method: "dealer_assist";
+  }
+) {
+  const targetRef = ref(database, `registrations/${dealerSlug}/${chassis}`);
+  await set(targetRef, data);
+}
