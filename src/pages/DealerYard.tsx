@@ -14,7 +14,6 @@ import {
   addManualChassisToYard,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
-import { Dialog } from "@/components/ui/dialog";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import * as XLSX from "xlsx";
 import {
@@ -83,9 +82,9 @@ function makeWeeklyBuckets(weeks: number = 12): Date[] {
   start.setDate(start.getDate() - diffToMonday);
   const buckets: Date[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
-    const d = new Date(start);
-    d.setDate(start.getDate() - i * 7);
-    buckets.push(d);
+      const d = new Date(start);
+      d.setDate(start.getDate() - i * 7);
+      buckets.push(d);
   }
   return buckets;
 }
@@ -182,10 +181,7 @@ export default function DealerYard() {
 
   // Modal: Product Registration
   const [handoverOpen, setHandoverOpen] = useState(false);
-  const [handoverData, setHandoverData] = useState<null | { chassis: string; model?: string | null; dealerName?: string | null; handoverAt: string }>(null);
-
-  // New PGI Dialog (keep existing feature switched off in this page for simplicity)
-  const [showNewPgiDialog] = useState(false);
+  const [handoverData, setHandoverData] = useState<null | { chassis: string; model?: string | null; dealerName?: string | null; dealerSlug?: string | null; handoverAt: string }>(null);
 
   // Manual add chassis
   const [manualChassis, setManualChassis] = useState("");
@@ -194,6 +190,9 @@ export default function DealerYard() {
   // Classification analysis
   const [classMap, setClassMap] = useState<Record<string, string>>({});
   const [analysisType, setAnalysisType] = useState<"Stock" | "Customer">("Stock");
+  const [hidePie, setHidePie] = useState(false);
+  const [hideDetails, setHideDetails] = useState(false);
+  const [hideRanges, setHideRanges] = useState(false);
   const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -215,10 +214,10 @@ export default function DealerYard() {
   }, [dealerSlug]);
 
   useEffect(() => {
-    // Load classification mapping from Excel in public assets
+    // Load classification mapping from Excel in public assets (new file name)
     (async () => {
       try {
-        const resp = await fetch("/assets/data/caravan_classification.xlsx");
+        const resp = await fetch("/assets/data/caravan_classification_1.xlsx");
         const buf = await resp.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
         const first = wb.Sheets[wb.SheetNames[0]];
@@ -264,16 +263,8 @@ export default function DealerYard() {
       const model = toStr(sch?.Model || rec?.model);
       const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      const fromPGI = rec?.from_pgidate ? true : false;
-      return {
-        chassis,
-        receivedAt: receivedAtISO,
-        model,
-        customer,
-        type,
-        daysInYard,
-        fromPGI,
-      };
+      const fromPGI = Boolean(rec?.from_pgidate);
+      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard, fromPGI };
     });
   }, [yard, scheduleByChassis]);
 
@@ -305,7 +296,7 @@ export default function DealerYard() {
 
   // KPI cards
   const yardTotal = yardList.length;
-  // Factory PGI (received in Yard): count yard entries that originated from PGI
+  // Keep previous data approach: count yard entries originated from PGI (do not change data logic)
   const factoryPGIReceived = useMemo(() => yardList.filter((x) => x.fromPGI).length, [yardList]);
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
@@ -387,6 +378,7 @@ export default function DealerYard() {
       chassis: row.chassis,
       model: row.model,
       dealerName: dealerDisplayName,
+      dealerSlug,
       handoverAt: new Date().toISOString(),
     });
     setHandoverOpen(true);
@@ -424,23 +416,34 @@ export default function DealerYard() {
             <CardContent><div className="text-2xl font-bold">{yardTotal}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Factory PGI（received in Yard）</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">Factory PGI (received in Yard)</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold">{factoryPGIReceived}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text_sm">Inventory: Stock</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">Inventory: Stock</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold text-blue-700">{yardStockCount}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text_sm">Inventory: Customer</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">Inventory: Customer</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold text-emerald-700">{yardCustomerCount}</div></CardContent>
           </Card>
         </div>
 
-        {/* Classification Analysis */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader>
+        {/* Classification Analysis (collapsible parts) */}
+        <Card className="border-slate-200 shadow_sm hover:shadow-md transition">
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Classification Analysis — {analysisType}</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHidePie((v) => !v)}>
+                {hidePie ? "Show Pie" : "Hide Pie"}
+              </Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideDetails((v) => !v)}>
+                {hideDetails ? "Show Details" : "Hide Details"}
+              </Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideRanges((v) => !v)}>
+                {hideRanges ? "Show Ranges Chart" : "Hide Ranges Chart"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
@@ -461,59 +464,72 @@ export default function DealerYard() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="h-64">
+              {!hidePie && (
+                <div className="h-64 rounded-lg border bg-white/70">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={classificationCounts}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={90}
+                        paddingAngle={3}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {classificationCounts.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <ReTooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {!hideDetails && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Top 10</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {top10.map((t, idx) => (
+                      <div key={idx} className="flex items-center justify-between rounded border px-2 py-1">
+                        <span className="text-sm">{t.name}</span>
+                        <span className="text-sm font-semibold">{t.value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="text-sm font-medium mt-2">Hide/Show Classifications</div>
+                  <div className="flex flex-wrap gap-2">
+                    {classificationCounts.map((c, idx) => (
+                      <Button
+                        key={idx}
+                        size="sm"
+                        variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
+                        className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
+                        onClick={() => toggleHiddenClass(c.name)}
+                      >
+                        {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {!hideRanges && (
+              <div className="h-64 rounded-lg border bg-white/70">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={classificationCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={80} paddingAngle={2}>
-                      {classificationCounts.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <ReTooltip />
-                    <Legend />
-                  </PieChart>
+                  <BarChart data={rangeBuckets}>
+                    <XAxis dataKey="label" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#6366f1" />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Top 10</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {top10.map((t, idx) => (
-                    <div key={idx} className="flex items-center justify-between rounded border px-2 py-1">
-                      <span className="text-sm">{t.name}</span>
-                      <span className="text-sm font-semibold">{t.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="text-sm font-medium mt-2">隐藏/显示分类</div>
-                <div className="flex flex-wrap gap-2">
-                  {classificationCounts.map((c, idx) => (
-                    <Button
-                      key={idx}
-                      size="sm"
-                      variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
-                      className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
-                      onClick={() => toggleHiddenClass(c.name)}
-                    >
-                      {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Range Bar Chart */}
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rangeBuckets}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#6366f1" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            )}
           </CardContent>
         </Card>
 
