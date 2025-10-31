@@ -10,18 +10,17 @@ import {
   subscribeToPGIRecords,
   subscribeToYardStock,
   receiveChassisToYard,
-  dispatchFromYard,
   subscribeToSchedule,
   addManualChassisToYard,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
+import { Dialog } from "@/components/ui/dialog";
+import ProductRegistrationForm from "@/components/ProductRegistrationForm";
+import * as XLSX from "xlsx";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  PieChart, Pie, Cell, Tooltip as ReTooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip,
+} from "recharts";
 
 const toStr = (v: any) => String(v ?? "");
 const lower = (v: any) => toStr(v).toLowerCase();
@@ -52,18 +51,21 @@ function parseDDMMYYYY(dateStr?: string | null): Date | null {
   } catch {}
   return null;
 }
-function daysSince(dateStr?: string | null): number {
-  const d = parseDDMMYYYY(dateStr);
-  if (!d) return 0;
+function daysSinceISO(iso?: string | null): number {
+  if (!iso) return 0;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 0;
   const ms = Date.now() - d.getTime();
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
 }
 function isWithinDays(dateStr?: string | null, days: number = 7): boolean {
   const d = parseDDMMYYYY(dateStr);
   if (!d) return false;
-  const diffDays = daysSince(dateStr);
+  const ms = Date.now() - d.getTime();
+  const diffDays = Math.floor(ms / (1000 * 60 * 60 * 24));
   return diffDays >= 0 && diffDays <= days;
 }
+
 type PGIRecord = {
   pgidate?: string | null;
   dealer?: string | null;
@@ -76,8 +78,7 @@ type TrendPoint = { label: string; count: number };
 function makeWeeklyBuckets(weeks: number = 12): Date[] {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  // set to Monday of current week
-  const day = start.getDay(); // 0=Sun
+  const day = start.getDay();
   const diffToMonday = (day + 6) % 7;
   start.setDate(start.getDate() - diffToMonday);
   const buckets: Date[] = [];
@@ -96,7 +97,6 @@ function formatWeekLabel(d: Date): string {
 function groupCountsByWeek(dates: Date[], values: Date[]): TrendPoint[] {
   const points: TrendPoint[] = dates.map((d) => ({ label: formatWeekLabel(d), count: 0 }));
   for (const v of values) {
-    // find bucket where v >= bucket start and < next bucket start
     for (let i = 0; i < dates.length; i++) {
       const start = dates[i];
       const end = i + 1 < dates.length ? dates[i + 1] : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -140,47 +140,31 @@ function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
   return (
     <div className="flex items-end gap-3 h-32">
       {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full justify-end">
+        <div key={idx} className="flex flex-col items-center h-full">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-
-          {/* 固定高度的包裹层，里面的条用百分比高度 */}
-          <div className="w-5 h-full relative">
-            <div
-              className="absolute bottom-0 left-0 right-0 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
-              style={{
-                height: `${Math.round((p.count / max) * 100)}%`,
-                minHeight: p.count > 0 ? 4 : 0, // 防止被 round 成 0%
-              }}
-              title={`${p.label}: ${p.count}`}
-            />
-          </div>
-
+          <div
+            className="w-5 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
           <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
         </div>
       ))}
     </div>
   );
 }
-
 function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.count));
   return (
     <div className="flex items-end gap-3 h-32">
       {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full justify-end">
+        <div key={idx} className="flex flex-col items-center h-full">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-
-          <div className="w-5 h-full relative">
-            <div
-              className="absolute bottom-0 left-0 right-0 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
-              style={{
-                height: `${Math.round((p.count / max) * 100)}%`,
-                minHeight: p.count > 0 ? 4 : 0,
-              }}
-              title={`${p.label}: ${p.count}`}
-            />
-          </div>
-
+          <div
+            className="w-5 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
           <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
         </div>
       ))}
@@ -196,13 +180,21 @@ export default function DealerYard() {
   const [yard, setYard] = useState<Record<string, any>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
 
-  // Modal for new PGI
-  const [showNewPgiDialog, setShowNewPgiDialog] = useState(false);
-  const [newPgiList, setNewPgiList] = useState<Array<{ chassis: string; pgidate?: string | null; model?: string | null; customer?: string | null }>>([]);
+  // Modal: Product Registration
+  const [handoverOpen, setHandoverOpen] = useState(false);
+  const [handoverData, setHandoverData] = useState<null | { chassis: string; model?: string | null; dealerName?: string | null; handoverAt: string }>(null);
+
+  // New PGI Dialog (keep existing feature switched off in this page for simplicity)
+  const [showNewPgiDialog] = useState(false);
 
   // Manual add chassis
   const [manualChassis, setManualChassis] = useState("");
   const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
+
+  // Classification analysis
+  const [classMap, setClassMap] = useState<Record<string, string>>({});
+  const [analysisType, setAnalysisType] = useState<"Stock" | "Customer">("Stock");
+  const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -222,6 +214,29 @@ export default function DealerYard() {
     };
   }, [dealerSlug]);
 
+  useEffect(() => {
+    // Load classification mapping from Excel in public assets
+    (async () => {
+      try {
+        const resp = await fetch("/assets/data/caravan_classification.xlsx");
+        const buf = await resp.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const first = wb.Sheets[wb.SheetNames[0]];
+        const json: any[] = XLSX.utils.sheet_to_json(first);
+        // Expect columns: Model, Classification
+        const map: Record<string, string> = {};
+        json.forEach((row) => {
+          const model = toStr(row.Model || row.model || row["MODEL"]).trim().toLowerCase();
+          const cls = toStr(row.Classification || row.classification || row["CLASSIFICATION"]).trim();
+          if (model) map[model] = cls || "Unknown";
+        });
+        setClassMap(map);
+      } catch (e) {
+        console.warn("Failed to load classification excel:", e);
+      }
+    })();
+  }, []);
+
   const scheduleByChassis = useMemo(() => {
     const map: Record<string, ScheduleItem> = {};
     for (const item of schedule) {
@@ -234,32 +249,11 @@ export default function DealerYard() {
   const onTheRoadAll = useMemo(() => {
     const entries = Object.entries(pgi || {});
     return entries
-      .filter(([chassis, rec]) => slugifyDealerName(rec?.dealer || "") === dealerSlug)
+      .filter(([_, rec]) => slugifyDealerName(rec?.dealer || "") === dealerSlug)
       .map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi, dealerSlug]);
 
-  const onTheRoadWeekly = useMemo(() => {
-    return onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7));
-  }, [onTheRoadAll]);
-
-  // detect new PGI within last 7 days and not dismissed yet
-  useEffect(() => {
-    if (!dealerSlug) return;
-    const dismissedKey = `pgiDismissed:${dealerSlug}`;
-    const dismissed: string[] = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
-    const newcomers = onTheRoadWeekly.filter((row) => !dismissed.includes(row.chassis));
-    if (newcomers.length > 0) {
-      setNewPgiList(
-        newcomers.map((row) => ({
-          chassis: row.chassis,
-          pgidate: row.pgidate,
-          model: row.model,
-          customer: row.customer,
-        }))
-      );
-      setShowNewPgiDialog(true);
-    }
-  }, [onTheRoadWeekly, dealerSlug]);
+  const onTheRoadWeekly = useMemo(() => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7)), [onTheRoadAll]);
 
   const yardList = useMemo(() => {
     const entries = Object.entries(yard || {});
@@ -267,54 +261,30 @@ export default function DealerYard() {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer || rec?.customer);
       const type = customer.toLowerCase().endsWith("stock") ? "Stock" : "Customer";
+      const model = toStr(sch?.Model || rec?.model);
+      const receivedAtISO = rec?.receivedAt ?? null;
+      const daysInYard = daysSinceISO(receivedAtISO);
+      const fromPGI = rec?.from_pgidate ? true : false;
       return {
         chassis,
-        receivedAt: rec?.receivedAt,
-        model: toStr(sch?.Model || rec?.model),
+        receivedAt: receivedAtISO,
+        model,
         customer,
         type,
+        daysInYard,
+        fromPGI,
       };
     });
   }, [yard, scheduleByChassis]);
 
-  const dealerDisplayName = useMemo(() => {
-    const anyPGI = onTheRoadAll.find(Boolean);
-    if (anyPGI?.dealer) return toStr(anyPGI.dealer);
-    const anyYard = yardList.find(Boolean);
-    if (anyYard?.customer) return prettifyDealerName(dealerSlug);
-    return prettifyDealerName(dealerSlug);
-  }, [onTheRoadAll, yardList, dealerSlug]);
+  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
 
   const handleReceive = async (chassis: string, rec: PGIRecord) => {
     try {
       await receiveChassisToYard(dealerSlug, chassis, rec);
-      // mark dismissed so it won't re-appear
-      const key = `pgiDismissed:${dealerSlug}`;
-      const dismissed: string[] = JSON.parse(localStorage.getItem(key) || "[]");
-      if (!dismissed.includes(chassis)) {
-        dismissed.push(chassis);
-        localStorage.setItem(key, JSON.stringify(dismissed));
-      }
     } catch (e) {
       console.error("receive failed", e);
     }
-  };
-
-  const handleDispatch = async (chassis: string) => {
-    try {
-      await dispatchFromYard(dealerSlug, chassis);
-    } catch (e) {
-      console.error("dispatch failed", e);
-    }
-  };
-
-  const dismissAllNewPgi = () => {
-    const key = `pgiDismissed:${dealerSlug}`;
-    const dismissed: string[] = JSON.parse(localStorage.getItem(key) || "[]");
-    const merged = Array.from(new Set([...dismissed, ...newPgiList.map((n) => n.chassis)]));
-    localStorage.setItem(key, JSON.stringify(merged));
-    setShowNewPgiDialog(false);
-    setNewPgiList([]);
   };
 
   const handleAddManual = async () => {
@@ -335,13 +305,8 @@ export default function DealerYard() {
 
   // KPI cards
   const yardTotal = yardList.length;
-  const yearPGICount = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    return onTheRoadAll.filter((row) => {
-      const d = parseDDMMYYYY(row.pgidate);
-      return d && d.getFullYear() === currentYear;
-    }).length;
-  }, [onTheRoadAll]);
+  // Factory PGI (received in Yard): count yard entries that originated from PGI
+  const factoryPGIReceived = useMemo(() => yardList.filter((x) => x.fromPGI).length, [yardList]);
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
 
@@ -359,7 +324,6 @@ export default function DealerYard() {
   }, [yardList]);
   const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
 
-  // PGI monthly trend for current year
   const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
   const pgiDates = useMemo(() => {
     return onTheRoadAll
@@ -372,6 +336,68 @@ export default function DealerYard() {
       .filter(Boolean) as Date[];
   }, [onTheRoadAll]);
   const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
+
+  // Classification analysis
+  const classificationCounts = useMemo(() => {
+    const list = yardList.filter((x) => x.type === analysisType);
+    const counts: Record<string, number> = {};
+    list.forEach((x) => {
+      const key = classMap[toStr(x.model).trim().toLowerCase()] || "Unknown";
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    const entries = Object.entries(counts)
+      .filter(([k]) => !hiddenClasses.has(k))
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+    return entries;
+  }, [yardList, classMap, analysisType, hiddenClasses]);
+
+  const top10 = useMemo(() => classificationCounts.slice(0, 10), [classificationCounts]);
+
+  const toggleHiddenClass = (name: string) => {
+    setHiddenClasses((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const COLORS = ["#38bdf8", "#0ea5e9", "#6366f1", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#a3e635"];
+
+  // Range buckets by days in yard
+  const rangeBuckets = useMemo(() => {
+    const ranges = [
+      { label: "0–7d", min: 0, max: 7 },
+      { label: "8–14d", min: 8, max: 14 },
+      { label: "15–30d", min: 15, max: 30 },
+      { label: "31–60d", min: 31, max: 60 },
+      { label: "61–90d", min: 61, max: 90 },
+      { label: ">90d", min: 91, max: Infinity },
+    ];
+    const items = ranges.map((r) => ({
+      label: r.label,
+      count: yardList.filter((x) => x.daysInYard >= r.min && x.daysInYard <= r.max).length,
+    }));
+    return items;
+  }, [yardList]);
+
+  const openHandover = (row: { chassis: string; model?: string | null }) => {
+    setHandoverData({
+      chassis: row.chassis,
+      model: row.model,
+      dealerName: dealerDisplayName,
+      handoverAt: new Date().toISOString(),
+    });
+    setHandoverOpen(true);
+  };
+
+  const formatDateOnly = (iso?: string | null) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString();
+  };
 
   return (
     <div className="flex min-h-screen">
@@ -398,18 +424,98 @@ export default function DealerYard() {
             <CardContent><div className="text-2xl font-bold">{yardTotal}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">PGI This Year</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold">{yearPGICount}</div></CardContent>
+            <CardHeader><CardTitle className="text-sm">Factory PGI（received in Yard）</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold">{factoryPGIReceived}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Inventory: Stock</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text_sm">Inventory: Stock</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold text-blue-700">{yardStockCount}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Inventory: Customer</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text_sm">Inventory: Customer</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold text-emerald-700">{yardCustomerCount}</div></CardContent>
           </Card>
         </div>
+
+        {/* Classification Analysis */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+          <CardHeader>
+            <CardTitle>Classification Analysis — {analysisType}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Button
+                variant={analysisType === "Stock" ? "default" : "secondary"}
+                className={analysisType === "Stock" ? "bg-sky-600 hover:bg-sky-700" : ""}
+                onClick={() => setAnalysisType("Stock")}
+              >
+                View Stock
+              </Button>
+              <Button
+                variant={analysisType === "Customer" ? "default" : "secondary"}
+                className={analysisType === "Customer" ? "bg-indigo-600 hover:bg-indigo-700" : ""}
+                onClick={() => setAnalysisType("Customer")}
+              >
+                View Customer
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={classificationCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={80} paddingAngle={2}>
+                      {classificationCounts.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <ReTooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Top 10</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {top10.map((t, idx) => (
+                    <div key={idx} className="flex items-center justify-between rounded border px-2 py-1">
+                      <span className="text-sm">{t.name}</span>
+                      <span className="text-sm font-semibold">{t.value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="text-sm font-medium mt-2">隐藏/显示分类</div>
+                <div className="flex flex-wrap gap-2">
+                  {classificationCounts.map((c, idx) => (
+                    <Button
+                      key={idx}
+                      size="sm"
+                      variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
+                      className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
+                      onClick={() => toggleHiddenClass(c.name)}
+                    >
+                      {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Range Bar Chart */}
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rangeBuckets}>
+                  <XAxis dataKey="label" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#6366f1" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* On The Road - last 7 days only */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
@@ -441,7 +547,7 @@ export default function DealerYard() {
                         <TableCell>{toStr(row.dealer) || "-"}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>{daysSince(row.pgidate)}</TableCell>
+                        <TableCell>{isWithinDays(row.pgidate, 365) ? Math.floor((Date.now() - (parseDDMMYYYY(row.pgidate)?.getTime() || Date.now())) / (1000 * 60 * 60 * 24)) : 0}</TableCell>
                         <TableCell>
                           <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
                             Receive
@@ -456,7 +562,7 @@ export default function DealerYard() {
           </CardContent>
         </Card>
 
-        {/* Yard Inventory - manual add */}
+        {/* Yard Inventory - manual add and list */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader>
             <CardTitle>Yard Inventory</CardTitle>
@@ -490,14 +596,15 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
-                      <TableHead className="font-semibold">Dispatch</TableHead>
+                      <TableHead className="font-semibold">Days In Yard</TableHead>
+                      <TableHead className="font-semibold">Handover</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {yardList.map((row) => (
                       <TableRow key={row.chassis}>
                         <TableCell className="font-medium">{row.chassis}</TableCell>
-                        <TableCell>{toStr(row.receivedAt).replace("T", " ").replace("Z", "")}</TableCell>
+                        <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>
@@ -505,9 +612,10 @@ export default function DealerYard() {
                             {row.type}
                           </span>
                         </TableCell>
+                        <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
-                          <Button size="sm" variant="destructive" onClick={() => handleDispatch(row.chassis)}>
-                            Dispatch
+                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => openHandover({ chassis: row.chassis, model: row.model })}>
+                            Handover
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -531,47 +639,8 @@ export default function DealerYard() {
           </Card>
         </div>
 
-        {/* New PGI Dialog */}
-        <Dialog open={showNewPgiDialog} onOpenChange={setShowNewPgiDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>New PGI Arrivals</DialogTitle>
-            </DialogHeader>
-            {newPgiList.length === 0 ? (
-              <div className="text-sm text-slate-500">No new PGI records.</div>
-            ) : (
-              <div className="space-y-2">
-                <div className="text-sm text-slate-600">You have {newPgiList.length} new PGI in the last 7 days:</div>
-                <div className="rounded-md border overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Chassis</TableHead>
-                        <TableHead>PGI Date</TableHead>
-                        <TableHead>Model</TableHead>
-                        <TableHead>Customer</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {newPgiList.map((item) => (
-                        <TableRow key={item.chassis}>
-                          <TableCell className="font-medium">{item.chassis}</TableCell>
-                          <TableCell>{toStr(item.pgidate) || "-"}</TableCell>
-                          <TableCell>{toStr(item.model) || "-"}</TableCell>
-                          <TableCell>{toStr(item.customer) || "-"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="secondary" onClick={() => setShowNewPgiDialog(false)}>Close</Button>
-              <Button onClick={dismissAllNewPgi}>Dismiss All</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Product Registration Modal */}
+        <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
       </main>
     </div>
   );
