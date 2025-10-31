@@ -20,6 +20,7 @@ import {
   PieChart, Pie, Cell, Tooltip as ReTooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip,
 } from "recharts";
+import { CLASSIFICATION_XLSX_BASE64 } from "@/lib/classification_base64";
 
 const toStr = (v: any) => String(v ?? "");
 const lower = (v: any) => toStr(v).toLowerCase();
@@ -82,9 +83,9 @@ function makeWeeklyBuckets(weeks: number = 12): Date[] {
   start.setDate(start.getDate() - diffToMonday);
   const buckets: Date[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
-      const d = new Date(start);
-      d.setDate(start.getDate() - i * 7);
-      buckets.push(d);
+    const d = new Date(start);
+    d.setDate(start.getDate() - i * 7);
+    buckets.push(d);
   }
   return buckets;
 }
@@ -137,12 +138,12 @@ function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
 function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.count));
   return (
-    <div className="flex items-end gap-3 h-32">
+    <div className="flex items-end gap-3 h-28">
       {points.map((p, idx) => (
         <div key={idx} className="flex flex-col items-center h-full">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
           <div
-            className="w-5 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
+            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
             style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
             title={`${p.label}: ${p.count}`}
           />
@@ -155,12 +156,12 @@ function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
 function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.count));
   return (
-    <div className="flex items-end gap-3 h-32">
+    <div className="flex items-end gap-3 h-28">
       {points.map((p, idx) => (
         <div key={idx} className="flex flex-col items-center h-full">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
           <div
-            className="w-5 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
+            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
             style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
             title={`${p.label}: ${p.count}`}
           />
@@ -169,6 +170,14 @@ function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
       ))}
     </div>
   );
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
 }
 
 export default function DealerYard() {
@@ -214,26 +223,22 @@ export default function DealerYard() {
   }, [dealerSlug]);
 
   useEffect(() => {
-    // Load classification mapping from Excel in public assets (new file name)
-    (async () => {
-      try {
-        const resp = await fetch("/assets/data/caravan_classification_1.xlsx");
-        const buf = await resp.arrayBuffer();
-        const wb = XLSX.read(buf, { type: "array" });
-        const first = wb.Sheets[wb.SheetNames[0]];
-        const json: any[] = XLSX.utils.sheet_to_json(first);
-        // Expect columns: Model, Classification
-        const map: Record<string, string> = {};
-        json.forEach((row) => {
-          const model = toStr(row.Model || row.model || row["MODEL"]).trim().toLowerCase();
-          const cls = toStr(row.Classification || row.classification || row["CLASSIFICATION"]).trim();
-          if (model) map[model] = cls || "Unknown";
-        });
-        setClassMap(map);
-      } catch (e) {
-        console.warn("Failed to load classification excel:", e);
-      }
-    })();
+    // Load classification mapping from embedded Excel (base64)
+    try {
+      const buf = base64ToArrayBuffer(CLASSIFICATION_XLSX_BASE64);
+      const wb = XLSX.read(buf, { type: "array" });
+      const first = wb.Sheets[wb.SheetNames[0]];
+      const json: any[] = XLSX.utils.sheet_to_json(first);
+      const map: Record<string, string> = {};
+      json.forEach((row) => {
+        const model = toStr(row.Model || row.model || row["MODEL"]).trim().toLowerCase();
+        const cls = toStr(row.Classification || row.classification || row["CLASSIFICATION"]).trim();
+        if (model) map[model] = cls || "Unknown";
+      });
+      setClassMap(map);
+    } catch (e) {
+      console.warn("Failed to parse embedded classification excel:", e);
+    }
   }, []);
 
   const scheduleByChassis = useMemo(() => {
@@ -345,6 +350,21 @@ export default function DealerYard() {
 
   const top10 = useMemo(() => classificationCounts.slice(0, 10), [classificationCounts]);
 
+  // Per classification pie: stock vs customer breakdown
+  const classificationBreakdown = useMemo(() => {
+    const stats: Record<string, { stock: number; customer: number }> = {};
+    yardList.forEach((x) => {
+      const key = classMap[toStr(x.model).trim().toLowerCase()] || "Unknown";
+      if (!stats[key]) stats[key] = { stock: 0, customer: 0 };
+      if (x.type === "Stock") stats[key].stock += 1;
+      else stats[key].customer += 1;
+    });
+    return Object.entries(stats)
+      .filter(([name]) => !hiddenClasses.has(name))
+      .map(([name, { stock, customer }]) => ({ name, data: [{ name: "Stock", value: stock }, { name: "Customer", value: customer }] }))
+      .sort((a, b) => (b.data[0].value + b.data[1].value) - (a.data[0].value + a.data[1].value));
+  }, [yardList, classMap, hiddenClasses]);
+
   const toggleHiddenClass = (name: string) => {
     setHiddenClasses((prev) => {
       const next = new Set(prev);
@@ -429,57 +449,29 @@ export default function DealerYard() {
           </Card>
         </div>
 
-        {/* Classification Analysis (collapsible parts) */}
-        <Card className="border-slate-200 shadow_sm hover:shadow-md transition">
+        {/* Classification Analysis */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Classification Analysis — {analysisType}</CardTitle>
             <div className="flex gap-2">
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHidePie((v) => !v)}>
-                {hidePie ? "Show Pie" : "Hide Pie"}
-              </Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideDetails((v) => !v)}>
-                {hideDetails ? "Show Details" : "Hide Details"}
-              </Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideRanges((v) => !v)}>
-                {hideRanges ? "Show Ranges Chart" : "Hide Ranges Chart"}
-              </Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHidePie((v) => !v)}>{hidePie ? "Show Pie" : "Hide Pie"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideDetails((v) => !v)}>{hideDetails ? "Show Details" : "Hide Details"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideRanges((v) => !v)}>{hideRanges ? "Show Ranges Chart" : "Hide Ranges Chart"}</Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
-              <Button
-                variant={analysisType === "Stock" ? "default" : "secondary"}
-                className={analysisType === "Stock" ? "bg-sky-600 hover:bg-sky-700" : ""}
-                onClick={() => setAnalysisType("Stock")}
-              >
-                View Stock
-              </Button>
-              <Button
-                variant={analysisType === "Customer" ? "default" : "secondary"}
-                className={analysisType === "Customer" ? "bg-indigo-600 hover:bg-indigo-700" : ""}
-                onClick={() => setAnalysisType("Customer")}
-              >
-                View Customer
-              </Button>
+              <Button variant={analysisType === "Stock" ? "default" : "secondary"} className={analysisType === "Stock" ? "bg-sky-600 hover:bg-sky-700" : ""} onClick={() => setAnalysisType("Stock")}>View Stock</Button>
+              <Button variant={analysisType === "Customer" ? "default" : "secondary"} className={analysisType === "Customer" ? "bg-indigo-600 hover:bg-indigo-700" : ""} onClick={() => setAnalysisType("Customer")}>View Customer</Button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {!hidePie && (
-                <div className="h-64 rounded-lg border bg-white/70">
+                <div className="h-56 rounded-lg border bg-white/70">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie
-                        data={classificationCounts}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={50}
-                        outerRadius={90}
-                        paddingAngle={3}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {classificationCounts.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
+                      <Pie data={classificationCounts} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={3} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                        {classificationCounts.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
                       </Pie>
                       <ReTooltip />
                       <Legend />
@@ -499,17 +491,10 @@ export default function DealerYard() {
                       </div>
                     ))}
                   </div>
-
                   <div className="text-sm font-medium mt-2">Hide/Show Classifications</div>
                   <div className="flex flex-wrap gap-2">
                     {classificationCounts.map((c, idx) => (
-                      <Button
-                        key={idx}
-                        size="sm"
-                        variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
-                        className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
-                        onClick={() => toggleHiddenClass(c.name)}
-                      >
+                      <Button key={idx} size="sm" variant={hiddenClasses.has(c.name) ? "secondary" : "outline"} className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => toggleHiddenClass(c.name)}>
                         {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
                       </Button>
                     ))}
@@ -518,8 +503,31 @@ export default function DealerYard() {
               )}
             </div>
 
+            {/* Per-classification pies: Stock vs Customer */}
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Classification Breakdown by Type</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {classificationBreakdown.map((item, idx) => (
+                  <Card key={idx} className="border-slate-200 bg-white/70">
+                    <CardHeader><CardTitle className="text-sm">{item.name}</CardTitle></CardHeader>
+                    <CardContent className="h-40">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={item.data} dataKey="value" nameKey="name" innerRadius={30} outerRadius={60} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                            <Cell fill="#3b82f6" />
+                            <Cell fill="#10b981" />
+                          </Pie>
+                          <ReTooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
             {!hideRanges && (
-              <div className="h-64 rounded-lg border bg-white/70">
+              <div className="h-40 rounded-lg border bg-white/70">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={rangeBuckets}>
                     <XAxis dataKey="label" />
@@ -578,7 +586,7 @@ export default function DealerYard() {
           </CardContent>
         </Card>
 
-        {/* Yard Inventory - manual add and list */}
+        {/* Yard Inventory */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader>
             <CardTitle>Yard Inventory</CardTitle>
@@ -655,7 +663,7 @@ export default function DealerYard() {
           </Card>
         </div>
 
-        {/* Product Registration Modal */}
+        {/* Product Registration & Handover Modal */}
         <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
       </main>
     </div>
