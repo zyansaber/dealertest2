@@ -101,7 +101,7 @@ function groupCountsByWeek(dates: Date[], values: Date[]): TrendPoint[] {
   for (const v of values) {
     for (let i = 0; i < dates.length; i++) {
       const start = dates[i];
-      const end = i + 1 < dates.length ? dates[i + 1] : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const end = i + 1 < dates.length ? months[i + 1] : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
       if (v >= start && v < end) {
         points[i].count += 1;
         break;
@@ -140,7 +140,7 @@ function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
 function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.count));
   return (
-    <div className="flex items-end gap-3 h-32">
+    <div className="flex items_end gap-3 h-32">
       {points.map((p, idx) => (
         <div key={idx} className="flex flex-col items-center h-full">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
@@ -160,7 +160,7 @@ function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
   return (
     <div className="flex items-end gap-3 h-32">
       {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full">
+        <div key={idx} className="flex flex-col items_center h-full">
           <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
           <div
             className="w-5 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
@@ -189,7 +189,7 @@ export default function DealerGroupYard() {
 
   // Modal: Product Registration
   const [handoverOpen, setHandoverOpen] = useState(false);
-  const [handoverData, setHandoverData] = useState<null | { chassis: string; model?: string | null; dealerName?: string | null; handoverAt: string }>(null);
+  const [handoverData, setHandoverData] = useState<null | { chassis: string; model?: string | null; dealerName?: string | null; dealerSlug?: string | null; handoverAt: string }>(null);
 
   // Manual add chassis
   const [manualChassis, setManualChassis] = useState("");
@@ -198,6 +198,9 @@ export default function DealerGroupYard() {
   // Classification analysis
   const [classMap, setClassMap] = useState<Record<string, string>>({});
   const [analysisType, setAnalysisType] = useState<"Stock" | "Customer">("Stock");
+  const [hidePie, setHidePie] = useState(false);
+  const [hideDetails, setHideDetails] = useState(false);
+  const [hideRanges, setHideRanges] = useState(false);
   const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -241,10 +244,10 @@ export default function DealerGroupYard() {
   }, [currentDealerSlug]);
 
   useEffect(() => {
-    // Load classification mapping from Excel
+    // Load classification mapping from Excel (new file)
     (async () => {
       try {
-        const resp = await fetch("/assets/data/caravan_classification.xlsx");
+        const resp = await fetch("/assets/data/caravan_classification_1.xlsx");
         const buf = await resp.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
         const first = wb.Sheets[wb.SheetNames[0]];
@@ -289,7 +292,7 @@ export default function DealerGroupYard() {
       const model = toStr(sch?.Model || rec?.model);
       const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      const fromPGI = rec?.from_pgidate ? true : false;
+      const fromPGI = Boolean(rec?.from_pgidate);
       return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard, fromPGI };
     });
   }, [yard, scheduleByChassis]);
@@ -338,6 +341,7 @@ export default function DealerGroupYard() {
 
   // KPI cards
   const yardTotal = yardList.length;
+  // Keep previous data approach: count yard entries originated from PGI (do not change data logic)
   const factoryPGIReceived = useMemo(() => yardList.filter((x) => x.fromPGI).length, [yardList]);
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
@@ -369,7 +373,7 @@ export default function DealerGroupYard() {
   }, [onTheRoadAll]);
   const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
 
-  // Classification analysis derived from hiddenClasses
+  // Classification analysis
   const classificationCounts = useMemo(() => {
     const list = yardList.filter((x) => x.type === analysisType);
     const counts: Record<string, number> = {};
@@ -385,6 +389,7 @@ export default function DealerGroupYard() {
   }, [yardList, classMap, analysisType, hiddenClasses]);
 
   const top10 = useMemo(() => classificationCounts.slice(0, 10), [classificationCounts]);
+
   const toggleHiddenClass = (name: string) => {
     setHiddenClasses((prev) => {
       const next = new Set(prev);
@@ -416,6 +421,7 @@ export default function DealerGroupYard() {
       chassis: row.chassis,
       model: row.model,
       dealerName: dealerDisplayName,
+      dealerSlug: currentDealerSlug,
       handoverAt: new Date().toISOString(),
     });
     setHandoverOpen(true);
@@ -455,7 +461,7 @@ export default function DealerGroupYard() {
             <CardContent><div className="text-2xl font-bold">{yardTotal}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Factory PGI（received in Yard）</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">Factory PGI (received in Yard)</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold">{factoryPGIReceived}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
@@ -468,10 +474,21 @@ export default function DealerGroupYard() {
           </Card>
         </div>
 
-        {/* Classification Analysis */}
+        {/* Classification Analysis (collapsible parts) */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Classification Analysis — {analysisType}</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHidePie((v) => !v)}>
+                {hidePie ? "Show Pie" : "Hide Pie"}
+              </Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideDetails((v) => !v)}>
+                {hideDetails ? "Show Details" : "Hide Details"}
+              </Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideRanges((v) => !v)}>
+                {hideRanges ? "Show Ranges Chart" : "Hide Ranges Chart"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
@@ -492,59 +509,72 @@ export default function DealerGroupYard() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="h-64">
+              {!hidePie && (
+                <div className="h-64 rounded-lg border bg-white/70">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={classificationCounts}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={90}
+                        paddingAngle={3}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {classificationCounts.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <ReTooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {!hideDetails && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Top 10</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {top10.map((t, idx) => (
+                      <div key={idx} className="flex items-center justify-between rounded border px-2 py-1">
+                        <span className="text-sm">{t.name}</span>
+                        <span className="text-sm font-semibold">{t.value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="text-sm font-medium mt-2">Hide/Show Classifications</div>
+                  <div className="flex flex-wrap gap-2">
+                    {classificationCounts.map((c, idx) => (
+                      <Button
+                        key={idx}
+                        size="sm"
+                        variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
+                        className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
+                        onClick={() => toggleHiddenClass(c.name)}
+                      >
+                        {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {!hideRanges && (
+              <div className="h-64 rounded-lg border bg-white/70">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={classificationCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={80} paddingAngle={2}>
-                      {classificationCounts.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <ReTooltip />
-                    <Legend />
-                  </PieChart>
+                  <BarChart data={rangeBuckets}>
+                    <XAxis dataKey="label" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#6366f1" />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Top 10</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {top10.map((t, idx) => (
-                    <div key={idx} className="flex items-center justify-between rounded border px-2 py-1">
-                      <span className="text-sm">{t.name}</span>
-                      <span className="text-sm font-semibold">{t.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="text-sm font-medium mt-2">隐藏/显示分类</div>
-                <div className="flex flex-wrap gap-2">
-                  {classificationCounts.map((c, idx) => (
-                    <Button
-                      key={idx}
-                      size="sm"
-                      variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
-                      className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
-                      onClick={() => toggleHiddenClass(c.name)}
-                    >
-                      {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Range Bar Chart */}
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rangeBuckets}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#6366f1" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            )}
           </CardContent>
         </Card>
 
