@@ -28,19 +28,6 @@ const database = getDatabase(app);
 export { database };
 
 /** -------------------- schedule -------------------- */
-/**
- * 默认行为（不传 options）：
- *  - 过滤掉 "Regent Production" = Finished/Finish
- *  - 必须有 Chassis（存在且非空）
- *  - 必须有 Customer（存在且非空）
- *
- * 只有 UnsignedEmptySlots 页面需要放开时，才传 options：
- *  subscribeToSchedule(cb, {
- *    includeNoChassis: true,
- *    includeNoCustomer: true,
- *    includeFinished: true,
- *  })
- */
 export const subscribeToSchedule = (
   callback: (data: ScheduleItem[]) => void,
   options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
@@ -52,7 +39,6 @@ export const subscribeToSchedule = (
   const handler = (snapshot: DataSnapshot) => {
     const raw = snapshot.val();
 
-    // 统一成数组，兼容对象/数组两种形态，并过滤掉空值
     const list: any[] = raw
       ? Array.isArray(raw)
         ? raw.filter(Boolean)
@@ -60,16 +46,13 @@ export const subscribeToSchedule = (
       : [];
 
     const filtered: ScheduleItem[] = list.filter((item: any) => {
-      // 1) 过滤 Finished（除非放开）
       if (!includeFinished) {
         const rp = String(item?.["Regent Production"] ?? "").toLowerCase();
         if (rp === "finished" || rp === "finish") return false;
       }
-      // 2) 必须有 Chassis（除非放开）
       if (!includeNoChassis) {
         if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
       }
-      // 3) 必须有 Customer（除非放开）
       if (!includeNoCustomer) {
         if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
       }
@@ -84,7 +67,6 @@ export const subscribeToSchedule = (
 };
 
 /** -------------------- spec_plan -------------------- */
-/** 同时订阅 spec_plan / specPlan / specplan，任一路径有数据就回调（与 DealerPortal 对齐） */
 export const subscribeToSpecPlan = (
   callback: (data: SpecPlan | Record<string, any> | any[]) => void
 ) => {
@@ -107,7 +89,6 @@ export const subscribeToSpecPlan = (
 };
 
 /** -------------------- dateTrack -------------------- */
-/** 同时订阅 dateTrack 与 datetrack，任一路径有数据就回调（兼容大小写差异） */
 export const subscribeToDateTrack = (
   callback: (data: DateTrack | Record<string, any> | any[]) => void
 ) => {
@@ -130,7 +111,6 @@ export const subscribeToDateTrack = (
 };
 
 /** -------------------- Dealer Config Functions -------------------- */
-// 订阅所有经销商配置
 export const subscribeAllDealerConfigs = (callback: (data: any) => void) => {
   const configsRef = ref(database, "dealerConfigs");
 
@@ -143,7 +123,6 @@ export const subscribeAllDealerConfigs = (callback: (data: any) => void) => {
   return () => off(configsRef, "value", handler);
 };
 
-// 订阅单个经销商配置
 export const subscribeDealerConfig = (dealerSlug: string, callback: (data: any) => void) => {
   const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
 
@@ -156,7 +135,6 @@ export const subscribeDealerConfig = (dealerSlug: string, callback: (data: any) 
   return () => off(configRef, "value", handler);
 };
 
-// 设置经销商配置
 export const setDealerConfig = async (dealerSlug: string, config: any) => {
   const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
   await set(configRef, {
@@ -166,30 +144,24 @@ export const setDealerConfig = async (dealerSlug: string, config: any) => {
   });
 };
 
-// 删除经销商配置
 export const removeDealerConfig = async (dealerSlug: string) => {
   const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
   await remove(configRef);
 };
 
-// 设置PowerBI URL
 export const setPowerbiUrl = async (dealerSlug: string, url: string) => {
   const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
   await set(urlRef, url);
-
-  // 同时更新 updatedAt
   const updatedAtRef = ref(database, `dealerConfigs/${dealerSlug}/updatedAt`);
   await set(updatedAtRef, new Date().toISOString());
 };
 
-// 获取PowerBI URL
 export const getPowerbiUrl = async (dealerSlug: string): Promise<string | null> => {
   const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
   const snapshot = await get(urlRef);
   return snapshot.exists() ? snapshot.val() : null;
 };
 
-// 生成随机6位字符串
 export function generateRandomCode(): string {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let result = "";
@@ -199,13 +171,11 @@ export function generateRandomCode(): string {
   return result;
 }
 
-// 将dealer名称转换为slug
 export function dealerNameToSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-/** -------------------- 工具函数（保留你的排序/格式化） -------------------- */
-// 解析 dd/mm/yyyy 格式的日期
+/** -------------------- utils -------------------- */
 const parseDDMMYYYY = (dateStr: string | null): Date => {
   if (!dateStr || dateStr.trim() === "") return new Date(9999, 11, 31);
   try {
@@ -275,10 +245,6 @@ export function subscribeToReallocation(cb: (value: any) => void) {
 }
 
 /** -------------------- PGI / Yard Stock -------------------- */
-/**
- * 订阅 PGI 记录（上路在途）
- * 结构：pgirecord/{chassis} = { pgidate: 'dd/mm/yyyy', dealer: string|null, model: string|null, customer: string|null }
- */
 export function subscribeToPGIRecords(cb: (value: Record<string, any>) => void) {
   const r = ref(database, "pgirecord");
   const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
@@ -286,10 +252,6 @@ export function subscribeToPGIRecords(cb: (value: Record<string, any>) => void) 
   return () => off(r, "value", handler);
 }
 
-/**
- * 订阅 Yard Stock（按经销商分组）
- * 结构：yardstock/{dealerSlug}/{chassis} = { receivedAt, from_pgidate, dealer, model, customer, manual? }
- */
 export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<string, any>) => void) {
   const r = ref(database, `yardstock/${dealerSlug}`);
   const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
@@ -297,11 +259,6 @@ export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<stri
   return () => off(r, "value", handler);
 }
 
-/**
- * 将 PGI 车辆接收入 Yard
- * - 写入 yardstock/{dealerSlug}/{chassis}
- * - 移除 pgirecord/{chassis}
- */
 export async function receiveChassisToYard(
   dealerSlug: string,
   chassis: string,
@@ -317,14 +274,10 @@ export async function receiveChassisToYard(
     customer: pgiData?.customer ?? null,
   });
 
-  // 从在途记录中删除该底盘
   const pgiRef = ref(database, `pgirecord/${chassis}`);
   await remove(pgiRef);
 }
 
-/**
- * 手动添加一个 Chassis 到 Yard（不依赖 PGI，其他字段留空）
- */
 export async function addManualChassisToYard(dealerSlug: string, chassis: string) {
   const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   const now = new Date().toISOString();
@@ -337,20 +290,12 @@ export async function addManualChassisToYard(dealerSlug: string, chassis: string
   });
 }
 
-/**
- * 从 Yard 发车（派送）
- * - 删除 yardstock/{dealerSlug}/{chassis}
- */
 export async function dispatchFromYard(dealerSlug: string, chassis: string) {
   const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   await remove(yardRef);
 }
 
 /** -------------------- Product Registration -------------------- */
-/**
- * 保存经销商协助的产品登记数据
- * Realtime Database 路径：registrations/{dealerSlug}/{chassis}
- */
 export async function saveProductRegistration(
   dealerSlug: string,
   chassis: string,
@@ -373,4 +318,34 @@ export async function saveProductRegistration(
 ) {
   const targetRef = ref(database, `registrations/${dealerSlug}/${chassis}`);
   await set(targetRef, data);
+}
+
+/** -------------------- Handover -------------------- */
+/**
+ * Save handover data under handover/{dealerSlug}/{chassis} and remove the unit from yardstock.
+ */
+export async function saveHandover(
+  dealerSlug: string,
+  chassis: string,
+  data: {
+    chassis: string;
+    model: string | null;
+    dealerName: string | null;
+    dealerSlug: string | null;
+    handoverAt: string;
+    customer: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      address: string;
+    };
+    createdAt: string;
+    source: "dealer_assist_form";
+  }
+) {
+  const targetRef = ref(database, `handover/${dealerSlug}/${chassis}`);
+  await set(targetRef, data);
+  const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
+  await remove(yardRef);
 }
