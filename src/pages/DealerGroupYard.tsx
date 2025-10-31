@@ -1,6 +1,6 @@
-// src/pages/DealerYard.tsx
+// src/pages/DealerGroupYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,16 +11,19 @@ import {
   subscribeToYardStock,
   receiveChassisToYard,
   subscribeToSchedule,
+  subscribeDealerConfig,
+  subscribeAllDealerConfigs,
   addManualChassisToYard,
+  dispatchFromYard,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
+import { isDealerGroup } from "@/types/dealer";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import * as XLSX from "xlsx";
 import {
   PieChart, Pie, Cell, Tooltip as ReTooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip,
 } from "recharts";
-import { CLASSIFICATION_XLSX_BASE64 } from "@/lib/classification_base64";
 
 const toStr = (v: any) => String(v ?? "");
 const lower = (v: any) => toStr(v).toLowerCase();
@@ -172,17 +175,14 @@ function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
   );
 }
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
+export default function DealerGroupYard() {
+  const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
+  const navigate = useNavigate();
+  const groupSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
-export default function DealerYard() {
-  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
-  const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+  const [dealerConfig, setDealerConfig] = useState<any>(null);
+  const [allDealerConfigs, setAllDealerConfigs] = useState<any>({});
+  const [configLoading, setConfigLoading] = useState(true);
 
   const [pgi, setPgi] = useState<Record<string, PGIRecord>>({});
   const [yard, setYard] = useState<Record<string, any>>({});
@@ -196,49 +196,73 @@ export default function DealerYard() {
   const [manualChassis, setManualChassis] = useState("");
   const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
 
-  // Classification analysis
+  // Classification analysis (always Stock)
   const [classMap, setClassMap] = useState<Record<string, string>>({});
-  const [analysisType, setAnalysisType] = useState<"Stock" | "Customer">("Stock");
   const [hidePie, setHidePie] = useState(false);
   const [hideDetails, setHideDetails] = useState(false);
   const [hideRanges, setHideRanges] = useState(false);
   const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    const unsubConfig = subscribeDealerConfig(groupSlug, (cfg) => {
+      setDealerConfig(cfg);
+      setConfigLoading(false);
+    });
+    const unsubAll = subscribeAllDealerConfigs((data) => setAllDealerConfigs(data || {}));
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
     const unsubSched = subscribeToSchedule((data) => setSchedule(Array.isArray(data) ? data : []), {
       includeNoChassis: true,
       includeNoCustomer: true,
       includeFinished: true,
     });
-    let unsubYard: (() => void) | undefined;
-    if (dealerSlug) {
-      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
-    }
     return () => {
+      unsubConfig?.();
+      unsubAll?.();
       unsubPGI?.();
-      unsubYard?.();
       unsubSched?.();
     };
-  }, [dealerSlug]);
+  }, [groupSlug]);
+
+  const includedDealerSlugs = useMemo(() => {
+    if (!dealerConfig || !isDealerGroup(dealerConfig)) return [groupSlug];
+    return dealerConfig.includedDealers || [];
+  }, [dealerConfig, groupSlug]);
 
   useEffect(() => {
-    // Load classification mapping from embedded Excel (base64)
-    try {
-      const buf = base64ToArrayBuffer(CLASSIFICATION_XLSX_BASE64);
-      const wb = XLSX.read(buf, { type: "array" });
-      const first = wb.Sheets[wb.SheetNames[0]];
-      const json: any[] = XLSX.utils.sheet_to_json(first);
-      const map: Record<string, string> = {};
-      json.forEach((row) => {
-        const model = toStr(row.Model || row.model || row["MODEL"]).trim().toLowerCase();
-        const cls = toStr(row.Classification || row.classification || row["CLASSIFICATION"]).trim();
-        if (model) map[model] = cls || "Unknown";
-      });
-      setClassMap(map);
-    } catch (e) {
-      console.warn("Failed to parse embedded classification excel:", e);
+    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !selectedDealerSlug) {
+      const first = includedDealerSlugs[0];
+      if (first) navigate(`/dealergroup/${rawDealerSlug}/${first}/yard`, { replace: true });
     }
+  }, [configLoading, dealerConfig, selectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
+
+  const currentDealerSlug = selectedDealerSlug || includedDealerSlugs[0] || groupSlug;
+
+  useEffect(() => {
+    if (!currentDealerSlug) return;
+    const unsubYard = subscribeToYardStock(currentDealerSlug, (data) => setYard(data || {}));
+    return () => unsubYard?.();
+  }, [currentDealerSlug]);
+
+  useEffect(() => {
+    // Load classification mapping from Excel (public asset)
+    (async () => {
+      try {
+        const resp = await fetch("/assets/data/caravan_classification_3.xlsx");
+        const buf = await resp.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const first = wb.Sheets[wb.SheetNames[0]];
+        const json: any[] = XLSX.utils.sheet_to_json(first);
+        const map: Record<string, string> = {};
+        json.forEach((row) => {
+          const model = toStr(row.Model || row.model || row["MODEL"]).trim().toLowerCase();
+          const cls = toStr(row.Classification || row.classification || row["CLASSIFICATION"]).trim();
+          if (model) map[model] = cls || "Unknown";
+        });
+        setClassMap(map);
+      } catch (e) {
+        console.warn("Failed to load classification excel:", e);
+      }
+    })();
   }, []);
 
   const scheduleByChassis = useMemo(() => {
@@ -252,10 +276,8 @@ export default function DealerYard() {
 
   const onTheRoadAll = useMemo(() => {
     const entries = Object.entries(pgi || {});
-    return entries
-      .filter(([_, rec]) => slugifyDealerName(rec?.dealer || "") === dealerSlug)
-      .map(([chassis, rec]) => ({ chassis, ...rec }));
-  }, [pgi, dealerSlug]);
+    return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
+  }, [pgi]);
 
   const onTheRoadWeekly = useMemo(() => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7)), [onTheRoadAll]);
 
@@ -273,11 +295,27 @@ export default function DealerYard() {
     });
   }, [yard, scheduleByChassis]);
 
-  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
+  const includedDealerNames = useMemo(() => {
+    if (!dealerConfig || !isDealerGroup(dealerConfig)) return null;
+    return includedDealerSlugs.map((slug: string) => {
+      const cfg = allDealerConfigs[slug];
+      return { slug, name: cfg?.name || prettifyDealerName(slug) };
+    });
+  }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
+
+  const dealerDisplayName = useMemo(() => {
+    if (selectedDealerSlug) {
+      const selectedConfig = allDealerConfigs[selectedDealerSlug];
+      if (selectedConfig?.name) return selectedConfig.name;
+      return prettifyDealerName(selectedDealerSlug);
+    }
+    if (dealerConfig?.name) return dealerConfig.name;
+    return prettifyDealerName(groupSlug);
+  }, [selectedDealerSlug, allDealerConfigs, dealerConfig, groupSlug]);
 
   const handleReceive = async (chassis: string, rec: PGIRecord) => {
     try {
-      await receiveChassisToYard(dealerSlug, chassis, rec);
+      await receiveChassisToYard(currentDealerSlug, chassis, rec);
     } catch (e) {
       console.error("receive failed", e);
     }
@@ -290,7 +328,7 @@ export default function DealerYard() {
       return;
     }
     try {
-      await addManualChassisToYard(dealerSlug, ch);
+      await addManualChassisToYard(currentDealerSlug, ch);
       setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
       setManualChassis("");
     } catch (e) {
@@ -301,8 +339,11 @@ export default function DealerYard() {
 
   // KPI cards
   const yardTotal = yardList.length;
-  // Keep previous data approach: count yard entries originated from PGI (do not change data logic)
-  const factoryPGIReceived = useMemo(() => yardList.filter((x) => x.fromPGI).length, [yardList]);
+  // Factory PGI (received in Yard): count all pgirecord with dealer Frankston
+  const factoryPGIReceived = useMemo(() => {
+    const FRANKSTON_SLUG = "frankston";
+    return onTheRoadAll.filter((x) => slugifyDealerName(x.dealer) === FRANKSTON_SLUG).length;
+  }, [onTheRoadAll]);
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
 
@@ -333,9 +374,9 @@ export default function DealerYard() {
   }, [onTheRoadAll]);
   const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
 
-  // Classification analysis
+  // Classification analysis (Stock only)
   const classificationCounts = useMemo(() => {
-    const list = yardList.filter((x) => x.type === analysisType);
+    const list = yardList.filter((x) => x.type === "Stock");
     const counts: Record<string, number> = {};
     list.forEach((x) => {
       const key = classMap[toStr(x.model).trim().toLowerCase()] || "Unknown";
@@ -346,11 +387,10 @@ export default function DealerYard() {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
     return entries;
-  }, [yardList, classMap, analysisType, hiddenClasses]);
+  }, [yardList, classMap, hiddenClasses]);
 
   const top10 = useMemo(() => classificationCounts.slice(0, 10), [classificationCounts]);
 
-  // Per classification pie: stock vs customer breakdown
   const classificationBreakdown = useMemo(() => {
     const stats: Record<string, { stock: number; customer: number }> = {};
     yardList.forEach((x) => {
@@ -376,7 +416,6 @@ export default function DealerYard() {
 
   const COLORS = ["#38bdf8", "#0ea5e9", "#6366f1", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#a3e635"];
 
-  // Range buckets by days in yard
   const rangeBuckets = useMemo(() => {
     const ranges = [
       { label: "0–7d", min: 0, max: 7 },
@@ -386,19 +425,23 @@ export default function DealerYard() {
       { label: "61–90d", min: 61, max: 90 },
       { label: ">90d", min: 91, max: Infinity },
     ];
-    const items = ranges.map((r) => ({
+    return ranges.map((r) => ({
       label: r.label,
       count: yardList.filter((x) => x.daysInYard >= r.min && x.daysInYard <= r.max).length,
     }));
-    return items;
   }, [yardList]);
 
-  const openHandover = (row: { chassis: string; model?: string | null }) => {
+  const openHandover = async (row: { chassis: string; model?: string | null }) => {
+    try {
+      await dispatchFromYard(currentDealerSlug, row.chassis);
+    } catch (e) {
+      console.error("Failed to remove from yard immediately:", e);
+    }
     setHandoverData({
       chassis: row.chassis,
       model: row.model,
       dealerName: dealerDisplayName,
-      dealerSlug,
+      dealerSlug: currentDealerSlug,
       handoverAt: new Date().toISOString(),
     });
     setHandoverOpen(true);
@@ -420,13 +463,15 @@ export default function DealerYard() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
+        isGroup={isDealerGroup(dealerConfig)}
+        includedDealers={includedDealerNames}
       />
       <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
           <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 via-blue-700 to-sky-600">
             Yard Inventory & On The Road — {dealerDisplayName}
           </h1>
-          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
+          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for the selected dealer</p>
         </header>
 
         {/* KPI Cards */}
@@ -449,29 +494,40 @@ export default function DealerYard() {
           </Card>
         </div>
 
-        {/* Classification Analysis */}
+        {/* Classification Analysis (Stock only) */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Classification Analysis — {analysisType}</CardTitle>
+            <CardTitle>Classification Analysis — Stock</CardTitle>
             <div className="flex gap-2">
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHidePie((v) => !v)}>{hidePie ? "Show Pie" : "Hide Pie"}</Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideDetails((v) => !v)}>{hideDetails ? "Show Details" : "Hide Details"}</Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideRanges((v) => !v)}>{hideRanges ? "Show Ranges Chart" : "Hide Ranges Chart"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHidePie((v) => !v)}>
+                {hidePie ? "Show Pie" : "Hide Pie"}
+              </Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideDetails((v) => !v)}>
+                {hideDetails ? "Show Details" : "Hide Details"}
+              </Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideRanges((v) => !v)}>
+                {hideRanges ? "Show Ranges Chart" : "Hide Ranges Chart"}
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Button variant={analysisType === "Stock" ? "default" : "secondary"} className={analysisType === "Stock" ? "bg-sky-600 hover:bg-sky-700" : ""} onClick={() => setAnalysisType("Stock")}>View Stock</Button>
-              <Button variant={analysisType === "Customer" ? "default" : "secondary"} className={analysisType === "Customer" ? "bg-indigo-600 hover:bg-indigo-700" : ""} onClick={() => setAnalysisType("Customer")}>View Customer</Button>
-            </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {!hidePie && (
                 <div className="h-56 rounded-lg border bg-white/70">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={classificationCounts} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={3} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                        {classificationCounts.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                      <Pie
+                        data={classificationCounts}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={90}
+                        paddingAngle={3}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {classificationCounts.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
                       </Pie>
                       <ReTooltip />
                       <Legend />
@@ -491,39 +547,23 @@ export default function DealerYard() {
                       </div>
                     ))}
                   </div>
+
                   <div className="text-sm font-medium mt-2">Hide/Show Classifications</div>
                   <div className="flex flex-wrap gap-2">
                     {classificationCounts.map((c, idx) => (
-                      <Button key={idx} size="sm" variant={hiddenClasses.has(c.name) ? "secondary" : "outline"} className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => toggleHiddenClass(c.name)}>
+                      <Button
+                        key={idx}
+                        size="sm"
+                        variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
+                        className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
+                        onClick={() => toggleHiddenClass(c.name)}
+                      >
                         {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
                       </Button>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Per-classification pies: Stock vs Customer */}
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Classification Breakdown by Type</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {classificationBreakdown.map((item, idx) => (
-                  <Card key={idx} className="border-slate-200 bg-white/70">
-                    <CardHeader><CardTitle className="text-sm">{item.name}</CardTitle></CardHeader>
-                    <CardContent className="h-40">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={item.data} dataKey="value" nameKey="name" innerRadius={30} outerRadius={60} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                            <Cell fill="#3b82f6" />
-                            <Cell fill="#10b981" />
-                          </Pie>
-                          <ReTooltip />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
             </div>
 
             {!hideRanges && (
@@ -548,7 +588,7 @@ export default function DealerYard() {
           </CardHeader>
           <CardContent>
             {onTheRoadWeekly.length === 0 ? (
-              <div className="text-sm text-slate-500">No PGI records in the last 7 days for this dealer.</div>
+              <div className="text-sm text-slate-500">No PGI records in the last 7 days.</div>
             ) : (
               <div className="rounded-lg border overflow-auto">
                 <Table>
@@ -663,7 +703,7 @@ export default function DealerYard() {
           </Card>
         </div>
 
-        {/* Product Registration & Handover Modal */}
+        {/* Handover Modal */}
         <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
       </main>
     </div>
