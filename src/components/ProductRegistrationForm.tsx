@@ -5,9 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { saveHandover } from "@/lib/firebase";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import { saveProductRegistration, saveHandover } from "@/lib/firebase";
 
 type RegistrationData = {
   chassis: string;
@@ -24,7 +22,7 @@ type Props = {
 };
 
 export default function ProductRegistrationForm({ open, onOpenChange, initial }: Props) {
-  const [step, setStep] = useState<"assist" | "email">("assist");
+  const [step, setStep] = useState<"choose" | "assist" | "email">("choose");
   const [emailTo, setEmailTo] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -55,7 +53,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
   }, [data.handoverAt]);
 
   const resetStates = () => {
-    setStep("assist");
+    setStep("choose");
     setEmailTo("");
     setFirstName("");
     setLastName("");
@@ -70,31 +68,57 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     onOpenChange(false);
   };
 
-  const handleDownloadPDF = async () => {
+  const handlePrint = () => {
     const el = printRef.current;
     if (!el) return;
-    const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "pt", "a4");
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pageWidth - 48; // 24px margin each side
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    pdf.addImage(imgData, "PNG", 24, 24, imgWidth, Math.min(imgHeight, pageHeight - 48));
-    pdf.save(`handover_${data.chassis}.pdf`);
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1000,height=800");
+    if (!printWindow) return;
+    const styles = `
+      <style>
+        body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding: 32px; color: #0f172a; background: #fff; }
+        h1 { font-size: 22px; margin: 0 0 12px 0; letter-spacing: 0.2px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+        .label { font-size: 12px; color: #475569; letter-spacing: 0.3px; }
+        .value { font-size: 14px; font-weight: 600; color: #0f172a; }
+        .section { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+      </style>
+    `;
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8" />${styles}</head><body>${el.innerHTML}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
   };
 
-  const canSubmit = () =>
-    Boolean(firstName && lastName && custEmail && phone && address && (data.dealerSlug || "") && data.chassis);
+  const canSubmit = () => Boolean(firstName && lastName && custEmail && phone && address);
 
   const handleSubmitAssist = async () => {
     if (!canSubmit()) {
-      setSubmitMsg("Please complete all required fields.");
+      setSubmitMsg("Please complete all customer fields before submitting.");
       return;
     }
     setSubmitting(true);
     setSubmitMsg(null);
     try {
+      const regData = {
+        chassis: data.chassis,
+        model: data.model || null,
+        dealerName: data.dealerName || null,
+        dealerSlug: data.dealerSlug || null,
+        handoverAt: data.handoverAt,
+        customer: {
+          firstName,
+          lastName,
+          email: custEmail,
+          phone,
+          address,
+        },
+        createdAt: new Date().toISOString(),
+        method: "dealer_assist" as const,
+      };
+      await saveProductRegistration((data.dealerSlug || "") as string, data.chassis, regData);
+
+      // Save to handover and remove from yard
       const handoverData = {
         chassis: data.chassis,
         model: data.model || null,
@@ -113,102 +137,99 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
       };
       await saveHandover((data.dealerSlug || "") as string, data.chassis, handoverData);
 
-      setSubmitMsg("Submitted successfully.");
+      setSubmitMsg("Handover saved and removed from Yard.");
       setSubmitting(false);
       resetAndClose();
     } catch (e) {
       console.error(e);
-      setSubmitMsg("Submit failed. Please try again.");
+      setSubmitMsg("Failed to save. Please try again.");
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => (v ? setStep("assist") : resetAndClose())}>
+    <Dialog open={open} onOpenChange={(v) => (v ? setStep("choose") : resetAndClose())}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
-            Professional Handover Form
+          <DialogTitle className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
+            Product Registration & Handover
           </DialogTitle>
         </DialogHeader>
 
-        {step === "assist" && (
-          <div className="space-y-5">
-            <div ref={printRef} className="rounded-xl border bg-white/80 p-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Dealer</div>
-                  <div className="text-sm font-semibold text-slate-900">{data.dealerName || "-"}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Handover Date</div>
-                  <div className="text-sm font-semibold text-slate-900">{handoverDateStr}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Chassis</div>
-                  <div className="text-sm font-semibold text-slate-900">{data.chassis}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Model</div>
-                  <div className="text-sm font-semibold text-slate-900">{data.model || "-"}</div>
-                </div>
-              </div>
+        {step === "choose" && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">Choose registration method: send an email for customer self-service, or dealer-assisted completion.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Card className="hover:shadow-md transition backdrop-blur-sm bg-white/80">
+                <CardHeader><CardTitle className="text-sm">Send Email to Customer</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  <Label htmlFor="emailTo">Customer Email</Label>
+                  <Input id="emailTo" placeholder="customer@example.com" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} />
+                  <p className="text-xs text-slate-500">We can integrate email sending later.</p>
+                  <Button className="bg-sky-600 hover:bg-sky-700" disabled={!emailTo} onClick={() => setStep("email")}>Next</Button>
+                </CardContent>
+              </Card>
 
-              <div className="mt-4 pt-4 border-t">
-                <div className="text-base font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
-                  Customer Information
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-2">
-                  <div>
-                    <Label>First Name</Label>
-                    <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label>Last Name</Label>
-                    <Input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label>Email</Label>
-                    <Input type="email" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label>Phone Number</Label>
-                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} required />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label>Home Address</Label>
-                    <Input value={address} onChange={(e) => setAddress(e.target.value)} required />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleDownloadPDF}>
-                Download PDF
-              </Button>
-              <Button
-                className="bg-indigo-600 hover:bg-indigo-700"
-                disabled={submitting || !canSubmit()}
-                onClick={handleSubmitAssist}
-              >
-                {submitting ? "Submitting..." : "Submit"}
-              </Button>
-              {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
+              <Card className="hover:shadow-md transition backdrop-blur-sm bg-white/80">
+                <CardHeader><CardTitle className="text-sm">Dealer-Assisted Registration</CardTitle></CardHeader>
+                <CardContent>
+                  <p className="text-xs text-slate-500">Complete the registration with the customer on-site.</p>
+                  <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setStep("assist")}>Start</Button>
+                </CardContent>
+              </Card>
             </div>
           </div>
         )}
 
         {step === "email" && (
           <div className="space-y-3">
+            <p className="text-sm text-slate-600">Prepared to send registration invite to:</p>
             <div className="text-sm font-medium">{emailTo}</div>
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setStep("assist")}>
-                Back
+              <Button variant="secondary" onClick={() => setStep("choose")}>Back</Button>
+              <Button className="bg-sky-600 hover:bg-sky-700" onClick={resetAndClose}>Done</Button>
+            </div>
+          </div>
+        )}
+
+        {step === "assist" && (
+          <div className="space-y-4">
+            <div ref={printRef} className="rounded-lg border bg-white/70 p-4">
+              <h1 className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">Product Registration</h1>
+              <div className="grid">
+                <div><div className="label">Dealer</div><div className="value">{data.dealerName || "-"}</div></div>
+                <div><div className="label">Handover Date</div><div className="value">{handoverDateStr}</div></div>
+                <div><div className="label">Chassis</div><div className="value">{data.chassis}</div></div>
+                <div><div className="label">Model</div><div className="value">{data.model || "-"}</div></div>
+              </div>
+
+              <div className="section">
+                <h1 className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">Customer Information</h1>
+                <div className="grid">
+                  <div><div className="label">First Name</div><div className="value">{firstName || "-"}</div></div>
+                  <div><div className="label">Last Name</div><div className="value">{lastName || "-"}</div></div>
+                  <div><div className="label">Email</div><div className="value">{custEmail || "-"}</div></div>
+                  <div><div className="label">Phone</div><div className="value">{phone || "-"}</div></div>
+                  <div style={{ gridColumn: "1 / -1" }}><div className="label">Home Address</div><div className="value">{address || "-"}</div></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>First Name</Label><Input value={firstName} onChange={(e) => setFirstName(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Last Name</Label><Input value={lastName} onChange={(e) => setLastName(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Phone Number</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+              <div className="space-y-2 md:col-span-2"><Label>Home Address</Label><Input value={address} onChange={(e) => setAddress(e.target.value)} /></div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setStep("choose")}>Back</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handlePrint}>Print PDF</Button>
+              <Button className="bg-indigo-600 hover:bg-indigo-700" disabled={submitting || !canSubmit()} onClick={handleSubmitAssist}>
+                {submitting ? "Saving..." : "Save & Finalize Handover"}
               </Button>
-              <Button className="bg-sky-600 hover:bg-sky-700" onClick={resetAndClose}>
-                Done
-              </Button>
+              {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
             </div>
           </div>
         )}
