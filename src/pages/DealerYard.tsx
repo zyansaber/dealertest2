@@ -172,6 +172,58 @@ function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
   );
 }
 
+// Simple inline SVG icons to avoid extra dependencies
+const IconImg = () => <img src="/assets/icons/image.png" alt="img" className="w-5 h-5" />;
+const IconClipboard = () => <img src="/assets/icons/clipboard.png" alt="clip" className="w-5 h-5" />;
+const IconRuler = () => (
+  <svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M3 8l5-5 13 13-5 5L3 8z" stroke="currentColor" strokeWidth="2"/></svg>
+);
+const IconCog = () => (
+  <svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" strokeWidth="2"/><path d="M19.4 15a7.97 7.97 0 00.4-3 7.97 7.97 0 00-.4-3l2.1-1.6-2-3.4-2.6 1A8.09 8.09 0 0014 1.6L13 0h-2l-1 1.6A8.09 8.09 0 007.1 2.6l-2.6-1-2 3.4L4.6 6a7.97 7.97 0 00-.4 3 7.97 7.97 0 00.4 3L2.5 16.6l2 3.4 2.6-1A8.09 8.09 0 0010 22.4l1 1.6h2l1-1.6a8.09 8.09 0 002.9-1l2.6 1 2-3.4L19.4 15z" stroke="currentColor" strokeWidth="2"/></svg>
+);
+const IconLayout = () => (
+  <svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" stroke="currentColor" strokeWidth="2"/><path d="M3 9h18M9 21V9" stroke="currentColor" strokeWidth="2"/></svg>
+);
+const IconCar = () => (
+  <svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M3 16l2-6 3-3h8l3 3 2 6H3z" stroke="currentColor" strokeWidth="2"/><circle cx="7" cy="17" r="2" stroke="currentColor" strokeWidth="2"/><circle cx="17" cy="17" r="2" stroke="currentColor" strokeWidth="2"/></svg>
+);
+
+// Excel rows type
+type ExcelRow = {
+  Model?: string;
+  "Model Range"?: string;
+  Function?: string;
+  Layout?: string;
+  Height?: string | number;
+  Length?: string | number;
+  Axle?: string | number;
+  "TOP 10"?: string | number;
+};
+
+function bucketNumber(value: number | null | undefined, buckets: { label: string; min: number; max: number }[]) {
+  if (value == null || isNaN(value)) return null;
+  for (const b of buckets) {
+    if (value >= b.min && value <= b.max) return b.label;
+  }
+  return null;
+}
+function parseNum(val: any): number | null {
+  if (val == null) return null;
+  const s = String(val).replace(/[^\d\.]/g, "");
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function countBy(rows: ExcelRow[], key: keyof ExcelRow) {
+  const map: Record<string, number> = {};
+  rows.forEach((r) => {
+    const raw = r[key];
+    const k = toStr(raw).trim();
+    if (!k) return;
+    map[k] = (map[k] || 0) + 1;
+  });
+  return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+}
+
 export default function DealerYard() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
@@ -188,12 +240,9 @@ export default function DealerYard() {
   const [manualChassis, setManualChassis] = useState("");
   const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
 
-  // Classification analysis (always Stock)
-  const [classMap, setClassMap] = useState<Record<string, string>>({});
-  const [hidePie, setHidePie] = useState(false);
-  const [hideDetails, setHideDetails] = useState(false);
-  const [hideRanges, setHideRanges] = useState(false);
-  const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(new Set());
+  // Excel insights
+  const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
+  const [showInsights, setShowInsights] = useState(true);
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -214,23 +263,17 @@ export default function DealerYard() {
   }, [dealerSlug]);
 
   useEffect(() => {
-    // Load classification mapping from Excel (public asset)
+    // Load latest Excel uploaded asset for insights
     (async () => {
       try {
         const resp = await fetch("/assets/data/caravan_classification_3.xlsx");
         const buf = await resp.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
         const first = wb.Sheets[wb.SheetNames[0]];
-        const json: any[] = XLSX.utils.sheet_to_json(first);
-        const map: Record<string, string> = {};
-        json.forEach((row) => {
-          const model = toStr(row.Model || row.model || row["MODEL"]).trim().toLowerCase();
-          const cls = toStr(row.Classification || row.classification || row["CLASSIFICATION"]).trim();
-          if (model) map[model] = cls || "Unknown";
-        });
-        setClassMap(map);
+        const json: ExcelRow[] = XLSX.utils.sheet_to_json(first);
+        setExcelRows(json || []);
       } catch (e) {
-        console.warn("Failed to load classification excel:", e);
+        console.warn("Failed to load excel(3) for insights:", e);
       }
     })();
   }, []);
@@ -246,8 +289,7 @@ export default function DealerYard() {
 
   const onTheRoadAll = useMemo(() => {
     const entries = Object.entries(pgi || {});
-    return entries
-      .map(([chassis, rec]) => ({ chassis, ...rec }));
+    return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
   const onTheRoadWeekly = useMemo(() => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7)), [onTheRoadAll]);
@@ -328,50 +370,44 @@ export default function DealerYard() {
   }, [onTheRoadAll]);
   const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
 
-  // Classification analysis (Stock only)
-  const classificationCounts = useMemo(() => {
-    const list = yardList.filter((x) => x.type === "Stock");
-    const counts: Record<string, number> = {};
-    list.forEach((x) => {
-      const key = classMap[toStr(x.model).trim().toLowerCase()] || "Unknown";
-      counts[key] = (counts[key] || 0) + 1;
-    });
-    const entries = Object.entries(counts)
-      .filter(([k]) => !hiddenClasses.has(k))
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-    return entries;
-  }, [yardList, classMap, hiddenClasses]);
+  // Excel insights data
+  const modelCounts = useMemo(() => countBy(excelRows, "Model"), [excelRows]);
+  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
+  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
+  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
+  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
 
-  const top10 = useMemo(() => classificationCounts.slice(0, 10), [classificationCounts]);
-
-  const toggleHiddenClass = (name: string) => {
-    setHiddenClasses((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
-
-  const COLORS = ["#38bdf8", "#0ea5e9", "#6366f1", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#a3e635"];
-
-  // Range buckets by days in yard
-  const rangeBuckets = useMemo(() => {
-    const ranges = [
-      { label: "0–7d", min: 0, max: 7 },
-      { label: "8–14d", min: 8, max: 14 },
-      { label: "15–30d", min: 15, max: 30 },
-      { label: "31–60d", min: 31, max: 60 },
-      { label: "61–90d", min: 61, max: 90 },
-      { label: ">90d", min: 91, max: Infinity },
+  const heightBuckets = useMemo(() => {
+    const buckets = [
+      { label: "<=2.7m", min: 0, max: 2.7 },
+      { label: "2.71–3.0m", min: 2.71, max: 3.0 },
+      { label: ">=3.01m", min: 3.01, max: 100 },
     ];
-    const items = ranges.map((r) => ({
-      label: r.label,
-      count: yardList.filter((x) => x.daysInYard >= r.min && x.daysInYard <= r.max).length,
-    }));
-    return items;
-  }, [yardList]);
+    const map: Record<string, number> = {};
+    excelRows.forEach((r) => {
+      const num = parseNum(r.Height);
+      const b = bucketNumber(num, buckets);
+      if (!b) return;
+      map[b] = (map[b] || 0) + 1;
+    });
+    return buckets.map((b) => ({ label: b.label, count: map[b.label] || 0 }));
+  }, [excelRows]);
+
+  const lengthBuckets = useMemo(() => {
+    const buckets = [
+      { label: "<=5m", min: 0, max: 5.0 },
+      { label: "5.01–7.0m", min: 5.01, max: 7.0 },
+      { label: ">=7.01m", min: 7.01, max: 100 },
+    ];
+    const map: Record<string, number> = {};
+    excelRows.forEach((r) => {
+      const num = parseNum(r.Length);
+      const b = bucketNumber(num, buckets);
+      if (!b) return;
+      map[b] = (map[b] || 0) + 1;
+    });
+    return buckets.map((b) => ({ label: b.label, count: map[b.label] || 0 }));
+  }, [excelRows]);
 
   const openHandover = async (row: { chassis: string; model?: string | null }) => {
     // Immediately remove the unit from Yard table
@@ -396,6 +432,8 @@ export default function DealerYard() {
     if (isNaN(d.getTime())) return "-";
     return d.toLocaleDateString();
   };
+
+  const COLORS = ["#38bdf8", "#0ea5e9", "#6366f1", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#a3e635"];
 
   return (
     <div className="flex min-h-screen">
@@ -422,7 +460,7 @@ export default function DealerYard() {
             <CardContent><div className="text-2xl font-bold">{yardTotal}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Factory PGI (received in Yard)</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">Factory PGI (Frankston)</CardTitle></CardHeader>
             <CardContent><div className="text-2xl font-bold">{factoryPGIReceived}</div></CardContent>
           </Card>
           <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
@@ -435,91 +473,131 @@ export default function DealerYard() {
           </Card>
         </div>
 
-        {/* Classification Analysis (Stock only) */}
+        {/* Excel Insights: One chart per column, with icons */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Classification Analysis — Stock</CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHidePie((v) => !v)}>
-                {hidePie ? "Show Pie" : "Hide Pie"}
-              </Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideDetails((v) => !v)}>
-                {hideDetails ? "Show Details" : "Hide Details"}
-              </Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setHideRanges((v) => !v)}>
-                {hideRanges ? "Show Ranges Chart" : "Hide Ranges Chart"}
-              </Button>
-            </div>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <IconClipboard /> Excel Insights (Model / Range / Function / Layout / Height / Length / Axle)
+            </CardTitle>
+            <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowInsights((v) => !v)}>
+              {showInsights ? "Hide" : "Show"}
+            </Button>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {!hidePie && (
-                <div className="h-56 rounded-lg border bg-white/70">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={classificationCounts}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={50}
-                        outerRadius={90}
-                        paddingAngle={3}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {classificationCounts.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <ReTooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+          {showInsights && (
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Model */}
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconImg /><CardTitle className="text-sm">Model</CardTitle></CardHeader>
+                  <CardContent className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={modelCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                          {modelCounts.map((entry, index) => (<Cell key={`model-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                        </Pie>
+                        <ReTooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
 
-              {!hideDetails && (
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Top 10</div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {top10.map((t, idx) => (
-                      <div key={idx} className="flex items-center justify-between rounded border px-2 py-1">
-                        <span className="text-sm">{t.name}</span>
-                        <span className="text-sm font-semibold">{t.value}</span>
-                      </div>
-                    ))}
-                  </div>
+                {/* Model Range */}
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Model Range</CardTitle></CardHeader>
+                  <CardContent className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={rangeCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                          {rangeCounts.map((entry, index) => (<Cell key={`range-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                        </Pie>
+                        <ReTooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
 
-                  <div className="text-sm font-medium mt-2">Hide/Show Classifications</div>
-                  <div className="flex flex-wrap gap-2">
-                    {classificationCounts.map((c, idx) => (
-                      <Button
-                        key={idx}
-                        size="sm"
-                        variant={hiddenClasses.has(c.name) ? "secondary" : "outline"}
-                        className={hiddenClasses.has(c.name) ? "" : "!bg-transparent !hover:bg-transparent"}
-                        onClick={() => toggleHiddenClass(c.name)}
-                      >
-                        {hiddenClasses.has(c.name) ? `Show ${c.name}` : `Hide ${c.name}`}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+                {/* Function */}
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconCog /><CardTitle className="text-sm">Function</CardTitle></CardHeader>
+                  <CardContent className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={functionCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                          {functionCounts.map((entry, index) => (<Cell key={`func-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                        </Pie>
+                        <ReTooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
 
-            {!hideRanges && (
-              <div className="h-40 rounded-lg border bg-white/70">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={rangeBuckets}>
-                    <XAxis dataKey="label" />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#6366f1" />
-                  </BarChart>
-                </ResponsiveContainer>
+                {/* Layout */}
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconLayout /><CardTitle className="text-sm">Layout</CardTitle></CardHeader>
+                  <CardContent className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={layoutCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                          {layoutCounts.map((entry, index) => (<Cell key={`layout-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                        </Pie>
+                        <ReTooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Height buckets */}
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Height</CardTitle></CardHeader>
+                  <CardContent className="h-40">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={heightBuckets}>
+                        <XAxis dataKey="label" />
+                        <YAxis allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="count" fill="#6366f1" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Length buckets */}
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Length</CardTitle></CardHeader>
+                  <CardContent className="h-40">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={lengthBuckets}>
+                        <XAxis dataKey="label" />
+                        <YAxis allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="count" fill="#0ea5e9" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Axle */}
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconCar /><CardTitle className="text-sm">Axle</CardTitle></CardHeader>
+                  <CardContent className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={axleCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                          {axleCounts.map((entry, index) => (<Cell key={`axle-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                        </Pie>
+                        <ReTooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
               </div>
-            )}
-          </CardContent>
+            </CardContent>
+          )}
         </Card>
 
         {/* On The Road - last 7 days only */}
