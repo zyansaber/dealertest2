@@ -138,8 +138,11 @@ function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
   return points;
 }
 
-// Inline SVG icons (same as DealerYard)
-const IconImg = () => <img src="/assets/icons/image.png" alt="img" className="w-5 h-5" />;
+function ensureDates(arr: (Date | null | undefined)[]): Date[] {
+  return arr.filter((d) => d instanceof Date && !isNaN((d as Date).getTime())) as Date[];
+}
+
+// Icons
 const IconClipboard = () => <img src="/assets/icons/clipboard.png" alt="clip" className="w-5 h-5" />;
 const IconRuler = () => (<svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M3 8l5-5 13 13-5 5L3 8z" stroke="currentColor" strokeWidth="2"/></svg>);
 const IconCog = () => (<svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" strokeWidth="2"/><path d="M19.4 15a7.97 7.97 0 00.4-3 7.97 7.97 0 00-.4-3l2.1-1.6-2-3.4-2.6 1A8.09 8.09 0 0014 1.6L13 0h-2l-1 1.6A8.09 8.09 0 007.1 2.6l-2.6-1-2 3.4L4.6 6a7.97 7.97 0 00-.4 3 7.97 7.97 0 00.4 3L2.5 16.6l2 3.4 2.6-1A8.09 8.09 0 0010 22.4l1 1.6h2l1-1.6a8.09 8.09 0 002.9-1l2.6 1 2-3.4L19.4 15z" stroke="currentColor" strokeWidth="2"/></svg>);
@@ -156,6 +159,10 @@ type ExcelRow = {
   Length?: string | number;
   Axle?: string | number;
   "TOP 10"?: string | number;
+  "TOP 15"?: string | number;
+  "Top 15"?: string | number;
+  "TOP15"?: string | number;
+  "Top15"?: string | number;
 };
 
 function bucketNumber(value: number | null | undefined, buckets: { label: string; min: number; max: number }[]) {
@@ -181,6 +188,76 @@ function countBy(rows: ExcelRow[], key: keyof ExcelRow) {
   });
   return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 }
+function countTop15(rows: ExcelRow[]) {
+  let cnt = 0;
+  for (const r of rows) {
+    const cands = [r["TOP 15"], r["Top 15"], r["TOP15"], r["Top15"], r["TOP 10"]];
+    const v = cands.find((x) => x != null && String(x).trim() !== "");
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (/^\d+$/.test(s)) {
+      const num = parseInt(s, 10);
+      if (!isNaN(num) && num <= 15) cnt++;
+    } else {
+      const ls = s.toLowerCase();
+      if (ls.includes("yes") || ls === "y" || ls.includes("top")) cnt++;
+    }
+  }
+  return cnt;
+}
+
+// Custom Legend for Pie to show name and count
+function PieLegend({ payload }: { payload?: any[] }) {
+  if (!payload) return null;
+  return (
+    <ul className="flex flex-wrap gap-2 text-xs">
+      {payload.map((entry, idx) => (
+        <li key={idx} className="flex items-center gap-1 rounded border px-2 py-1 bg-white/70">
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: entry.color }} />
+          <span className="font-medium text-slate-700">{entry.value}</span>
+          <span className="text-slate-500">({entry.payload?.value ?? 0})</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function DealerGroupYard() {
   const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
@@ -205,7 +282,13 @@ export default function DealerGroupYard() {
 
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
-  const [showInsights, setShowInsights] = useState(true);
+  // Collapsible sections default hidden
+  const [showRange, setShowRange] = useState(false);
+  const [showFunction, setShowFunction] = useState(false);
+  const [showLayout, setShowLayout] = useState(false);
+  const [showHeight, setShowHeight] = useState(false);
+  const [showLength, setShowLength] = useState(false);
+  const [showAxle, setShowAxle] = useState(false);
 
   useEffect(() => {
     const unsubConfig = subscribeDealerConfig(groupSlug, (cfg) => {
@@ -345,35 +428,7 @@ export default function DealerGroupYard() {
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
 
-  // Trends
-  const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
-  const yardDates = useMemo(() => {
-    return yardList
-      .map((x) => {
-        const d = x.receivedAt ? new Date(x.receivedAt) : null;
-        if (!d || isNaN(d.getTime())) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [yardList]);
-  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
-
-  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
-  const pgiDates = useMemo(() => {
-    return onTheRoadAll
-      .map((x) => {
-        const d = parseDDMMYYYY(x.pgidate);
-        if (!d) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [onTheRoadAll]);
-  const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
-
   // Excel insights data
-  const modelCounts = useMemo(() => countBy(excelRows, "Model"), [excelRows]);
   const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
   const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
   const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
@@ -381,8 +436,8 @@ export default function DealerGroupYard() {
 
   const heightBuckets = useMemo(() => {
     const buckets = [
-      { label: "<=2.7m", min: 0, max: 2.7 },
-      { label: "2.71–3.0m", min: 2.71, max: 3.0 },
+      { label: "<=2.70m", min: 0, max: 2.7 },
+      { label: "2.71–3.00m", min: 2.71, max: 3.0 },
       { label: ">=3.01m", min: 3.01, max: 100 },
     ];
     const map: Record<string, number> = {};
@@ -397,8 +452,8 @@ export default function DealerGroupYard() {
 
   const lengthBuckets = useMemo(() => {
     const buckets = [
-      { label: "<=5m", min: 0, max: 5.0 },
-      { label: "5.01–7.0m", min: 5.01, max: 7.0 },
+      { label: "<=5.00m", min: 0, max: 5.0 },
+      { label: "5.01–7.00m", min: 5.01, max: 7.0 },
       { label: ">=7.01m", min: 7.01, max: 100 },
     ];
     const map: Record<string, number> = {};
@@ -411,21 +466,7 @@ export default function DealerGroupYard() {
     return buckets.map((b) => ({ label: b.label, count: map[b.label] || 0 }));
   }, [excelRows]);
 
-  const openHandover = async (row: { chassis: string; model?: string | null }) => {
-    try {
-      await dispatchFromYard(currentDealerSlug, row.chassis);
-    } catch (e) {
-      console.error("Failed to remove from yard immediately:", e);
-    }
-    setHandoverData({
-      chassis: row.chassis,
-      model: row.model,
-      dealerName: dealerDisplayName,
-      dealerSlug: currentDealerSlug,
-      handoverAt: new Date().toISOString(),
-    });
-    setHandoverOpen(true);
-  };
+  const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
 
   const formatDateOnly = (iso?: string | null) => {
     if (!iso) return "-";
@@ -434,7 +475,7 @@ export default function DealerGroupYard() {
     return d.toLocaleDateString();
   };
 
-  const COLORS = ["#38bdf8", "#0ea5e9", "#6366f1", "#22c55e", "#ef4444", "#f59e0b", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#a3e635"];
+  const COLORS = ["#0ea5e9", "#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#06b6d4", "#a855f7", "#10b981", "#3b82f6", "#64748b"];
 
   return (
     <div className="flex min-h-screen">
@@ -476,131 +517,123 @@ export default function DealerGroupYard() {
           </Card>
         </div>
 
-        {/* Excel Insights */}
+        {/* Stock Analysis */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <IconClipboard /> Excel Insights (Model / Range / Function / Layout / Height / Length / Axle)
+              <IconClipboard /> Stock Analysis
+              <span className="ml-2 text-xs font-medium text-slate-500 rounded-full border px-2 py-0.5 bg-white/70">
+                Top 15 Count: {top15Count}
+              </span>
             </CardTitle>
-            <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowInsights((v) => !v)}>
-              {showInsights ? "Hide" : "Show"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowRange((v) => !v)}>{showRange ? "Hide Range" : "Show Range"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowFunction((v) => !v)}>{showFunction ? "Hide Function" : "Show Function"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowLayout((v) => !v)}>{showLayout ? "Hide Layout" : "Show Layout"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowAxle((v) => !v)}>{showAxle ? "Hide Axle" : "Show Axle"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowLength((v) => !v)}>{showLength ? "Hide Length" : "Show Length"}</Button>
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowHeight((v) => !v)}>{showHeight ? "Hide Height" : "Show Height"}</Button>
+            </div>
           </CardHeader>
-          {showInsights && (
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Model */}
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconImg /><CardTitle className="text-sm">Model</CardTitle></CardHeader>
-                  <CardContent className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={modelCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                          {modelCounts.map((entry, index) => (<Cell key={`model-${index}`} fill={COLORS[index % COLORS.length]} />))}
-                        </Pie>
-                        <ReTooltip />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                {/* Model Range */}
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {showRange && (
                 <Card className="border-slate-200 bg-white/70">
                   <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Model Range</CardTitle></CardHeader>
-                  <CardContent className="h-48">
+                  <CardContent className="h-52">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={rangeCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                          {rangeCounts.map((entry, index) => (<Cell key={`range-${index}`} fill={COLORS[index % COLORS.length]} />))}
-                        </Pie>
+                        <Pie data={rangeCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
                         <ReTooltip />
-                        <Legend />
+                        <Legend content={<PieLegend />} />
+                        {rangeCounts.map((_, i) => <Cell key={`range-${i}`} fill={COLORS[i % COLORS.length]} />)}
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
+              )}
 
-                {/* Function */}
+              {showFunction && (
                 <Card className="border-slate-200 bg-white/70">
                   <CardHeader className="flex items-center gap-2"><IconCog /><CardTitle className="text-sm">Function</CardTitle></CardHeader>
-                  <CardContent className="h-48">
+                  <CardContent className="h-52">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={functionCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                          {functionCounts.map((entry, index) => (<Cell key={`func-${index}`} fill={COLORS[index % COLORS.length]} />))}
-                        </Pie>
+                        <Pie data={functionCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
                         <ReTooltip />
-                        <Legend />
+                        <Legend content={<PieLegend />} />
+                        {functionCounts.map((_, i) => <Cell key={`func-${i}`} fill={COLORS[i % COLORS.length]} />)}
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
+              )}
 
-                {/* Layout */}
+              {showLayout && (
                 <Card className="border-slate-200 bg-white/70">
                   <CardHeader className="flex items-center gap-2"><IconLayout /><CardTitle className="text-sm">Layout</CardTitle></CardHeader>
-                  <CardContent className="h-48">
+                  <CardContent className="h-52">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={layoutCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                          {layoutCounts.map((entry, index) => (<Cell key={`layout-${index}`} fill={COLORS[index % COLORS.length]} />))}
-                        </Pie>
+                        <Pie data={layoutCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
                         <ReTooltip />
-                        <Legend />
+                        <Legend content={<PieLegend />} />
+                        {layoutCounts.map((_, i) => <Cell key={`layout-${i}`} fill={COLORS[i % COLORS.length]} />)}
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
+              )}
 
-                {/* Height buckets */}
+              {showAxle && (
+                <Card className="border-slate-200 bg-white/70">
+                  <CardHeader className="flex items-center gap-2"><IconCar /><CardTitle className="text-sm">Axle</CardTitle></CardHeader>
+                  <CardContent className="h-52">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={axleCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
+                        <ReTooltip />
+                        <Legend content={<PieLegend />} />
+                        {axleCounts.map((_, i) => <Cell key={`axle-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {showHeight && (
                 <Card className="border-slate-200 bg-white/70">
                   <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Height</CardTitle></CardHeader>
                   <CardContent className="h-40">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={heightBuckets}>
-                        <XAxis dataKey="label" />
-                        <YAxis allowDecimals={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#6366f1" />
+                        <Bar dataKey="count" fill="#6366f1" radius={[4,4,0,0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
+              )}
 
-                {/* Length buckets */}
+              {showLength && (
                 <Card className="border-slate-200 bg-white/70">
                   <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Length</CardTitle></CardHeader>
                   <CardContent className="h-40">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={lengthBuckets}>
-                        <XAxis dataKey="label" />
-                        <YAxis allowDecimals={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#0ea5e9" />
+                        <Bar dataKey="count" fill="#0ea5e9" radius={[4,4,0,0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
-
-                {/* Axle */}
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconCar /><CardTitle className="text-sm">Axle</CardTitle></CardHeader>
-                  <CardContent className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={axleCounts} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70} paddingAngle={2} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                          {axleCounts.map((entry, index) => (<Cell key={`axle-${index}`} fill={COLORS[index % COLORS.length]} />))}
-                        </Pie>
-                        <ReTooltip />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              </div>
-            </CardContent>
-          )}
+              )}
+            </div>
+          </CardContent>
         </Card>
 
         {/* On The Road - last 7 days only */}
@@ -700,7 +733,17 @@ export default function DealerGroupYard() {
                         </TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
-                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => openHandover({ chassis: row.chassis, model: row.model })}>
+                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={async () => {
+                            try { await dispatchFromYard(currentDealerSlug, row.chassis); } catch (e) { console.error(e); }
+                            setHandoverData({
+                              chassis: row.chassis,
+                              model: row.model,
+                              dealerName: dealerDisplayName,
+                              dealerSlug: currentDealerSlug,
+                              handoverAt: new Date().toISOString(),
+                            });
+                            setHandoverOpen(true);
+                          }}>
                             Handover
                           </Button>
                         </TableCell>
@@ -717,11 +760,28 @@ export default function DealerGroupYard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent><WeeklyBarChart points={yardTrend} /></CardContent>
+            <CardContent>
+              <WeeklyBarChart
+                points={groupCountsByWeek(
+                  makeWeeklyBuckets(12),
+                  ensureDates(yardList.map((x) => (x.receivedAt ? new Date(x.receivedAt) : null)))
+                )}
+              />
+            </CardContent>
           </Card>
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
-            <CardContent><MonthlyBarChart points={pgiMonthlyTrend} /></CardContent>
+            <CardContent>
+              <MonthlyBarChart
+                points={groupCountsByMonth(
+                  makeMonthBucketsCurrentYear(),
+                  ensureDates(onTheRoadAll.map((x) => {
+                    const d = parseDDMMYYYY(x.pgidate);
+                    return d ? (d.setHours(0,0,0,0), d) : null;
+                  }))
+                )}
+              />
+            </CardContent>
           </Card>
         </div>
 
