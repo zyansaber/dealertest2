@@ -21,6 +21,45 @@ type Props = {
   initial?: RegistrationData | null;
 };
 
+declare global {
+  interface Window {
+    html2canvas?: any;
+    jspdf?: any; // UMD: window.jspdf.jsPDF
+    jsPDF?: any; // Fallback: window.jsPDF if present
+  }
+}
+
+async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
+  const loadScript = (src: string) =>
+    new Promise<void>((resolve, reject) => {
+      const existing = Array.from(document.querySelectorAll("script")).find((s) => s.src.includes(src));
+      if (existing) return resolve();
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.crossOrigin = "anonymous";
+      s.onload = () => resolve();
+      s.onerror = (e) => reject(new Error(`Failed to load script: ${src}`));
+      document.head.appendChild(s);
+    });
+
+  // Load html2canvas if not present
+  if (!window.html2canvas) {
+    await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+  }
+  // Load jsPDF UMD if not present
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+  }
+
+  const html2canvas = window.html2canvas;
+  const jsPDF = window.jspdf?.jsPDF || window.jsPDF;
+  if (!html2canvas || !jsPDF) {
+    throw new Error("PDF libraries not available after loading.");
+  }
+  return { html2canvas, jsPDF };
+}
+
 export default function ProductRegistrationForm({ open, onOpenChange, initial }: Props) {
   const [step, setStep] = useState<"assist" | "email">("assist");
   const [emailTo, setEmailTo] = useState("");
@@ -68,24 +107,22 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     onOpenChange(false);
   };
 
-  // Use dynamic imports to avoid bundler resolve issues on certain platforms (e.g. Render)
   const handleDownloadPDF = async () => {
     const el = printRef.current;
     if (!el) return;
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import("html2canvas"),
-        import("jspdf"),
-      ]);
+      const { html2canvas, jsPDF } = await ensurePdfLibs();
       const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "pt", "a4");
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth - 64; // margins
+      const margin = 32;
+      const imgWidth = pageWidth - margin * 2;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      pdf.addImage(imgData, "PNG", 32, 32, imgWidth, Math.min(imgHeight, pageHeight - 64));
+      pdf.addImage(imgData, "PNG", margin, margin, imgWidth, Math.min(imgHeight, pageHeight - margin * 2));
       pdf.save(`handover_${data.chassis}.pdf`);
+      setSubmitMsg("PDF downloaded.");
     } catch (err) {
       console.error("PDF generation failed:", err);
       setSubmitMsg("PDF generation failed. Please try again.");
