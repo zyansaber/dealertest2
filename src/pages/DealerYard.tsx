@@ -208,6 +208,44 @@ const yardRangeDefs = [
   { label: "180+", min: 181, max: 9999 },
 ];
 
+// Small inline charts for trends (fix: define components used below)
+function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function DealerYard() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
