@@ -19,7 +19,7 @@ import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import * as XLSX from "xlsx";
 import {
   PieChart, Pie, Cell, Tooltip as ReTooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip,
+  BarChart, Bar, XAxis, YAxis, Tooltip, LabelList,
 } from "recharts";
 
 const toStr = (v: any) => String(v ?? "");
@@ -135,43 +135,6 @@ function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
   return points;
 }
 
-function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <div className="flex items-end gap-3 h-28">
-      {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full">
-          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
-            title={`${p.label}: ${p.count}`}
-          />
-          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <div className="flex items-end gap-3 h-28">
-      {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full">
-          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
-            title={`${p.label}: ${p.count}`}
-          />
-          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // Excel rows type
 type ExcelRow = {
   Model?: string;
@@ -188,13 +151,6 @@ type ExcelRow = {
   "Top15"?: string | number;
 };
 
-function bucketNumber(value: number | null | undefined, buckets: { label: string; min: number; max: number }[]) {
-  if (value == null || isNaN(value)) return null;
-  for (const b of buckets) {
-    if (value >= b.min && value <= b.max) return b.label;
-  }
-  return null;
-}
 function parseNum(val: any): number | null {
   if (val == null) return null;
   const s = String(val).replace(/[^\d\.]/g, "");
@@ -229,13 +185,13 @@ function countTop15(rows: ExcelRow[]) {
   return cnt;
 }
 
-// Custom Legend for Pie to show name and count
+// Custom Legend for Pie to show name and count (right-side vertical)
 function PieLegend({ payload }: { payload?: any[] }) {
   if (!payload) return null;
   return (
-    <ul className="flex flex-wrap gap-2 text-xs">
+    <ul className="flex flex-col gap-2 text-xs max-h-56 overflow-auto">
       {payload.map((entry, idx) => (
-        <li key={idx} className="flex items-center gap-1 rounded border px-2 py-1 bg-white/70">
+        <li key={idx} className="flex items-center gap-2 rounded border px-2 py-1 bg-white/70">
           <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: entry.color }} />
           <span className="font-medium text-slate-700">{entry.value}</span>
           <span className="text-slate-500">({entry.payload?.value ?? 0})</span>
@@ -244,6 +200,13 @@ function PieLegend({ payload }: { payload?: any[] }) {
     </ul>
   );
 }
+
+// Days in Yard range defs: 0–90, 91–180, 180+
+const yardRangeDefs = [
+  { label: "0–90", min: 0, max: 90 },
+  { label: "91–180", min: 91, max: 180 },
+  { label: "180+", min: 181, max: 9999 },
+];
 
 export default function DealerYard() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
@@ -263,23 +226,10 @@ export default function DealerYard() {
 
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
-  // Collapsible sections default hidden
-  const [showRange, setShowRange] = useState(false);
-  const [showFunction, setShowFunction] = useState(false);
-  const [showLayout, setShowLayout] = useState(false);
-  const [showHeight, setShowHeight] = useState(false);
-  const [showLength, setShowLength] = useState(false);
-  const [showAxle, setShowAxle] = useState(false);
+  // Stock Analysis view mode: show one category at a time; default "range"
+  const [activeCategory, setActiveCategory] = useState<"range" | "function" | "layout" | "axle" | "length" | "height">("range");
 
-  // Days in Yard filter
-  const yardRangeDefs = useMemo(() => ([
-    { label: "0–7", min: 0, max: 7 },
-    { label: "8–14", min: 8, max: 14 },
-    { label: "15–30", min: 15, max: 30 },
-    { label: "31–60", min: 31, max: 60 },
-    { label: "61–90", min: 61, max: 90 },
-    { label: "90+", min: 91, max: 9999 },
-  ]), []);
+  // Days in Yard filter selection
   const [selectedRange, setSelectedRange] = useState<string | null>(null);
 
   useEffect(() => {
@@ -330,9 +280,13 @@ export default function DealerYard() {
     return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
-  // Only show current dealer's PGI in last 7 days
+  // Only show current dealer's PGI in last 7 days (and use this subset for PGI monthly trend)
   const onTheRoadWeekly = useMemo(
     () => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7) && slugifyDealerName(row.dealer) === dealerSlug),
+    [onTheRoadAll, dealerSlug]
+  );
+  const onTheRoadDealerAll = useMemo(
+    () => onTheRoadAll.filter((row) => slugifyDealerName(row.dealer) === dealerSlug),
     [onTheRoadAll, dealerSlug]
   );
 
@@ -362,16 +316,16 @@ export default function DealerYard() {
   const handleAddManual = async () => {
     const ch = manualChassis.trim().toUpperCase();
     if (!ch) {
-      setManualStatus({ type: "err", msg: "Please enter chassis number" });
+      setManualStatus({ type: "err", msg: "请输入车架号" });
       return;
     }
     try {
       await addManualChassisToYard(dealerSlug, ch);
-      setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
+      setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
       setManualChassis("");
     } catch (e) {
       console.error(e);
-      setManualStatus({ type: "err", msg: "Failed to add. Please try again." });
+      setManualStatus({ type: "err", msg: "添加失败，请重试。" });
     }
   };
 
@@ -400,8 +354,8 @@ export default function DealerYard() {
   const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
 
   const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
-  const pgiDates = useMemo(() => {
-    return onTheRoadAll
+  const pgiDatesDealer = useMemo(() => {
+    return onTheRoadDealerAll
       .map((x) => {
         const d = parseDDMMYYYY(x.pgidate);
         if (!d) return null;
@@ -409,31 +363,32 @@ export default function DealerYard() {
         return d;
       })
       .filter(Boolean) as Date[];
-  }, [onTheRoadAll]);
-  const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
+  }, [onTheRoadDealerAll]);
+  const pgiMonthlyTrendDealer = useMemo(() => groupCountsByMonth(monthBuckets, pgiDatesDealer), [monthBuckets, pgiDatesDealer]);
 
-  // Excel insights data
+  // Stock Analysis data
   const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
   const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
   const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
   const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
 
-  const heightBuckets = useMemo(() => {
-    const buckets = [
-      { label: "<=2.70m", min: 0, max: 2.7 },
-      { label: "2.71–3.00m", min: 2.71, max: 3.0 },
-      { label: ">=3.01m", min: 3.01, max: 100 },
-    ];
-    const map: Record<string, number> = {};
+  // Height: Full Height vs Pop-top
+  const heightCategories = useMemo(() => {
+    const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
     excelRows.forEach((r) => {
-      const num = parseNum(r.Height);
-      const b = bucketNumber(num, buckets);
-      if (!b) return;
-      map[b] = (map[b] || 0) + 1;
+      const raw = r.Height;
+      const s = toStr(raw).toLowerCase();
+      if (!s) return;
+      if (s.includes("pop")) {
+        map["Pop-top"] += 1;
+      } else {
+        map["Full Height"] += 1;
+      }
     });
-    return buckets.map((b) => ({ label: b.label, count: map[b.label] || 0 }));
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [excelRows]);
 
+  // Length buckets (unchanged bins)
   const lengthBuckets = useMemo(() => {
     const buckets = [
       { label: "<=5.00m", min: 0, max: 5.0 },
@@ -443,29 +398,29 @@ export default function DealerYard() {
     const map: Record<string, number> = {};
     excelRows.forEach((r) => {
       const num = parseNum(r.Length);
-      const b = bucketNumber(num, buckets);
+      const b = buckets.find((bb) => num != null && !isNaN(num) && num >= bb.min && num <= bb.max);
       if (!b) return;
-      map[b] = (map[b] || 0) + 1;
+      map[b.label] = (map[b.label] || 0) + 1;
     });
     return buckets.map((b) => ({ label: b.label, count: map[b.label] || 0 }));
   }, [excelRows]);
 
   const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
 
-  // Days in Yard distribution and filter
+  // Days In Yard distribution and filter (counts labeled on bars)
   const yardRangeBuckets = useMemo(() => {
-    const counts = yardRangeDefs.map(({ label, min, max }) => ({
+    return yardRangeDefs.map(({ label, min, max }) => ({
       label,
       count: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max).length,
     }));
-    return counts;
-  }, [yardRangeDefs, yardList]);
+  }, [yardList]);
+
   const yardListDisplay = useMemo(() => {
     if (!selectedRange) return yardList;
     const def = yardRangeDefs.find((d) => d.label === selectedRange);
     if (!def) return yardList;
     return yardList.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
-  }, [selectedRange, yardRangeDefs, yardList]);
+  }, [selectedRange, yardList]);
 
   const formatDateOnly = (iso?: string | null) => {
     if (!iso) return "-";
@@ -474,7 +429,15 @@ export default function DealerYard() {
     return d.toLocaleDateString();
   };
 
-  const COLORS = ["#0ea5e9", "#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#06b6d4", "#a855f7", "#10b981", "#3b82f6", "#64748b"];
+  // Professional color palette
+  const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#06b6d4", "#a855f7", "#3b82f6", "#64748b"];
+
+  const cycleNextCategory = () => {
+    const order: Array<typeof activeCategory> = ["range", "function", "layout", "axle", "length", "height"];
+    const idx = order.indexOf(activeCategory);
+    const next = order[(idx + 1) % order.length];
+    setActiveCategory(next);
+  };
 
   return (
     <div className="flex min-h-screen">
@@ -494,164 +457,135 @@ export default function DealerYard() {
           <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
         </header>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Yard Inventory Total</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold">{yardTotal}</div></CardContent>
+        {/* Top grid: Left = Days In Yard Distribution (half), Right = Stock Analysis */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Days In Yard — Distribution & Filter (left half) */}
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="text-sm">Days In Yard — Distribution</CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setSelectedRange(null)}>
+                  Clear Filter
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={yardRangeBuckets}>
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar
+                    dataKey="count"
+                    fill="#14b8a6"
+                    radius={[6,6,0,0]}
+                    onClick={(_, idx: number) => {
+                      const label = yardRangeBuckets[idx]?.label;
+                      if (label) setSelectedRange(label);
+                    }}
+                  >
+                    <LabelList dataKey="count" position="top" className="fill-slate-700" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+            {selectedRange && (
+              <div className="px-6 pb-4 text-xs text-slate-600">
+                Filtered by range: <span className="font-semibold text-teal-700">{selectedRange} days</span>
+              </div>
+            )}
           </Card>
-          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Factory PGI (Frankston)</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold">{factoryPGIReceived}</div></CardContent>
-          </Card>
-          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Inventory: Stock</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold text-blue-700">{yardStockCount}</div></CardContent>
-          </Card>
-          <Card className="backdrop-blur-sm bg-white/70 border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Inventory: Customer</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold text-emerald-700">{yardCustomerCount}</div></CardContent>
+
+          {/* Stock Analysis (right half) */}
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="text-sm">Stock Analysis</CardTitle>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={cycleNextCategory}>
+                  Next
+                </Button>
+                <div className="flex flex-wrap gap-1">
+                  <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
+                  <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
+                  <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
+                  <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
+                  <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
+                  <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="h-60">
+              <div className="w-full h-full">
+                {activeCategory === "range" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={rangeCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
+                        {rangeCounts.map((_, i) => <Cell key={`range-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <ReTooltip />
+                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+                {activeCategory === "function" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={functionCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
+                        {functionCounts.map((_, i) => <Cell key={`func-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <ReTooltip />
+                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+                {activeCategory === "layout" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={layoutCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
+                        {layoutCounts.map((_, i) => <Cell key={`layout-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <ReTooltip />
+                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+                {activeCategory === "axle" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={axleCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
+                        {axleCounts.map((_, i) => <Cell key={`axle-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <ReTooltip />
+                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+                {activeCategory === "length" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={lengthBuckets}>
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="count" fill="#0ea5e9" radius={[6,6,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+                {activeCategory === "height" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={heightCategories} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
+                        {heightCategories.map((_, i) => <Cell key={`height-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <ReTooltip />
+                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </CardContent>
+            <div className="px-6 pb-4 text-xs text-slate-600">Top 15 Count: <span className="font-semibold">{top15Count}</span></div>
           </Card>
         </div>
-
-        {/* Stock Analysis */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              Stock Analysis
-              <span className="ml-2 text-xs font-medium text-slate-500 rounded-full border px-2 py-0.5 bg-white/70">
-                Top 15 Count: {top15Count}
-              </span>
-            </CardTitle>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowRange((v) => !v)}>{showRange ? "Hide Range" : "Show Range"}</Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowFunction((v) => !v)}>{showFunction ? "Hide Function" : "Show Function"}</Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowLayout((v) => !v)}>{showLayout ? "Hide Layout" : "Show Layout"}</Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowAxle((v) => !v)}>{showAxle ? "Hide Axle" : "Show Axle"}</Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowLength((v) => !v)}>{showLength ? "Hide Length" : "Show Length"}</Button>
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setShowHeight((v) => !v)}>{showHeight ? "Hide Height" : "Show Height"}</Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {showRange && (
-                <Card className="border-slate-200 bg-white/80">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Model Range</CardTitle></CardHeader>
-                  <CardContent className="h-60">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={rangeCounts} dataKey="value" nameKey="name"
-                          innerRadius={60} outerRadius={95} paddingAngle={2}
-                          startAngle={90} endAngle={-270} label={false}
-                        >
-                          {rangeCounts.map((_, i) => <Cell key={`range-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <ReTooltip />
-                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {showFunction && (
-                <Card className="border-slate-200 bg-white/80">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Function</CardTitle></CardHeader>
-                  <CardContent className="h-60">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={functionCounts} dataKey="value" nameKey="name"
-                          innerRadius={60} outerRadius={95} paddingAngle={2}
-                          startAngle={90} endAngle={-270} label={false}
-                        >
-                          {functionCounts.map((_, i) => <Cell key={`func-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <ReTooltip />
-                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {showLayout && (
-                <Card className="border-slate-200 bg-white/80">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Layout</CardTitle></CardHeader>
-                  <CardContent className="h-60">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={layoutCounts} dataKey="value" nameKey="name"
-                          innerRadius={60} outerRadius={95} paddingAngle={2}
-                          startAngle={90} endAngle={-270} label={false}
-                        >
-                          {layoutCounts.map((_, i) => <Cell key={`layout-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <ReTooltip />
-                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {showAxle && (
-                <Card className="border-slate-200 bg-white/80">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Axle</CardTitle></CardHeader>
-                  <CardContent className="h-60">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={axleCounts} dataKey="value" nameKey="name"
-                          innerRadius={60} outerRadius={95} paddingAngle={2}
-                          startAngle={90} endAngle={-270} label={false}
-                        >
-                          {axleCounts.map((_, i) => <Cell key={`axle-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <ReTooltip />
-                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {showHeight && (
-                <Card className="border-slate-200 bg-white/80">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Height</CardTitle></CardHeader>
-                  <CardContent className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={heightBuckets}>
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="#6366f1" radius={[6,6,0,0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {showLength && (
-                <Card className="border-slate-200 bg-white/80">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Length</CardTitle></CardHeader>
-                  <CardContent className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={lengthBuckets}>
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="#0ea5e9" radius={[6,6,0,0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </CardContent>
-        </Card>
 
         {/* On The Road - last 7 days only (current dealer only, no Dealer column) */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
@@ -694,41 +628,6 @@ export default function DealerYard() {
               </div>
             )}
           </CardContent>
-        </Card>
-
-        {/* Days In Yard — Distribution & Filter */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">Days In Yard — Distribution</CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setSelectedRange(null)}>
-                Clear Filter
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={yardRangeBuckets}>
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar
-                  dataKey="count"
-                  fill="#14b8a6"
-                  radius={[6,6,0,0]}
-                  onClick={(data: any, idx: number) => {
-                    const label = yardRangeBuckets[idx]?.label;
-                    if (label) setSelectedRange(label);
-                  }}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-          {selectedRange && (
-            <div className="px-6 pb-4 text-xs text-slate-600">
-              Filtered by range: <span className="font-semibold text-teal-700">{selectedRange} days</span>
-            </div>
-          )}
         </Card>
 
         {/* Yard Inventory */}
@@ -784,7 +683,6 @@ export default function DealerYard() {
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
                           <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => {
-                            // Immediately remove then open handover modal
                             (async () => {
                               try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
                               setHandoverData({
@@ -817,7 +715,7 @@ export default function DealerYard() {
           </Card>
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
-            <CardContent><MonthlyBarChart points={pgiMonthlyTrend} /></CardContent>
+            <CardContent><MonthlyBarChart points={pgiMonthlyTrendDealer} /></CardContent>
           </Card>
         </div>
 
