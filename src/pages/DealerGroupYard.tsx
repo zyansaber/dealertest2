@@ -1,6 +1,6 @@
-// src/pages/DealerGroupYard.tsx
+// src/pages/DealerYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,13 +11,10 @@ import {
   subscribeToYardStock,
   receiveChassisToYard,
   subscribeToSchedule,
-  subscribeDealerConfig,
-  subscribeAllDealerConfigs,
   addManualChassisToYard,
   dispatchFromYard,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
-import { isDealerGroup } from "@/types/dealer";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import * as XLSX from "xlsx";
 import {
@@ -86,9 +83,9 @@ function makeWeeklyBuckets(weeks: number = 12): Date[] {
   start.setDate(start.getDate() - diffToMonday);
   const buckets: Date[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
-    const d = new Date(start);
-    d.setDate(start.getDate() - i * 7);
-    buckets.push(d);
+      const d = new Date(start);
+      d.setDate(start.getDate() - i * 7);
+      buckets.push(d);
   }
   return buckets;
 }
@@ -136,10 +133,6 @@ function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
     }
   }
   return points;
-}
-
-function ensureDates(arr: (Date | null | undefined)[]): Date[] {
-  return arr.filter((d) => d instanceof Date && !isNaN((d as Date).getTime())) as Date[];
 }
 
 // Excel rows type
@@ -208,14 +201,16 @@ function PieLegend({ payload }: { payload?: any[] }) {
   );
 }
 
-export default function DealerGroupYard() {
-  const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
-  const navigate = useNavigate();
-  const groupSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+// Days in Yard range defs: 0–90, 91–180, 180+
+const yardRangeDefs = [
+  { label: "0–90", min: 0, max: 90 },
+  { label: "91–180", min: 91, max: 180 },
+  { label: "180+", min: 181, max: 9999 },
+];
 
-  const [dealerConfig, setDealerConfig] = useState<any>(null);
-  const [allDealerConfigs, setAllDealerConfigs] = useState<any>({});
-  const [configLoading, setConfigLoading] = useState(true);
+export default function DealerYard() {
+  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
+  const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
   const [pgi, setPgi] = useState<Record<string, PGIRecord>>({});
   const [yard, setYard] = useState<Record<string, any>>({});
@@ -231,56 +226,29 @@ export default function DealerGroupYard() {
 
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
-  // Stock Analysis active category (show one at a time, default Range)
+  // Stock Analysis view mode: show one category at a time; default "range"
   const [activeCategory, setActiveCategory] = useState<"range" | "function" | "layout" | "axle" | "length" | "height">("range");
 
-  // Days in Yard filter (0–90, 91–180, 180+)
-  const yardRangeDefs = useMemo(() => ([
-    { label: "0–90", min: 0, max: 90 },
-    { label: "91–180", min: 91, max: 180 },
-    { label: "180+", min: 181, max: 9999 },
-  ]), []);
+  // Days in Yard filter selection
   const [selectedRange, setSelectedRange] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubConfig = subscribeDealerConfig(groupSlug, (cfg) => {
-      setDealerConfig(cfg);
-      setConfigLoading(false);
-    });
-    const unsubAll = subscribeAllDealerConfigs((data) => setAllDealerConfigs(data || {}));
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
     const unsubSched = subscribeToSchedule((data) => setSchedule(Array.isArray(data) ? data : []), {
       includeNoChassis: true,
       includeNoCustomer: true,
       includeFinished: true,
     });
+    let unsubYard: (() => void) | undefined;
+    if (dealerSlug) {
+      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
+    }
     return () => {
-      unsubConfig?.();
-      unsubAll?.();
       unsubPGI?.();
+      unsubYard?.();
       unsubSched?.();
     };
-  }, [groupSlug]);
-
-  const includedDealerSlugs = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) return [groupSlug];
-    return dealerConfig.includedDealers || [];
-  }, [dealerConfig, groupSlug]);
-
-  useEffect(() => {
-    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !selectedDealerSlug) {
-      const first = includedDealerSlugs[0];
-      if (first) navigate(`/dealergroup/${rawDealerSlug}/${first}/yard`, { replace: true });
-    }
-  }, [configLoading, dealerConfig, selectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
-
-  const currentDealerSlug = selectedDealerSlug || includedDealerSlugs[0] || groupSlug;
-
-  useEffect(() => {
-    if (!currentDealerSlug) return;
-    const unsubYard = subscribeToYardStock(currentDealerSlug, (data) => setYard(data || {}));
-    return () => unsubYard?.();
-  }, [currentDealerSlug]);
+  }, [dealerSlug]);
 
   useEffect(() => {
     // Load latest Excel uploaded asset for insights
@@ -312,14 +280,14 @@ export default function DealerGroupYard() {
     return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
-  // Only current dealer's PGI in last 7 days and for monthly trend
+  // Only show current dealer's PGI in last 7 days (and use this subset for PGI monthly trend)
   const onTheRoadWeekly = useMemo(
-    () => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7) && slugifyDealerName(row.dealer) === slugifyDealerName(currentDealerSlug)),
-    [onTheRoadAll, currentDealerSlug]
+    () => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7) && slugifyDealerName(row.dealer) === dealerSlug),
+    [onTheRoadAll, dealerSlug]
   );
   const onTheRoadDealerAll = useMemo(
-    () => onTheRoadAll.filter((row) => slugifyDealerName(row.dealer) === slugifyDealerName(currentDealerSlug)),
-    [onTheRoadAll, currentDealerSlug]
+    () => onTheRoadAll.filter((row) => slugifyDealerName(row.dealer) === dealerSlug),
+    [onTheRoadAll, dealerSlug]
   );
 
   const yardList = useMemo(() => {
@@ -331,32 +299,15 @@ export default function DealerGroupYard() {
       const model = toStr(sch?.Model || rec?.model);
       const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      const fromPGI = Boolean(rec?.from_pgidate);
-      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard, fromPGI };
+      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard };
     });
   }, [yard, scheduleByChassis]);
 
-  const includedDealerNames = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) return null;
-    return includedDealerSlugs.map((slug: string) => {
-      const cfg = allDealerConfigs[slug];
-      return { slug, name: cfg?.name || prettifyDealerName(slug) };
-    });
-  }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
-
-  const dealerDisplayName = useMemo(() => {
-    if (selectedDealerSlug) {
-      const selectedConfig = allDealerConfigs[selectedDealerSlug];
-      if (selectedConfig?.name) return selectedConfig.name;
-      return prettifyDealerName(selectedDealerSlug);
-    }
-    if (dealerConfig?.name) return dealerConfig.name;
-    return prettifyDealerName(groupSlug);
-  }, [selectedDealerSlug, allDealerConfigs, dealerConfig, groupSlug]);
+  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
 
   const handleReceive = async (chassis: string, rec: PGIRecord) => {
     try {
-      await receiveChassisToYard(currentDealerSlug, chassis, rec);
+      await receiveChassisToYard(dealerSlug, chassis, rec);
     } catch (e) {
       console.error("receive failed", e);
     }
@@ -369,7 +320,7 @@ export default function DealerGroupYard() {
       return;
     }
     try {
-      await addManualChassisToYard(currentDealerSlug, ch);
+      await addManualChassisToYard(dealerSlug, ch);
       setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
       setManualChassis("");
     } catch (e) {
@@ -380,12 +331,40 @@ export default function DealerGroupYard() {
 
   // KPI cards
   const yardTotal = yardList.length;
+  // Factory PGI (received in Yard): count all pgirecord with dealer Frankston
   const factoryPGIReceived = useMemo(() => {
     const FRANKSTON_SLUG = "frankston";
     return onTheRoadAll.filter((x) => slugifyDealerName(x.dealer) === FRANKSTON_SLUG).length;
   }, [onTheRoadAll]);
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
+
+  // Trends
+  const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
+  const yardDates = useMemo(() => {
+    return yardList
+      .map((x) => {
+        const d = x.receivedAt ? new Date(x.receivedAt) : null;
+        if (!d || isNaN(d.getTime())) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })
+      .filter(Boolean) as Date[];
+  }, [yardList]);
+  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
+
+  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
+  const pgiDatesDealer = useMemo(() => {
+    return onTheRoadDealerAll
+      .map((x) => {
+        const d = parseDDMMYYYY(x.pgidate);
+        if (!d) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })
+      .filter(Boolean) as Date[];
+  }, [onTheRoadDealerAll]);
+  const pgiMonthlyTrendDealer = useMemo(() => groupCountsByMonth(monthBuckets, pgiDatesDealer), [monthBuckets, pgiDatesDealer]);
 
   // Stock Analysis data
   const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
@@ -397,15 +376,19 @@ export default function DealerGroupYard() {
   const heightCategories = useMemo(() => {
     const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
     excelRows.forEach((r) => {
-      const s = toStr(r.Height).toLowerCase();
+      const raw = r.Height;
+      const s = toStr(raw).toLowerCase();
       if (!s) return;
-      if (s.includes("pop")) map["Pop-top"] += 1;
-      else map["Full Height"] += 1;
+      if (s.includes("pop")) {
+        map["Pop-top"] += 1;
+      } else {
+        map["Full Height"] += 1;
+      }
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [excelRows]);
 
-  // Length buckets
+  // Length buckets (unchanged bins)
   const lengthBuckets = useMemo(() => {
     const buckets = [
       { label: "<=5.00m", min: 0, max: 5.0 },
@@ -424,20 +407,20 @@ export default function DealerGroupYard() {
 
   const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
 
-  // Days In Yard distribution & filter
+  // Days In Yard distribution and filter (counts labeled on bars)
   const yardRangeBuckets = useMemo(() => {
-    const defs = yardRangeDefs;
-    return defs.map(({ label, min, max }) => ({
+    return yardRangeDefs.map(({ label, min, max }) => ({
       label,
       count: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max).length,
     }));
-  }, [yardRangeDefs, yardList]);
+  }, [yardList]);
+
   const yardListDisplay = useMemo(() => {
     if (!selectedRange) return yardList;
     const def = yardRangeDefs.find((d) => d.label === selectedRange);
     if (!def) return yardList;
     return yardList.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
-  }, [selectedRange, yardRangeDefs, yardList]);
+  }, [selectedRange, yardList]);
 
   const formatDateOnly = (iso?: string | null) => {
     if (!iso) return "-";
@@ -446,27 +429,15 @@ export default function DealerGroupYard() {
     return d.toLocaleDateString();
   };
 
+  // Professional color palette
   const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#06b6d4", "#a855f7", "#3b82f6", "#64748b"];
+
   const cycleNextCategory = () => {
     const order: Array<typeof activeCategory> = ["range", "function", "layout", "axle", "length", "height"];
     const idx = order.indexOf(activeCategory);
     const next = order[(idx + 1) % order.length];
     setActiveCategory(next);
   };
-
-  // Monthly PGI trend only for current dealer
-  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
-  const pgiDatesDealer = useMemo(() => {
-    return onTheRoadDealerAll
-      .map((x) => {
-        const d = parseDDMMYYYY(x.pgidate);
-        if (!d) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter((d): d is Date => !!d) as Date[];
-  }, [onTheRoadDealerAll]);
-  const pgiMonthlyTrendDealer = useMemo(() => groupCountsByMonth(monthBuckets, pgiDatesDealer), [monthBuckets, pgiDatesDealer]);
 
   return (
     <div className="flex min-h-screen">
@@ -477,20 +448,18 @@ export default function DealerGroupYard() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
-        isGroup={isDealerGroup(dealerConfig)}
-        includedDealers={includedDealerNames}
       />
       <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
           <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 via-blue-700 to-sky-600">
             Yard Inventory & On The Road — {dealerDisplayName}
           </h1>
-          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for the selected dealer</p>
+          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
         </header>
 
-        {/* Top grid: Left = Days In Yard Distribution, Right = Stock Analysis */}
+        {/* Top grid: Left = Days In Yard Distribution (half), Right = Stock Analysis */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Days In Yard Distribution (left half) */}
+          {/* Days In Yard — Distribution & Filter (left half) */}
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader className="flex items-center justify-between">
               <CardTitle className="text-sm">Days In Yard — Distribution</CardTitle>
@@ -673,21 +642,7 @@ export default function DealerGroupYard() {
                 value={manualChassis}
                 onChange={(e) => setManualChassis(e.target.value)}
               />
-              <Button onClick={async () => {
-                const ch = manualChassis.trim().toUpperCase();
-                if (!ch) {
-                  setManualStatus({ type: "err", msg: "请输入车架号" });
-                  return;
-                }
-                try {
-                  await addManualChassisToYard(currentDealerSlug, ch);
-                  setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
-                  setManualChassis("");
-                } catch (e) {
-                  console.error(e);
-                  setManualStatus({ type: "err", msg: "添加失败，请重试。" });
-                }
-              }} className="bg-sky-600 hover:bg-sky-700">
+              <Button onClick={handleAddManual} className="bg-sky-600 hover:bg-sky-700">
                 Add to Yard
               </Button>
               {manualStatus && (
@@ -697,7 +652,6 @@ export default function DealerGroupYard() {
               )}
             </div>
 
-            {/* Days In Yard filtered table */}
             {yardListDisplay.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
             ) : (
@@ -728,16 +682,18 @@ export default function DealerGroupYard() {
                         </TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
-                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={async () => {
-                            try { await dispatchFromYard(currentDealerSlug, row.chassis); } catch (e) { console.error(e); }
-                            setHandoverData({
-                              chassis: row.chassis,
-                              model: row.model,
-                              dealerName: dealerDisplayName,
-                              dealerSlug: currentDealerSlug,
-                              handoverAt: new Date().toISOString(),
-                            });
-                            setHandoverOpen(true);
+                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => {
+                            (async () => {
+                              try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
+                              setHandoverData({
+                                chassis: row.chassis,
+                                model: row.model,
+                                dealerName: dealerDisplayName,
+                                dealerSlug,
+                                handoverAt: new Date().toISOString(),
+                              });
+                              setHandoverOpen(true);
+                            })();
                           }}>
                             Handover
                           </Button>
@@ -755,29 +711,11 @@ export default function DealerGroupYard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={120}>
-                <BarChart data={groupCountsByWeek(makeWeeklyBuckets(12), ensureDates(yardList.map(x => x.receivedAt ? new Date(x.receivedAt) : null)))}>
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#6366f1" radius={[6,6,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
+            <CardContent><WeeklyBarChart points={yardTrend} /></CardContent>
           </Card>
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={120}>
-                <BarChart data={groupCountsByMonth(makeMonthBucketsCurrentYear(), ensureDates(onTheRoadDealerAll.map(x => { const d = parseDDMMYYYY(x.pgidate); return d ? (d.setHours(0,0,0,0), d) : null; })) )}>
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#0ea5e9" radius={[6,6,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
+            <CardContent><MonthlyBarChart points={pgiMonthlyTrendDealer} /></CardContent>
           </Card>
         </div>
 
