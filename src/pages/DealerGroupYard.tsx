@@ -1,6 +1,6 @@
-// src/pages/DealerGroupYard.tsx
+// src/pages/DealerYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,13 +11,10 @@ import {
   subscribeToYardStock,
   receiveChassisToYard,
   subscribeToSchedule,
-  subscribeDealerConfig,
-  subscribeAllDealerConfigs,
   addManualChassisToYard,
   dispatchFromYard,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
-import { isDealerGroup } from "@/types/dealer";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import * as XLSX from "xlsx";
 import {
@@ -86,9 +83,9 @@ function makeWeeklyBuckets(weeks: number = 12): Date[] {
   start.setDate(start.getDate() - diffToMonday);
   const buckets: Date[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
-    const d = new Date(start);
-    d.setDate(start.getDate() - i * 7);
-    buckets.push(d);
+      const d = new Date(start);
+      d.setDate(start.getDate() - i * 7);
+      buckets.push(d);
   }
   return buckets;
 }
@@ -138,16 +135,42 @@ function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
   return points;
 }
 
-function ensureDates(arr: (Date | null | undefined)[]): Date[] {
-  return arr.filter((d) => d instanceof Date && !isNaN((d as Date).getTime())) as Date[];
+function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
-
-// Icons
-const IconClipboard = () => <img src="/assets/icons/clipboard.png" alt="clip" className="w-5 h-5" />;
-const IconRuler = () => (<svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M3 8l5-5 13 13-5 5L3 8z" stroke="currentColor" strokeWidth="2"/></svg>);
-const IconCog = () => (<svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" strokeWidth="2"/><path d="M19.4 15a7.97 7.97 0 00.4-3 7.97 7.97 0 00-.4-3l2.1-1.6-2-3.4-2.6 1A8.09 8.09 0 0014 1.6L13 0h-2l-1 1.6A8.09 8.09 0 007.1 2.6l-2.6-1-2 3.4L4.6 6a7.97 7.97 0 00-.4 3 7.97 7.97 0 00.4 3L2.5 16.6l2 3.4 2.6-1A8.09 8.09 0 0010 22.4l1 1.6h2l1-1.6a8.09 8.09 0 002.9-1l2.6 1 2-3.4L19.4 15z" stroke="currentColor" strokeWidth="2"/></svg>);
-const IconLayout = () => (<svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" stroke="currentColor" strokeWidth="2"/><path d="M3 9h18M9 21V9" stroke="currentColor" strokeWidth="2"/></svg>);
-const IconCar = () => (<svg className="w-5 h-5 text-slate-700" viewBox="0 0 24 24" fill="none"><path d="M3 16l2-6 3-3h8l3 3 2 6H3z" stroke="currentColor" strokeWidth="2"/><circle cx="7" cy="17" r="2" stroke="currentColor" strokeWidth="2"/><circle cx="17" cy="17" r="2" stroke="currentColor" strokeWidth="2"/></svg>);
+function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Excel rows type
 type ExcelRow = {
@@ -222,51 +245,9 @@ function PieLegend({ payload }: { payload?: any[] }) {
   );
 }
 
-function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <div className="flex items-end gap-3 h-28">
-      {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full">
-          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
-            title={`${p.label}: ${p.count}`}
-          />
-          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <div className="flex items-end gap-3 h-28">
-      {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full">
-          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
-            title={`${p.label}: ${p.count}`}
-          />
-          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export default function DealerGroupYard() {
-  const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
-  const navigate = useNavigate();
-  const groupSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
-
-  const [dealerConfig, setDealerConfig] = useState<any>(null);
-  const [allDealerConfigs, setAllDealerConfigs] = useState<any>({});
-  const [configLoading, setConfigLoading] = useState(true);
+export default function DealerYard() {
+  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
+  const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
   const [pgi, setPgi] = useState<Record<string, PGIRecord>>({});
   const [yard, setYard] = useState<Record<string, any>>({});
@@ -290,45 +271,34 @@ export default function DealerGroupYard() {
   const [showLength, setShowLength] = useState(false);
   const [showAxle, setShowAxle] = useState(false);
 
+  // Days in Yard filter
+  const yardRangeDefs = useMemo(() => ([
+    { label: "0–7", min: 0, max: 7 },
+    { label: "8–14", min: 8, max: 14 },
+    { label: "15–30", min: 15, max: 30 },
+    { label: "31–60", min: 31, max: 60 },
+    { label: "61–90", min: 61, max: 90 },
+    { label: "90+", min: 91, max: 9999 },
+  ]), []);
+  const [selectedRange, setSelectedRange] = useState<string | null>(null);
+
   useEffect(() => {
-    const unsubConfig = subscribeDealerConfig(groupSlug, (cfg) => {
-      setDealerConfig(cfg);
-      setConfigLoading(false);
-    });
-    const unsubAll = subscribeAllDealerConfigs((data) => setAllDealerConfigs(data || {}));
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
     const unsubSched = subscribeToSchedule((data) => setSchedule(Array.isArray(data) ? data : []), {
       includeNoChassis: true,
       includeNoCustomer: true,
       includeFinished: true,
     });
+    let unsubYard: (() => void) | undefined;
+    if (dealerSlug) {
+      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
+    }
     return () => {
-      unsubConfig?.();
-      unsubAll?.();
       unsubPGI?.();
+      unsubYard?.();
       unsubSched?.();
     };
-  }, [groupSlug]);
-
-  const includedDealerSlugs = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) return [groupSlug];
-    return dealerConfig.includedDealers || [];
-  }, [dealerConfig, groupSlug]);
-
-  useEffect(() => {
-    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !selectedDealerSlug) {
-      const first = includedDealerSlugs[0];
-      if (first) navigate(`/dealergroup/${rawDealerSlug}/${first}/yard`, { replace: true });
-    }
-  }, [configLoading, dealerConfig, selectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
-
-  const currentDealerSlug = selectedDealerSlug || includedDealerSlugs[0] || groupSlug;
-
-  useEffect(() => {
-    if (!currentDealerSlug) return;
-    const unsubYard = subscribeToYardStock(currentDealerSlug, (data) => setYard(data || {}));
-    return () => unsubYard?.();
-  }, [currentDealerSlug]);
+  }, [dealerSlug]);
 
   useEffect(() => {
     // Load latest Excel uploaded asset for insights
@@ -360,7 +330,11 @@ export default function DealerGroupYard() {
     return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
-  const onTheRoadWeekly = useMemo(() => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7)), [onTheRoadAll]);
+  // Only show current dealer's PGI in last 7 days
+  const onTheRoadWeekly = useMemo(
+    () => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7) && slugifyDealerName(row.dealer) === dealerSlug),
+    [onTheRoadAll, dealerSlug]
+  );
 
   const yardList = useMemo(() => {
     const entries = Object.entries(yard || {});
@@ -371,32 +345,15 @@ export default function DealerGroupYard() {
       const model = toStr(sch?.Model || rec?.model);
       const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      const fromPGI = Boolean(rec?.from_pgidate);
-      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard, fromPGI };
+      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard };
     });
   }, [yard, scheduleByChassis]);
 
-  const includedDealerNames = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) return null;
-    return includedDealerSlugs.map((slug: string) => {
-      const cfg = allDealerConfigs[slug];
-      return { slug, name: cfg?.name || prettifyDealerName(slug) };
-    });
-  }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
-
-  const dealerDisplayName = useMemo(() => {
-    if (selectedDealerSlug) {
-      const selectedConfig = allDealerConfigs[selectedDealerSlug];
-      if (selectedConfig?.name) return selectedConfig.name;
-      return prettifyDealerName(selectedDealerSlug);
-    }
-    if (dealerConfig?.name) return dealerConfig.name;
-    return prettifyDealerName(groupSlug);
-  }, [selectedDealerSlug, allDealerConfigs, dealerConfig, groupSlug]);
+  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
 
   const handleReceive = async (chassis: string, rec: PGIRecord) => {
     try {
-      await receiveChassisToYard(currentDealerSlug, chassis, rec);
+      await receiveChassisToYard(dealerSlug, chassis, rec);
     } catch (e) {
       console.error("receive failed", e);
     }
@@ -409,7 +366,7 @@ export default function DealerGroupYard() {
       return;
     }
     try {
-      await addManualChassisToYard(currentDealerSlug, ch);
+      await addManualChassisToYard(dealerSlug, ch);
       setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
       setManualChassis("");
     } catch (e) {
@@ -427,6 +384,33 @@ export default function DealerGroupYard() {
   }, [onTheRoadAll]);
   const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
   const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
+
+  // Trends
+  const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
+  const yardDates = useMemo(() => {
+    return yardList
+      .map((x) => {
+        const d = x.receivedAt ? new Date(x.receivedAt) : null;
+        if (!d || isNaN(d.getTime())) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })
+      .filter(Boolean) as Date[];
+  }, [yardList]);
+  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
+
+  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
+  const pgiDates = useMemo(() => {
+    return onTheRoadAll
+      .map((x) => {
+        const d = parseDDMMYYYY(x.pgidate);
+        if (!d) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })
+      .filter(Boolean) as Date[];
+  }, [onTheRoadAll]);
+  const pgiMonthlyTrend = useMemo(() => groupCountsByMonth(monthBuckets, pgiDates), [monthBuckets, pgiDates]);
 
   // Excel insights data
   const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
@@ -468,6 +452,21 @@ export default function DealerGroupYard() {
 
   const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
 
+  // Days in Yard distribution and filter
+  const yardRangeBuckets = useMemo(() => {
+    const counts = yardRangeDefs.map(({ label, min, max }) => ({
+      label,
+      count: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max).length,
+    }));
+    return counts;
+  }, [yardRangeDefs, yardList]);
+  const yardListDisplay = useMemo(() => {
+    if (!selectedRange) return yardList;
+    const def = yardRangeDefs.find((d) => d.label === selectedRange);
+    if (!def) return yardList;
+    return yardList.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
+  }, [selectedRange, yardRangeDefs, yardList]);
+
   const formatDateOnly = (iso?: string | null) => {
     if (!iso) return "-";
     const d = new Date(iso);
@@ -486,15 +485,13 @@ export default function DealerGroupYard() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
-        isGroup={isDealerGroup(dealerConfig)}
-        includedDealers={includedDealerNames}
       />
       <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
           <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 via-blue-700 to-sky-600">
             Yard Inventory & On The Road — {dealerDisplayName}
           </h1>
-          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for the selected dealer</p>
+          <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
         </header>
 
         {/* KPI Cards */}
@@ -521,7 +518,7 @@ export default function DealerGroupYard() {
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <IconClipboard /> Stock Analysis
+              Stock Analysis
               <span className="ml-2 text-xs font-medium text-slate-500 rounded-full border px-2 py-0.5 bg-white/70">
                 Top 15 Count: {top15Count}
               </span>
@@ -538,15 +535,20 @@ export default function DealerGroupYard() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {showRange && (
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Model Range</CardTitle></CardHeader>
-                  <CardContent className="h-52">
+                <Card className="border-slate-200 bg-white/80">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Model Range</CardTitle></CardHeader>
+                  <CardContent className="h-60">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={rangeCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
+                        <Pie
+                          data={rangeCounts} dataKey="value" nameKey="name"
+                          innerRadius={60} outerRadius={95} paddingAngle={2}
+                          startAngle={90} endAngle={-270} label={false}
+                        >
+                          {rangeCounts.map((_, i) => <Cell key={`range-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
                         <ReTooltip />
-                        <Legend content={<PieLegend />} />
-                        {rangeCounts.map((_, i) => <Cell key={`range-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -554,15 +556,20 @@ export default function DealerGroupYard() {
               )}
 
               {showFunction && (
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconCog /><CardTitle className="text-sm">Function</CardTitle></CardHeader>
-                  <CardContent className="h-52">
+                <Card className="border-slate-200 bg-white/80">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Function</CardTitle></CardHeader>
+                  <CardContent className="h-60">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={functionCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
+                        <Pie
+                          data={functionCounts} dataKey="value" nameKey="name"
+                          innerRadius={60} outerRadius={95} paddingAngle={2}
+                          startAngle={90} endAngle={-270} label={false}
+                        >
+                          {functionCounts.map((_, i) => <Cell key={`func-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
                         <ReTooltip />
-                        <Legend content={<PieLegend />} />
-                        {functionCounts.map((_, i) => <Cell key={`func-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -570,15 +577,20 @@ export default function DealerGroupYard() {
               )}
 
               {showLayout && (
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconLayout /><CardTitle className="text-sm">Layout</CardTitle></CardHeader>
-                  <CardContent className="h-52">
+                <Card className="border-slate-200 bg-white/80">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Layout</CardTitle></CardHeader>
+                  <CardContent className="h-60">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={layoutCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
+                        <Pie
+                          data={layoutCounts} dataKey="value" nameKey="name"
+                          innerRadius={60} outerRadius={95} paddingAngle={2}
+                          startAngle={90} endAngle={-270} label={false}
+                        >
+                          {layoutCounts.map((_, i) => <Cell key={`layout-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
                         <ReTooltip />
-                        <Legend content={<PieLegend />} />
-                        {layoutCounts.map((_, i) => <Cell key={`layout-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -586,15 +598,20 @@ export default function DealerGroupYard() {
               )}
 
               {showAxle && (
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconCar /><CardTitle className="text-sm">Axle</CardTitle></CardHeader>
-                  <CardContent className="h-52">
+                <Card className="border-slate-200 bg-white/80">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Axle</CardTitle></CardHeader>
+                  <CardContent className="h-60">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={axleCounts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2} label={false} />
+                        <Pie
+                          data={axleCounts} dataKey="value" nameKey="name"
+                          innerRadius={60} outerRadius={95} paddingAngle={2}
+                          startAngle={90} endAngle={-270} label={false}
+                        >
+                          {axleCounts.map((_, i) => <Cell key={`axle-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
                         <ReTooltip />
-                        <Legend content={<PieLegend />} />
-                        {axleCounts.map((_, i) => <Cell key={`axle-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                        <Legend verticalAlign="bottom" align="center" content={<PieLegend />} />
                       </PieChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -602,15 +619,15 @@ export default function DealerGroupYard() {
               )}
 
               {showHeight && (
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Height</CardTitle></CardHeader>
-                  <CardContent className="h-40">
+                <Card className="border-slate-200 bg-white/80">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Height</CardTitle></CardHeader>
+                  <CardContent className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={heightBuckets}>
                         <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                         <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#6366f1" radius={[4,4,0,0]} />
+                        <Bar dataKey="count" fill="#6366f1" radius={[6,6,0,0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -618,15 +635,15 @@ export default function DealerGroupYard() {
               )}
 
               {showLength && (
-                <Card className="border-slate-200 bg-white/70">
-                  <CardHeader className="flex items-center gap-2"><IconRuler /><CardTitle className="text-sm">Length</CardTitle></CardHeader>
-                  <CardContent className="h-40">
+                <Card className="border-slate-200 bg-white/80">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Length</CardTitle></CardHeader>
+                  <CardContent className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={lengthBuckets}>
                         <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                         <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                         <Tooltip />
-                        <Bar dataKey="count" fill="#0ea5e9" radius={[4,4,0,0]} />
+                        <Bar dataKey="count" fill="#0ea5e9" radius={[6,6,0,0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
@@ -636,7 +653,7 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* On The Road - last 7 days only */}
+        {/* On The Road - last 7 days only (current dealer only, no Dealer column) */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader>
             <CardTitle>On The Road (PGI) — Last 7 Days</CardTitle>
@@ -651,7 +668,6 @@ export default function DealerGroupYard() {
                     <TableRow>
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">PGI Date</TableHead>
-                      <TableHead className="font-semibold">Dealer</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Days Since PGI</TableHead>
@@ -663,7 +679,6 @@ export default function DealerGroupYard() {
                       <TableRow key={row.chassis}>
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
-                        <TableCell>{toStr(row.dealer) || "-"}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>{isWithinDays(row.pgidate, 365) ? Math.floor((Date.now() - (parseDDMMYYYY(row.pgidate)?.getTime() || Date.now())) / (1000 * 60 * 60 * 24)) : 0}</TableCell>
@@ -679,6 +694,41 @@ export default function DealerGroupYard() {
               </div>
             )}
           </CardContent>
+        </Card>
+
+        {/* Days In Yard — Distribution & Filter */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm">Days In Yard — Distribution</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setSelectedRange(null)}>
+                Clear Filter
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={yardRangeBuckets}>
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Bar
+                  dataKey="count"
+                  fill="#14b8a6"
+                  radius={[6,6,0,0]}
+                  onClick={(data: any, idx: number) => {
+                    const label = yardRangeBuckets[idx]?.label;
+                    if (label) setSelectedRange(label);
+                  }}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+          {selectedRange && (
+            <div className="px-6 pb-4 text-xs text-slate-600">
+              Filtered by range: <span className="font-semibold text-teal-700">{selectedRange} days</span>
+            </div>
+          )}
         </Card>
 
         {/* Yard Inventory */}
@@ -703,7 +753,7 @@ export default function DealerGroupYard() {
               )}
             </div>
 
-            {yardList.length === 0 ? (
+            {yardListDisplay.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
             ) : (
               <div className="rounded-lg border overflow-auto">
@@ -720,7 +770,7 @@ export default function DealerGroupYard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {yardList.map((row) => (
+                    {yardListDisplay.map((row) => (
                       <TableRow key={row.chassis}>
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
@@ -733,16 +783,19 @@ export default function DealerGroupYard() {
                         </TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
-                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={async () => {
-                            try { await dispatchFromYard(currentDealerSlug, row.chassis); } catch (e) { console.error(e); }
-                            setHandoverData({
-                              chassis: row.chassis,
-                              model: row.model,
-                              dealerName: dealerDisplayName,
-                              dealerSlug: currentDealerSlug,
-                              handoverAt: new Date().toISOString(),
-                            });
-                            setHandoverOpen(true);
+                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => {
+                            // Immediately remove then open handover modal
+                            (async () => {
+                              try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
+                              setHandoverData({
+                                chassis: row.chassis,
+                                model: row.model,
+                                dealerName: dealerDisplayName,
+                                dealerSlug,
+                                handoverAt: new Date().toISOString(),
+                              });
+                              setHandoverOpen(true);
+                            })();
                           }}>
                             Handover
                           </Button>
@@ -760,28 +813,11 @@ export default function DealerGroupYard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent>
-              <WeeklyBarChart
-                points={groupCountsByWeek(
-                  makeWeeklyBuckets(12),
-                  ensureDates(yardList.map((x) => (x.receivedAt ? new Date(x.receivedAt) : null)))
-                )}
-              />
-            </CardContent>
+            <CardContent><WeeklyBarChart points={yardTrend} /></CardContent>
           </Card>
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
-            <CardContent>
-              <MonthlyBarChart
-                points={groupCountsByMonth(
-                  makeMonthBucketsCurrentYear(),
-                  ensureDates(onTheRoadAll.map((x) => {
-                    const d = parseDDMMYYYY(x.pgidate);
-                    return d ? (d.setHours(0,0,0,0), d) : null;
-                  }))
-                )}
-              />
-            </CardContent>
+            <CardContent><MonthlyBarChart points={pgiMonthlyTrend} /></CardContent>
           </Card>
         </div>
 
