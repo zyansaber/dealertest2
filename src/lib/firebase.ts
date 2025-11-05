@@ -295,7 +295,7 @@ export async function dispatchFromYard(dealerSlug: string, chassis: string) {
   await remove(yardRef);
 }
 
-/** -------------------- Product Registration -------------------- */
+/** -------------------- Product Registration / Handover -------------------- */
 export async function saveProductRegistration(
   dealerSlug: string,
   chassis: string,
@@ -320,7 +320,6 @@ export async function saveProductRegistration(
   await set(targetRef, data);
 }
 
-/** -------------------- Handover -------------------- */
 /**
  * Save handover data under handover/{dealerSlug}/{chassis} and remove the unit from yardstock.
  */
@@ -348,4 +347,15 @@ export async function saveHandover(
   await set(targetRef, data);
   const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   await remove(yardRef);
+}
+
+/** -------------------- Handover subscription -------------------- */
+export function subscribeToHandover(
+  dealerSlug: string,
+  cb: (value: Record<string, any>) => void
+) {
+  const r = ref(database, `handover/${dealerSlug}`);
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
 }
