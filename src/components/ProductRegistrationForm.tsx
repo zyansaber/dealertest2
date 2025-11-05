@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { saveHandover } from "@/lib/firebase";
 
-type RegistrationData = {
+// ---------------- Types ----------------
+export type RegistrationData = {
   chassis: string;
   model?: string | null;
   dealerName?: string | null;
@@ -21,6 +22,37 @@ type Props = {
   initial?: RegistrationData | null;
 };
 
+type HandoverAssistPayload = {
+  chassis: string;
+  model: string | null;
+  dealerName: string | null;
+  dealerSlug: string | null;
+  handoverAt: string; // ISO
+  customer: {
+    firstName: string;
+    lastName: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+  };
+  createdAt: string; // ISO
+  source: "dealer_assist_form";
+};
+
+type HandoverInvitePayload = {
+  chassis: string;
+  model: string | null;
+  dealerName: string | null;
+  dealerSlug: string | null;
+  handoverAt: string; // ISO
+  createdAt: string; // ISO
+  source: "customer email";
+  invite: {
+    email: string;
+  };
+};
+
+// ---------------- Globals for UMD libs ----------------
 declare global {
   interface Window {
     html2canvas?: any;
@@ -39,15 +71,13 @@ async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
       s.async = true;
       s.crossOrigin = "anonymous";
       s.onload = () => resolve();
-      s.onerror = (e) => reject(new Error(`Failed to load script: ${src}`));
+      s.onerror = () => reject(new Error(`Failed to load script: ${src}`));
       document.head.appendChild(s);
     });
 
-  // Load html2canvas if not present
   if (!window.html2canvas) {
     await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
   }
-  // Load jsPDF UMD if not present
   if (!window.jspdf || !window.jspdf.jsPDF) {
     await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
   }
@@ -72,20 +102,22 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const data = useMemo(() => {
-    return initial ?? {
-      chassis: "",
-      model: "",
-      dealerName: "",
-      dealerSlug: "",
-      handoverAt: new Date().toISOString(),
-    };
+  const data = useMemo<RegistrationData>(() => {
+    return (
+      initial ?? {
+        chassis: "",
+        model: "",
+        dealerName: "",
+        dealerSlug: "",
+        handoverAt: new Date().toISOString(),
+      }
+    );
   }, [initial]);
 
   const handoverDateStr = useMemo(() => {
     try {
       const d = new Date(data.handoverAt);
-      return d.toLocaleDateString();
+      return isNaN(d.getTime()) ? data.handoverAt : d.toLocaleDateString();
     } catch {
       return data.handoverAt;
     }
@@ -107,6 +139,13 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     onOpenChange(false);
   };
 
+  const canSubmit = () => {
+    // 必要条件：至少有姓名其一 或 email/phone 之一；且有 chassis
+    return Boolean(
+      data.chassis && (firstName.trim() || lastName.trim() || custEmail.trim() || phone.trim())
+    );
+  };
+
   const handleDownloadPDF = async () => {
     const el = printRef.current;
     if (!el) return;
@@ -119,21 +158,77 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
       const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 32;
       const imgWidth = pageWidth - margin * 2;
-@@ -146,59 +146,148 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let y = margin;
+      if (imgHeight <= pageHeight - margin * 2) {
+        pdf.addImage(imgData, "PNG", margin, y, imgWidth, imgHeight);
+      } else {
+        // 多页
+        let remaining = imgHeight;
+        const pageCanvas = document.createElement("canvas");
+        const pageCtx = pageCanvas.getContext("2d");
+        const scale = imgWidth / canvas.width;
+        const pageDrawHeight = pageHeight - margin * 2;
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = Math.floor(pageDrawHeight / scale);
+
+        let sY = 0; // 源 y 偏移
+        while (remaining > 0) {
+          if (!pageCtx) break;
+          pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+          pageCtx.drawImage(
+            canvas,
+            0,
+            sY,
+            canvas.width,
+            pageCanvas.height,
+            0,
+            0,
+            pageCanvas.width,
+            pageCanvas.height
+          );
+          const pageImg = pageCanvas.toDataURL("image/png");
+          pdf.addImage(pageImg, "PNG", margin, margin, imgWidth, pageDrawHeight);
+          remaining -= pageDrawHeight;
+          sY += pageCanvas.height;
+          if (remaining > 0) pdf.addPage();
+        }
+      }
+
+      pdf.save(`${data.chassis || "handover"}.pdf`);
+    } catch (e) {
+      console.error(e);
+      setSubmitMsg("PDF download failed. Please try again.");
+    }
+  };
+
+  const handleSubmitAssist = async () => {
+    if (!canSubmit()) {
+      setSubmitMsg("Please complete the required customer information.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitMsg(null);
+    try {
+      const payload: HandoverAssistPayload = {
+        chassis: data.chassis,
+        model: data.model || null,
         dealerName: data.dealerName || null,
         dealerSlug: data.dealerSlug || null,
         handoverAt: data.handoverAt,
         customer: {
-          firstName,
-          lastName,
-          email: custEmail,
-          phone,
-          address,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: custEmail.trim() || undefined,
+          phone: phone.trim() || undefined,
+          address: address.trim() || undefined,
         },
         createdAt: new Date().toISOString(),
-        source: "dealer_assist_form" as const,
+        source: "dealer_assist_form",
       };
-      await saveHandover((data.dealerSlug || "") as string, data.chassis, handoverData);
+
+      await saveHandover((data.dealerSlug || "") as string, data.chassis, payload as any);
 
       setSubmitMsg("Submitted successfully.");
       setSubmitting(false);
@@ -153,19 +248,18 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     setSubmitting(true);
     setSubmitMsg(null);
     try {
-      const handoverData = {
+      const payload: HandoverInvitePayload = {
         chassis: data.chassis,
         model: data.model || null,
         dealerName: data.dealerName || null,
         dealerSlug: data.dealerSlug || null,
         handoverAt: data.handoverAt,
         createdAt: new Date().toISOString(),
-        source: "customer email" as const,
-        invite: {
-          email: inviteEmail,
-        },
+        source: "customer email",
+        invite: { email: inviteEmail.trim() },
       };
-      await saveHandover((data.dealerSlug || "") as string, data.chassis, handoverData);
+
+      await saveHandover((data.dealerSlug || "") as string, data.chassis, payload as any);
 
       setSubmitMsg("Email submitted successfully.");
       setSubmitting(false);
@@ -268,10 +362,27 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
               <div className="mt-5 pt-5 border-t">
                 <div className="text-base font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
                   Customer Information
-@@ -223,41 +312,60 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
+                </div>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>First Name</Label>
+                    <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Last Name</Label>
+                    <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Email</Label>
+                    <Input type="email" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Phone</Label>
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  </div>
                   <div className="md:col-span-2">
                     <Label>Home Address</Label>
-                    <Input value={address} onChange={(e) => setAddress(e.target.value)} required />
+                    <Input value={address} onChange={(e) => setAddress(e.target.value)} />
                   </div>
                 </div>
               </div>
@@ -314,7 +425,9 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
               </CardContent>
             </Card>
             <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" onClick={() => setStep("mode")}>Back</Button>
+              <Button variant="secondary" onClick={() => setStep("mode")}>
+                Back
+              </Button>
               <Button
                 className="bg-sky-600 hover:bg-sky-700"
                 disabled={submitting || !inviteEmail}
