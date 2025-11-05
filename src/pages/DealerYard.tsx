@@ -30,6 +30,8 @@ import {
   Cell,
   Legend,
   ResponsiveContainer,
+  LineChart,
+  Line,
 } from "recharts";
 
 type PGIRec = {
@@ -95,6 +97,34 @@ function isDateWithinRange(d: Date | null, start: Date | null, end: Date | null)
   const e = end ? end.getTime() : Infinity;
   return t >= s && t <= e;
 }
+function startOfWeekMonday(d: Date): Date {
+  const date = new Date(d);
+  const day = date.getDay(); // 0-6 Sun-Sat
+  const diff = (day + 6) % 7; // Monday=0
+  date.setDate(date.getDate() - diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function fmtMonthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function fmtMonthLabel(d: Date): string {
+  return d.toLocaleString(undefined, { month: "short", year: "numeric" });
+}
+function fmtWeekLabel(d: Date): string {
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+}
+function isSecondhandChassis(chassis?: string | null): boolean {
+  if (!chassis) return false;
+  const c = String(chassis).toUpperCase();
+  // Three letters, first is L/N/S, followed by 23/24/25, then digits
+  return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
+}
 
 // Excel rows type
 type ExcelRow = {
@@ -154,7 +184,7 @@ const yardRangeDefs = [
   { label: "180+", min: 181, max: 9999 },
 ];
 
-// Colors for pie slices
+// Colors
 const PIE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#84cc16", "#d946ef", "#0ea5e9", "#14b8a6"];
 
 export default function DealerYard() {
@@ -188,7 +218,7 @@ export default function DealerYard() {
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
   const [activeCategory, setActiveCategory] = useState<"range" | "function" | "layout" | "axle" | "length" | "height">("range");
 
-  // Yard Inventory filters
+  // Yard Inventory filters (controlled only via charts)
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
 
@@ -246,7 +276,7 @@ export default function DealerYard() {
 
   // PGI list date range
   const [startDate, endDate] = useMemo(() => {
-    if (rangeType === "custom" && customStart && customEnd) {
+    if (rangeType === "custom" && kpiCustomStart && kpiCustomEnd) {
       const s = new Date(customStart);
       const e = new Date(customEnd);
       e.setHours(23, 59, 59, 999);
@@ -357,6 +387,17 @@ export default function DealerYard() {
     [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
   );
 
+  const kpiSecondhandCount = useMemo(
+    () =>
+      handoverList.filter(
+        (x) =>
+          dealerSlug === x.dealerSlugFromRec &&
+          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate) &&
+          isSecondhandChassis(x.chassis)
+      ).length,
+    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+  );
+
   const kpiYardStockCurrent = useMemo(() => {
     const stock = yardList.filter((x) => x.type === "Stock").length;
     const customer = yardList.filter((x) => x.type === "Customer").length;
@@ -371,7 +412,7 @@ export default function DealerYard() {
     }));
   }, [yardList]);
 
-  // Yard Inventory display with filters
+  // Yard Inventory display with filters driven by charts only
   const yardListDisplay = useMemo(() => {
     let list = yardList;
     if (selectedRangeBucket) {
@@ -384,13 +425,73 @@ export default function DealerYard() {
     return list;
   }, [yardList, selectedRangeBucket, selectedModelRange]);
 
-  const modelRangeOptions = useMemo(() => {
-    const set = new Set<string>();
-    yardList.forEach((x) => set.add(x.modelRange));
-    const arr = Array.from(set).filter(Boolean);
-    arr.sort((a, b) => a.localeCompare(b));
-    return ["All", ...arr];
-  }, [yardList]);
+  // Monthly charts data within KPI range
+  const receivedMonthlyData = useMemo(() => {
+    const map: Record<string, { key: string; label: string; count: number }> = {};
+    yardList.forEach((x) => {
+      const d = x.receivedAt ? new Date(x.receivedAt) : null;
+      if (!d || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
+      const key = fmtMonthKey(d);
+      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
+      if (!map[key]) map[key] = { key, label, count: 0 };
+      map[key].count += 1;
+    });
+    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
+  }, [yardList, kpiStartDate, kpiEndDate]);
+
+  const handoversMonthlyData = useMemo(() => {
+    const map: Record<string, { key: string; label: string; count: number }> = {};
+    handoverList.forEach((x) => {
+      const d = x.handoverAt ? new Date(x.handoverAt) : null;
+      if (!d) return;
+      if (dealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
+      const key = fmtMonthKey(d);
+      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
+      if (!map[key]) map[key] = { key, label, count: 0 };
+      map[key].count += 1;
+    });
+    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
+  }, [handoverList, dealerSlug, kpiStartDate, kpiEndDate]);
+
+  // 10-week stock level reverse projection (received=in, handover=out)
+  const stockLevel10Weeks = useMemo(() => {
+    const now = new Date();
+    const latestStart = startOfWeekMonday(now);
+    const starts: Date[] = [];
+    for (let i = 9; i >= 0; i--) {
+      const d = addDays(latestStart, -7 * i);
+      starts.push(d);
+    }
+    const nextStarts = starts.map((s) => addDays(s, 7));
+
+    const receivedByWeek: number[] = starts.map((s, i) => {
+      const e = nextStarts[i];
+      return yardList.filter((x) => {
+        const d = x.receivedAt ? new Date(x.receivedAt) : null;
+        return d && d >= s && d < e;
+      }).length;
+    });
+
+    const handoversByWeek: number[] = starts.map((s, i) => {
+      const e = nextStarts[i];
+      return handoverList.filter((x) => {
+        const d = x.handoverAt ? new Date(x.handoverAt) : null;
+        return d && d >= s && d < e && x.dealerSlugFromRec === dealerSlug;
+      }).length;
+    });
+
+    const netByWeek = starts.map((_, i) => receivedByWeek[i] - handoversByWeek[i]);
+    const current = kpiYardStockCurrent.total; // using current yard stock as baseline
+
+    // stock at end of each week in ascending order
+    const levels: number[] = starts.map((_, i) => {
+      let sumLater = 0;
+      for (let j = i + 1; j < netByWeek.length; j++) sumLater += netByWeek[j];
+      return Math.max(0, current - sumLater);
+    });
+
+    return starts.map((s, i) => ({ week: fmtWeekLabel(s), level: levels[i] }));
+  }, [yardList, handoverList, dealerSlug, kpiYardStockCurrent.total]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
 
@@ -624,6 +725,7 @@ export default function DealerYard() {
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-500">Handovers</div>
                     <div className="text-2xl font-semibold">{kpiHandoverCount}</div>
+                    <div className="text-xs text-slate-500 mt-1">Secondhand: <span className="font-medium">{kpiSecondhandCount}</span></div>
                   </div>
                   <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
                     <Handshake className="w-5 h-5 text-purple-600" />
@@ -650,7 +752,58 @@ export default function DealerYard() {
           </CardContent>
         </Card>
 
-        {/* Side-by-side: Days In Yard (left half) + Stock Analysis (right half) above Yard Inventory */}
+        {/* Monthly Received / Monthly Handovers / 10-Week Stock Level */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="text-sm">Received Vans (Monthly)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={receivedMonthlyData}>
+                  <XAxis dataKey="label" />
+                  <YAxis allowDecimals={false} />
+                  <ReTooltip />
+                  <Bar dataKey="count" fill="#10b981" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="text-sm">Handovers (Monthly)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={handoversMonthlyData}>
+                  <XAxis dataKey="label" />
+                  <YAxis allowDecimals={false} />
+                  <ReTooltip />
+                  <Bar dataKey="count" fill="#8b5cf6" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="text-sm">Stock Level (Last 10 Weeks)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={stockLevel10Weeks}>
+                  <XAxis dataKey="week" />
+                  <YAxis allowDecimals={false} />
+                  <ReTooltip />
+                  <Line type="monotone" dataKey="level" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Side-by-side: Days In Yard (left) + Stock Analysis (right) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Days In Yard Buckets (Left) */}
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
@@ -709,21 +862,10 @@ export default function DealerYard() {
                   <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
                   <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
                 </div>
-                <Button
-                  variant="outline"
-                  className="!bg-transparent !hover:bg-transparent"
-                  onClick={() => {
-                    setSelectedModelRange("All");
-                  }}
-                  title="Clear Model Range filter"
-                >
-                  Clear
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
               <ResponsiveContainer width="100%" height={220}>
-                {/* Pie for all categories except length which uses bars */}
                 {activeCategory === "length" ? (
                   <BarChart data={analysisData.map((x) => ({ label: x.name, count: x.value }))}>
                     <XAxis dataKey="label" />
@@ -742,12 +884,10 @@ export default function DealerYard() {
                       outerRadius={90}
                       innerRadius={50}
                       onClick={(data: any) => {
-                        // Click pie slice to filter Yard Inventory by Model Range when category = Range
                         if (activeCategory === "range" && data?.name) {
                           setSelectedModelRange(String(data.name));
                         }
                       }}
-                      label={({ name, value }) => `${name} (${value})`}
                     >
                       {analysisData.map((entry, index) => (
                         <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
@@ -782,30 +922,6 @@ export default function DealerYard() {
                   {manualStatus.msg}
                 </div>
               )}
-            </div>
-            {/* Filters on the right, tidy layout */}
-            <div className="flex items-center gap-2">
-              <select
-                className="h-9 rounded-md border px-2 text-sm"
-                value={selectedModelRange}
-                onChange={(e) => setSelectedModelRange(e.target.value as typeof selectedModelRange)}
-                title="Filter by Model Range"
-              >
-                {modelRangeOptions.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-              <Button
-                variant="outline"
-                className="!bg-transparent !hover:bg-transparent"
-                onClick={() => {
-                  setSelectedRangeBucket(null);
-                  setSelectedModelRange("All");
-                }}
-                title="Clear all filters"
-              >
-                Clear Filters
-              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
