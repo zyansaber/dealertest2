@@ -1,4 +1,4 @@
-// src/pages/DealerYard.tsx
+// src/pages/DealerGroupYard.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
@@ -13,14 +13,23 @@ import {
   subscribeToSchedule,
   addManualChassisToYard,
   dispatchFromYard,
+  subscribeToHandover,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
+import { Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
-  PieChart, Pie, Cell, Tooltip as ReTooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, LabelList,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  LabelList,
 } from "recharts";
+
+type AnyMap = Record<string, any>;
 
 const toStr = (v: any) => String(v ?? "");
 const lower = (v: any) => toStr(v).toLowerCase();
@@ -58,12 +67,12 @@ function daysSinceISO(iso?: string | null): number {
   const ms = Date.now() - d.getTime();
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
 }
-function isWithinDays(dateStr?: string | null, days: number = 7): boolean {
-  const d = parseDDMMYYYY(dateStr);
+function isDateWithinRange(d: Date | null, start: Date | null, end: Date | null): boolean {
   if (!d) return false;
-  const ms = Date.now() - d.getTime();
-  const diffDays = Math.floor(ms / (1000 * 60 * 60 * 24));
-  return diffDays >= 0 && diffDays <= days;
+  const t = d.getTime();
+  const s = start ? start.getTime() : -Infinity;
+  const e = end ? end.getTime() : Infinity;
+  return t >= s && t <= e;
 }
 
 type PGIRecord = {
@@ -75,6 +84,43 @@ type PGIRecord = {
 
 type TrendPoint = { label: string; count: number };
 
+function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.count));
+  return (
+    <div className="flex items-end gap-3 h-28">
+      {points.map((p, idx) => (
+        <div key={idx} className="flex flex-col items-center h-full">
+          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
+          <div
+            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
+            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
+            title={`${p.label}: ${p.count}`}
+          />
+          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function makeWeeklyBuckets(weeks: number = 12): Date[] {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -83,9 +129,9 @@ function makeWeeklyBuckets(weeks: number = 12): Date[] {
   start.setDate(start.getDate() - diffToMonday);
   const buckets: Date[] = [];
   for (let i = weeks - 1; i >= 0; i--) {
-      const d = new Date(start);
-      d.setDate(start.getDate() - i * 7);
-      buckets.push(d);
+    const d = new Date(start);
+    d.setDate(start.getDate() - i * 7);
+    buckets.push(d);
   }
   return buckets;
 }
@@ -108,7 +154,6 @@ function groupCountsByWeek(dates: Date[], values: Date[]): TrendPoint[] {
   }
   return points;
 }
-
 function makeMonthBucketsCurrentYear(): Date[] {
   const y = new Date().getFullYear();
   const arr: Date[] = [];
@@ -185,38 +230,28 @@ function countTop15(rows: ExcelRow[]) {
   return cnt;
 }
 
-// Custom Legend for Pie to show name and count (right-side vertical)
-function PieLegend({ payload }: { payload?: any[] }) {
-  if (!payload) return null;
-  return (
-    <ul className="flex flex-col gap-2 text-xs max-h-56 overflow-auto">
-      {payload.map((entry, idx) => (
-        <li key={idx} className="flex items-center gap-2 rounded border px-2 py-1 bg-white/70">
-          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: entry.color }} />
-          <span className="font-medium text-slate-700">{entry.value}</span>
-          <span className="text-slate-500">({entry.payload?.value ?? 0})</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// Days in Yard range defs: 0–90, 91–180, 180+
+// Days in Yard buckets
 const yardRangeDefs = [
   { label: "0–90", min: 0, max: 90 },
   { label: "91–180", min: 91, max: 180 },
   { label: "180+", min: 181, max: 9999 },
 ];
 
-export default function DealerYard() {
+export default function DealerGroupYard() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
   const [pgi, setPgi] = useState<Record<string, PGIRecord>>({});
   const [yard, setYard] = useState<Record<string, any>>({});
+  const [handover, setHandover] = useState<Record<string, any>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
 
-  // Modal: Product Registration
+  // Date range for KPI
+  const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
+  const [customStart, setCustomStart] = useState<string>("");
+  const [customEnd, setCustomEnd] = useState<string>("");
+
+  // Modal
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [handoverData, setHandoverData] = useState<null | { chassis: string; model?: string | null; dealerName?: string | null; dealerSlug?: string | null; handoverAt: string }>(null);
 
@@ -226,11 +261,9 @@ export default function DealerYard() {
 
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
-  // Stock Analysis view mode: show one category at a time; default "range"
   const [activeCategory, setActiveCategory] = useState<"range" | "function" | "layout" | "axle" | "length" | "height">("range");
-
-  // Days in Yard filter selection
   const [selectedRange, setSelectedRange] = useState<string | null>(null);
+  const [selectedAnalysis, setSelectedAnalysis] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -240,18 +273,20 @@ export default function DealerYard() {
       includeFinished: true,
     });
     let unsubYard: (() => void) | undefined;
+    let unsubHandover: (() => void) | undefined;
     if (dealerSlug) {
       unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
+      unsubHandover = subscribeToHandover(dealerSlug, (data) => setHandover(data || {}));
     }
     return () => {
       unsubPGI?.();
       unsubYard?.();
       unsubSched?.();
+      unsubHandover?.();
     };
   }, [dealerSlug]);
 
   useEffect(() => {
-    // Load latest Excel uploaded asset for insights
     (async () => {
       try {
         const resp = await fetch("/assets/data/caravan_classification_3.xlsx");
@@ -280,28 +315,171 @@ export default function DealerYard() {
     return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
-  // Only show current dealer's PGI in last 7 days (and use this subset for PGI monthly trend)
-  const onTheRoadWeekly = useMemo(
-    () => onTheRoadAll.filter((row) => isWithinDays(row.pgidate, 7) && slugifyDealerName(row.dealer) === dealerSlug),
-    [onTheRoadAll, dealerSlug]
-  );
-  const onTheRoadDealerAll = useMemo(
-    () => onTheRoadAll.filter((row) => slugifyDealerName(row.dealer) === dealerSlug),
-    [onTheRoadAll, dealerSlug]
+  // Date range
+  const now = new Date();
+  const [startDate, endDate] = useMemo(() => {
+    if (rangeType === "custom" && customStart && customEnd) {
+      const s = new Date(customStart);
+      const e = new Date(customEnd);
+      e.setHours(23, 59, 59, 999);
+      return [s, e] as [Date, Date];
+    }
+    const map: Record<typeof rangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
+    const days = map[rangeType];
+    const e = new Date();
+    e.setHours(23, 59, 59, 999);
+    const s = new Date();
+    s.setDate(now.getDate() - (days - 1));
+    s.setHours(0, 0, 0, 0);
+    return [s, e] as [Date, Date];
+  }, [rangeType, customStart, customEnd]);
+
+  const onTheRoadInRange = useMemo(
+    () =>
+      onTheRoadAll.filter(
+        (row) =>
+          slugifyDealerName(row.dealer) === dealerSlug &&
+          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), startDate, endDate)
+      ),
+    [onTheRoadAll, dealerSlug, startDate, endDate]
   );
 
   const yardList = useMemo(() => {
     const entries = Object.entries(yard || {});
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
-      const customer = toStr(sch?.Customer || rec?.customer);
+      const customer = toStr(sch?.Customer || (rec as AnyMap)?.customer);
       const type = customer.toLowerCase().endsWith("stock") ? "Stock" : "Customer";
-      const model = toStr(sch?.Model || rec?.model);
-      const receivedAtISO = rec?.receivedAt ?? null;
+      const model = toStr(sch?.Model || (rec as AnyMap)?.model);
+      const receivedAtISO = (rec as AnyMap)?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
       return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard };
     });
   }, [yard, scheduleByChassis]);
+
+  const yardReceivedInRange = useMemo(
+    () =>
+      yardList.filter((x) => isDateWithinRange(x.receivedAt ? new Date(x.receivedAt) : null, startDate, endDate)),
+    [yardList, startDate, endDate]
+  );
+
+  const handoverList = useMemo(() => {
+    const entries = Object.entries(handover || {});
+    return entries.map(([chassis, rec]) => {
+      const r = rec as AnyMap;
+      const handoverAt = r?.handoverAt ?? r?.createdAt ?? null;
+      const dealerSlugFromRec = slugifyDealerName(r?.dealerSlug || r?.dealerName || "");
+      return { chassis, handoverAt, dealerSlugFromRec };
+    });
+  }, [handover]);
+
+  const handoverInRange = useMemo(
+    () =>
+      handoverList.filter(
+        (x) =>
+          dealerSlug === x.dealerSlugFromRec &&
+          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, startDate, endDate)
+      ),
+    [handoverList, dealerSlug, startDate, endDate]
+  );
+
+  // KPI
+  const kpiPgiCount = onTheRoadInRange.length;
+  const kpiReceivedCount = yardReceivedInRange.length;
+  const kpiHandoverCount = handoverInRange.length;
+  const kpiYardStockCurrent = useMemo(() => {
+    const stock = yardList.filter((x) => x.type === "Stock").length;
+    const customer = yardList.filter((x) => x.type === "Customer").length;
+    return { stock, customer, total: yardList.length };
+  }, [yardList]);
+
+  // Trends
+  const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
+  const yardDates = useMemo(() => {
+    return yardList
+      .map((x) => {
+        const d = x.receivedAt ? new Date(x.receivedAt) : null;
+        if (!d || isNaN(d.getTime())) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })
+      .filter(Boolean) as Date[];
+  }, [yardList]);
+  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
+
+  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
+  const pgiDatesDealer = useMemo(() => {
+    return onTheRoadAll
+      .filter((row) => slugifyDealerName(row.dealer) === dealerSlug)
+      .map((x) => {
+        const d = parseDDMMYYYY(x.pgidate);
+        if (!d) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })
+      .filter(Boolean) as Date[];
+  }, [onTheRoadAll, dealerSlug]);
+  const pgiMonthlyTrendDealer = useMemo(
+    () => groupCountsByMonth(monthBuckets, pgiDatesDealer),
+    [monthBuckets, pgiDatesDealer]
+  );
+
+  // Stock Analysis
+  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
+  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
+  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
+  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
+  const heightCategories = useMemo(() => {
+    const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
+    excelRows.forEach((r) => {
+      const raw = r.Height;
+      const s = toStr(raw).toLowerCase();
+      if (!s) return;
+      if (s.includes("pop")) {
+        map["Pop-top"] += 1;
+      } else {
+        map["Full Height"] += 1;
+      }
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [excelRows]);
+  const lengthBuckets = useMemo(() => {
+    const buckets = [
+      { label: "<=5.00m", min: 0, max: 5.0 },
+      { label: "5.01–7.00m", min: 5.01, max: 7.0 },
+      { label: ">=7.01m", min: 7.01, max: 100 },
+    ];
+    const map: Record<string, number> = {};
+    excelRows.forEach((r) => {
+      const num = parseNum(r.Length);
+      const b = buckets.find((bb) => num != null && !isNaN(num) && num >= bb.min && num <= bb.max);
+      if (!b) return;
+      map[b.label] = (map[b.label] || 0) + 1;
+    });
+    return buckets.map((b) => ({ name: b.label, value: map[b.label] || 0 }));
+  }, [excelRows]);
+  const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
+
+  const yardRangeBuckets = useMemo(() => {
+    return yardRangeDefs.map(({ label, min, max }) => ({
+      label,
+      count: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max).length,
+    }));
+  }, [yardList]);
+
+  const yardListDisplay = useMemo(() => {
+    if (!selectedRange) return yardList;
+    const def = yardRangeDefs.find((d) => d.label === selectedRange);
+    if (!def) return yardList;
+    return yardList.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
+  }, [selectedRange, yardList]);
+
+  const formatDateOnly = (iso?: string | null) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString();
+  };
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
 
@@ -329,115 +507,38 @@ export default function DealerYard() {
     }
   };
 
-  // KPI cards
-  const yardTotal = yardList.length;
-  // Factory PGI (received in Yard): count all pgirecord with dealer Frankston
-  const factoryPGIReceived = useMemo(() => {
-    const FRANKSTON_SLUG = "frankston";
-    return onTheRoadAll.filter((x) => slugifyDealerName(x.dealer) === FRANKSTON_SLUG).length;
-  }, [onTheRoadAll]);
-  const yardStockCount = yardList.filter((x) => x.type === "Stock").length;
-  const yardCustomerCount = yardList.filter((x) => x.type === "Customer").length;
-
-  // Trends
-  const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
-  const yardDates = useMemo(() => {
-    return yardList
-      .map((x) => {
-        const d = x.receivedAt ? new Date(x.receivedAt) : null;
-        if (!d || isNaN(d.getTime())) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [yardList]);
-  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
-
-  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
-  const pgiDatesDealer = useMemo(() => {
-    return onTheRoadDealerAll
-      .map((x) => {
-        const d = parseDDMMYYYY(x.pgidate);
-        if (!d) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [onTheRoadDealerAll]);
-  const pgiMonthlyTrendDealer = useMemo(() => groupCountsByMonth(monthBuckets, pgiDatesDealer), [monthBuckets, pgiDatesDealer]);
-
-  // Stock Analysis data
-  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
-  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
-  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
-  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
-
-  // Height: Full Height vs Pop-top
-  const heightCategories = useMemo(() => {
-    const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
-    excelRows.forEach((r) => {
-      const raw = r.Height;
-      const s = toStr(raw).toLowerCase();
-      if (!s) return;
-      if (s.includes("pop")) {
-        map["Pop-top"] += 1;
-      } else {
-        map["Full Height"] += 1;
-      }
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [excelRows]);
-
-  // Length buckets (unchanged bins)
-  const lengthBuckets = useMemo(() => {
-    const buckets = [
-      { label: "<=5.00m", min: 0, max: 5.0 },
-      { label: "5.01–7.00m", min: 5.01, max: 7.0 },
-      { label: ">=7.01m", min: 7.01, max: 100 },
-    ];
-    const map: Record<string, number> = {};
-    excelRows.forEach((r) => {
-      const num = parseNum(r.Length);
-      const b = buckets.find((bb) => num != null && !isNaN(num) && num >= bb.min && num <= bb.max);
-      if (!b) return;
-      map[b.label] = (map[b.label] || 0) + 1;
-    });
-    return buckets.map((b) => ({ label: b.label, count: map[b.label] || 0 }));
-  }, [excelRows]);
-
-  const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
-
-  // Days In Yard distribution and filter (counts labeled on bars)
-  const yardRangeBuckets = useMemo(() => {
-    return yardRangeDefs.map(({ label, min, max }) => ({
-      label,
-      count: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max).length,
-    }));
-  }, [yardList]);
-
-  const yardListDisplay = useMemo(() => {
-    if (!selectedRange) return yardList;
-    const def = yardRangeDefs.find((d) => d.label === selectedRange);
-    if (!def) return yardList;
-    return yardList.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
-  }, [selectedRange, yardList]);
-
-  const formatDateOnly = (iso?: string | null) => {
-    if (!iso) return "-";
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "-";
-    return d.toLocaleDateString();
-  };
-
-  // Professional color palette
-  const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#14b8a6", "#84cc16", "#eab308", "#f97316", "#06b6d4", "#a855f7", "#3b82f6", "#64748b"];
-
-  const cycleNextCategory = () => {
-    const order: Array<typeof activeCategory> = ["range", "function", "layout", "axle", "length", "height"];
-    const idx = order.indexOf(activeCategory);
-    const next = order[(idx + 1) % order.length];
-    setActiveCategory(next);
-  };
+  // Analysis table
+  type AnalysisRow = { name: string; value: number };
+  function renderAnalysisTable(rows: AnalysisRow[]) {
+    const sorted = [...rows].sort((a, b) => b.value - a.value);
+    return (
+      <div className="rounded-lg border overflow-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-2/3">Category</TableHead>
+              <TableHead className="w-1/3 text-right">Count</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((r) => {
+              const active = selectedAnalysis === r.name;
+              return (
+                <TableRow
+                  key={r.name}
+                  className={active ? "bg-blue-50" : "cursor-pointer hover:bg-slate-50"}
+                  onClick={() => setSelectedAnalysis((prev) => (prev === r.name ? null : r.name))}
+                >
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className="text-right">{r.value}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -457,144 +558,45 @@ export default function DealerYard() {
           <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
         </header>
 
-        {/* Top grid: Left = Days In Yard Distribution (half), Right = Stock Analysis */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Days In Yard — Distribution & Filter (left half) */}
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Days In Yard — Distribution</CardTitle>
-              <div className="flex gap-2">
-                <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={() => setSelectedRange(null)}>
-                  Clear Filter
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={yardRangeBuckets}>
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar
-                    dataKey="count"
-                    fill="#14b8a6"
-                    radius={[6,6,0,0]}
-                    onClick={(_, idx: number) => {
-                      const label = yardRangeBuckets[idx]?.label;
-                      if (label) setSelectedRange(label);
-                    }}
-                  >
-                    <LabelList dataKey="count" position="top" className="fill-slate-700" />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-            {selectedRange && (
-              <div className="px-6 pb-4 text-xs text-slate-600">
-                Filtered by range: <span className="font-semibold text-teal-700">{selectedRange} days</span>
-              </div>
-            )}
-          </Card>
-
-          {/* Stock Analysis (right half) */}
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Stock Analysis</CardTitle>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" className="!bg-transparent !hover:bg-transparent" onClick={cycleNextCategory}>
-                  Next
-                </Button>
-                <div className="flex flex-wrap gap-1">
-                  <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
-                  <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
-                  <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
-                  <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
-                  <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
-                  <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="h-60">
-              <div className="w-full h-full">
-                {activeCategory === "range" && (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={rangeCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
-                        {rangeCounts.map((_, i) => <Cell key={`range-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <ReTooltip />
-                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-                {activeCategory === "function" && (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={functionCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
-                        {functionCounts.map((_, i) => <Cell key={`func-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <ReTooltip />
-                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-                {activeCategory === "layout" && (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={layoutCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
-                        {layoutCounts.map((_, i) => <Cell key={`layout-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <ReTooltip />
-                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-                {activeCategory === "axle" && (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={axleCounts} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
-                        {axleCounts.map((_, i) => <Cell key={`axle-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <ReTooltip />
-                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-                {activeCategory === "length" && (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={lengthBuckets}>
-                      <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="#0ea5e9" radius={[6,6,0,0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-                {activeCategory === "height" && (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={heightCategories} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2} label={false}>
-                        {heightCategories.map((_, i) => <Cell key={`height-${i}`} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <ReTooltip />
-                      <Legend layout="vertical" align="right" verticalAlign="middle" content={<PieLegend />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </CardContent>
-            <div className="px-6 pb-4 text-xs text-slate-600">Top 15 Count: <span className="font-semibold">{top15Count}</span></div>
-          </Card>
-        </div>
-
-        {/* On The Road - last 7 days only (current dealer only, no Dealer column) */}
+        {/* On The Road with range controls */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader>
-            <CardTitle>On The Road (PGI) — Last 7 Days</CardTitle>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle>On The Road (PGI)</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="h-9 rounded-md border px-2 text-sm"
+                value={rangeType}
+                onChange={(e) => setRangeType(e.target.value as typeof rangeType)}
+              >
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="custom">Custom</option>
+              </select>
+              {rangeType === "custom" && (
+                <>
+                  <Input
+                    type="date"
+                    className="h-9 w-[160px]"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                  />
+                  <Input
+                    type="date"
+                    className="h-9 w-[160px]"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                  />
+                </>
+              )}
+              <div className="text-xs text-slate-500">
+                Range: {startDate.toLocaleDateString()} ~ {endDate.toLocaleDateString()}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            {onTheRoadWeekly.length === 0 ? (
-              <div className="text-sm text-slate-500">No PGI records in the last 7 days.</div>
+            {onTheRoadInRange.length === 0 ? (
+              <div className="text-sm text-slate-500">No PGI records in the selected range.</div>
             ) : (
               <div className="rounded-lg border overflow-auto">
                 <Table>
@@ -609,13 +611,20 @@ export default function DealerYard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {onTheRoadWeekly.map((row) => (
+                    {onTheRoadInRange.map((row) => (
                       <TableRow key={row.chassis}>
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>{isWithinDays(row.pgidate, 365) ? Math.floor((Date.now() - (parseDDMMYYYY(row.pgidate)?.getTime() || Date.now())) / (1000 * 60 * 60 * 24)) : 0}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const d = parseDDMMYYYY(row.pgidate);
+                            if (!d) return 0;
+                            const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+                            return diff < 0 ? 0 : diff;
+                          })()}
+                        </TableCell>
                         <TableCell>
                           <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
                             Receive
@@ -629,6 +638,83 @@ export default function DealerYard() {
             )}
           </CardContent>
         </Card>
+
+        {/* KPI Cards */}
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm">KPI Overview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Factory PGI to Dealer</div>
+                    <div className="text-2xl font-semibold">{kpiPgiCount}</div>
+                  </div>
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                    <Truck className="w-5 h-5 text-blue-600" />
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">pgirecord.pgidate (dealer = {dealerDisplayName})</div>
+              </div>
+
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Received Vans</div>
+                    <div className="text-2xl font-semibold">{kpiReceivedCount}</div>
+                  </div>
+                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justifycenter">
+                    <PackageCheck className="w-5 h-5 text-emerald-600" />
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">yardstock.receivedAt</div>
+              </div>
+
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Handovers</div>
+                    <div className="text-2xl font-semibold">{kpiHandoverCount}</div>
+                  </div>
+                  <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
+                    <Handshake className="w-5 h-5 text-purple-600" />
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">handover.handoverAt</div>
+              </div>
+
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Current Yard Stock</div>
+                    <div className="text-2xl font-semibold">{kpiYardStockCurrent.total}</div>
+                  </div>
+                  <div className="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center">
+                    <Warehouse className="w-5 h-5 text-slate-700" />
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Stock: <span className="text-blue-700 font-medium">{kpiYardStockCurrent.stock}</span> · Customer:{" "}
+                  <span className="text-emerald-700 font-medium">{kpiYardStockCurrent.customer}</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Trends */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
+            <CardContent><WeeklyBarChart points={yardTrend} /></CardContent>
+          </Card>
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
+            <CardContent><MonthlyBarChart points={pgiMonthlyTrendDealer} /></CardContent>
+          </Card>
+        </div>
 
         {/* Yard Inventory */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
@@ -682,19 +768,23 @@ export default function DealerYard() {
                         </TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
-                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => {
-                            (async () => {
-                              try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
-                              setHandoverData({
-                                chassis: row.chassis,
-                                model: row.model,
-                                dealerName: dealerDisplayName,
-                                dealerSlug,
-                                handoverAt: new Date().toISOString(),
-                              });
-                              setHandoverOpen(true);
-                            })();
-                          }}>
+                          <Button
+                            size="sm"
+                            className="bg-purple-600 hover:bg-purple-700"
+                            onClick={() => {
+                              (async () => {
+                                try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
+                                setHandoverData({
+                                  chassis: row.chassis,
+                                  model: row.model,
+                                  dealerName: dealerDisplayName,
+                                  dealerSlug,
+                                  handoverAt: new Date().toISOString(),
+                                });
+                                setHandoverOpen(true);
+                              })();
+                            }}
+                          >
                             Handover
                           </Button>
                         </TableCell>
@@ -707,17 +797,29 @@ export default function DealerYard() {
           </CardContent>
         </Card>
 
-        {/* Trends */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent><WeeklyBarChart points={yardTrend} /></CardContent>
-          </Card>
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
-            <CardContent><MonthlyBarChart points={pgiMonthlyTrendDealer} /></CardContent>
-          </Card>
-        </div>
+        {/* Stock Analysis — interactive table */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm">Stock Analysis</CardTitle>
+            <div className="flex flex-wrap gap-1">
+              <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
+              <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
+              <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
+              <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
+              <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
+              <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="text-xs text-slate-500">Top 15 Count: <span className="font-semibold">{top15Count}</span></div>
+            {activeCategory === "range" && renderAnalysisTable(rangeCounts as AnalysisRow[])}
+            {activeCategory === "function" && renderAnalysisTable(functionCounts as AnalysisRow[])}
+            {activeCategory === "layout" && renderAnalysisTable(layoutCounts as AnalysisRow[])}
+            {activeCategory === "axle" && renderAnalysisTable(axleCounts as AnalysisRow[])}
+            {activeCategory === "length" && renderAnalysisTable(lengthBuckets as AnalysisRow[])}
+            {activeCategory === "height" && renderAnalysisTable(heightCategories as AnalysisRow[])}
+          </CardContent>
+        </Card>
 
         {/* Handover Modal */}
         <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
