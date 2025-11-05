@@ -44,6 +44,8 @@ type YardRec = {
   receivedAt?: string | null;
   model?: string | null;
   customer?: string | null;
+  type?: string | null;
+  Type?: string | null;
 };
 type HandoverRec = {
   handoverAt?: string | null;
@@ -54,6 +56,11 @@ type HandoverRec = {
 
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();
+const cleanLabel = (v: unknown, fallback = "Unknown") => {
+  const str = toStr(v).trim();
+  if (!str) return fallback;
+  return str;
+};
 
 function normalizeDealerSlug(raw?: string): string {
   const slug = lower(raw);
@@ -221,6 +228,7 @@ export default function DealerYard() {
   // Yard Inventory filters (controlled only via charts)
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
+  const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -321,12 +329,29 @@ export default function DealerYard() {
   }, [kpiRangeType, kpiCustomStart, kpiCustomEnd]);
 
   // Yard list
-  const modelToRangeMap = useMemo(() => {
-    const map: Record<string, string> = {};
+  const modelMetaMap = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        range: string;
+        functionName: string;
+        layout: string;
+        axle: string;
+        length: string;
+        height: string;
+      }
+    > = {};
     excelRows.forEach((r) => {
       const mdl = toStr(r.Model).trim().toLowerCase();
-      const rng = toStr(r["Model Range"]).trim();
-      if (mdl && rng) map[mdl] = rng;
+      if (!mdl) return;
+      map[mdl] = {
+        range: cleanLabel(r["Model Range"]),
+        functionName: cleanLabel(r.Function),
+        layout: cleanLabel(r.Layout),
+        axle: cleanLabel(r.Axle),
+        length: cleanLabel(r.Length),
+        height: cleanLabel(r.Height),
+      };
     });
     return map;
   }, [excelRows]);
@@ -336,17 +361,44 @@ export default function DealerYard() {
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
-      const type = customer.toLowerCase().endsWith("stock") ? "Stock" : "Customer";
+      const rawType = toStr(rec?.type ?? rec?.Type).trim().toLowerCase();
+      const normalizedType = (() => {
+        if (!rawType) {
+          if (/stock$/i.test(customer)) return "Stock";
+          return "Customer";
+        }
+        if (rawType === "stock" || rawType.includes("stock")) return "Stock";
+        if (rawType === "customer" || rawType === "retail" || rawType.includes("customer")) return "Customer";
+        if (rawType) return cleanLabel(rec?.type ?? rec?.Type);
+        return "Customer";
+      })();
       const model = toStr(sch?.Model ?? rec?.model);
       const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      const modelRange = (() => {
-        const key = model.trim().toLowerCase();
-        return modelToRangeMap[key] ?? "Unknown";
-      })();
-      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard, modelRange };
+      const key = model.trim().toLowerCase();
+      const meta = modelMetaMap[key];
+      const modelRange = meta?.range ?? "Unknown";
+      const functionName = meta?.functionName ?? "Unknown";
+      const layout = meta?.layout ?? "Unknown";
+      const axle = meta?.axle ?? "Unknown";
+      const length = meta?.length ?? "Unknown";
+      const height = meta?.height ?? "Unknown";
+      return {
+        chassis,
+        receivedAt: receivedAtISO,
+        model,
+        customer,
+        type: normalizedType,
+        daysInYard,
+        modelRange,
+        functionName,
+        layout,
+        axle,
+        length,
+        height,
+      };
     });
-  }, [yard, scheduleByChassis, modelToRangeMap]);
+  }, [yard, scheduleByChassis, modelMetaMap]);
 
   // KPI calculations using KPI date range
   const kpiPgiCount = useMemo(
@@ -422,8 +474,11 @@ export default function DealerYard() {
     if (selectedModelRange && selectedModelRange !== "All") {
       list = list.filter((x) => x.modelRange === selectedModelRange);
     }
+    if (selectedType !== "All") {
+      list = list.filter((x) => x.type === selectedType);
+    }
     return list;
-  }, [yardList, selectedRangeBucket, selectedModelRange]);
+  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType]);
 
   // Monthly charts data within KPI range
   const receivedMonthlyData = useMemo(() => {
@@ -519,39 +574,73 @@ export default function DealerYard() {
     }
   };
 
-  // Stock Analysis data by category
+  // Stock Analysis data by category (Stock-only units)
   type AnalysisRow = { name: string; value: number };
-  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
-  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
-  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
-  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
+  const stockUnits = useMemo(() => yardList.filter((row) => row.type === "Stock"), [yardList]);
+  const rangeCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    stockUnits.forEach((row) => {
+      const key = cleanLabel(row.modelRange);
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [stockUnits]);
+  const functionCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    stockUnits.forEach((row) => {
+      const key = cleanLabel(row.functionName);
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [stockUnits]);
+  const layoutCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    stockUnits.forEach((row) => {
+      const key = cleanLabel(row.layout);
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [stockUnits]);
+  const axleCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    stockUnits.forEach((row) => {
+      const key = cleanLabel(row.axle);
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [stockUnits]);
   const heightCategories = useMemo(() => {
-    const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
-    excelRows.forEach((r) => {
-      const raw = r.Height;
-      const s = toStr(raw).toLowerCase();
-      if (!s) return;
-      if (s.includes("pop")) map["Pop-top"] += 1;
-      else map["Full Height"] += 1;
+    const map: Record<string, number> = {};
+    stockUnits.forEach((row) => {
+      const s = toStr(row.height).toLowerCase();
+      const label = !s || s === "unknown" ? "Unknown" : s.includes("pop") ? "Pop-top" : "Full Height";
+      map[label] = (map[label] || 0) + 1;
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [excelRows]);
+  }, [stockUnits]);
   const lengthBuckets = useMemo(() => {
     const buckets = [
       { label: "<=5.00m", min: 0, max: 5.0 },
       { label: "5.01–7.00m", min: 5.01, max: 7.0 },
       { label: ">=7.01m", min: 7.01, max: 100 },
     ];
-    const map: Record<string, number> = {};
-    excelRows.forEach((r) => {
-      const num = parseNum(r.Length);
-      const b = buckets.find((bb) => num != null && !isNaN(num) && num >= bb.min && num <= bb.max);
-      if (!b) return;
-      map[b.label] = (map[b.label] || 0) + 1;
+    const counts = buckets.map(() => 0);
+    stockUnits.forEach((row) => {
+      const num = parseNum(row.length);
+      if (num == null || isNaN(num)) return;
+      const idx = buckets.findIndex((bb) => num >= bb.min && num <= bb.max);
+      if (idx >= 0) counts[idx] += 1;
     });
-    return buckets.map((b) => ({ name: b.label, value: map[b.label] || 0 }));
-  }, [excelRows]);
-  const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
+    return buckets.map((b, idx) => ({ name: b.label, value: counts[idx] }));
+  }, [stockUnits]);
 
   const analysisData = useMemo<AnalysisRow[]>(() => {
     switch (activeCategory) {
@@ -886,6 +975,7 @@ export default function DealerYard() {
                       onClick={(data: any) => {
                         if (activeCategory === "range" && data?.name) {
                           setSelectedModelRange(String(data.name));
+                          setSelectedType("Stock");
                         }
                       }}
                     >
@@ -925,6 +1015,20 @@ export default function DealerYard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-slate-600">Type:</span>
+              {(["All", "Stock", "Customer"] as const).map((option) => (
+                <Button
+                  key={option}
+                  size="sm"
+                  variant={selectedType === option ? "default" : "outline"}
+                  className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
+                  onClick={() => setSelectedType(option)}
+                >
+                  {option}
+                </Button>
+              ))}
+            </div>
             {yardListDisplay.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
             ) : (
