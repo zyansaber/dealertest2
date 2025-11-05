@@ -295,7 +295,7 @@ export async function dispatchFromYard(dealerSlug: string, chassis: string) {
   await remove(yardRef);
 }
 
-/** -------------------- Product Registration / Handover -------------------- */
+/** -------------------- Product Registration -------------------- */
 export async function saveProductRegistration(
   dealerSlug: string,
   chassis: string,
@@ -320,6 +320,7 @@ export async function saveProductRegistration(
   await set(targetRef, data);
 }
 
+/** -------------------- Handover -------------------- */
 /**
  * Save handover data under handover/{dealerSlug}/{chassis} and remove the unit from yardstock.
  */
@@ -349,7 +350,9 @@ export async function saveHandover(
   await remove(yardRef);
 }
 
-/** -------------------- Handover subscription -------------------- */
+/**
+ * Subscribe to handover entries under handover/{dealerSlug}
+ */
 export function subscribeToHandover(
   dealerSlug: string,
   cb: (value: Record<string, any>) => void
