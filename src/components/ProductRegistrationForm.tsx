@@ -61,8 +61,8 @@ async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
 }
 
 export default function ProductRegistrationForm({ open, onOpenChange, initial }: Props) {
-  const [step, setStep] = useState<"assist" | "email">("assist");
-  const [emailTo, setEmailTo] = useState("");
+  const [step, setStep] = useState<"mode" | "assist" | "email">("mode");
+  const [inviteEmail, setInviteEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [custEmail, setCustEmail] = useState("");
@@ -92,8 +92,8 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
   }, [data.handoverAt]);
 
   const resetStates = () => {
-    setStep("assist");
-    setEmailTo("");
+    setStep("mode");
+    setInviteEmail("");
     setFirstName("");
     setLastName("");
     setCustEmail("");
@@ -168,14 +168,103 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     }
   };
 
+  const handleSubmitEmail = async () => {
+    if (!inviteEmail) {
+      setSubmitMsg("Please enter the customer's email.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitMsg(null);
+    try {
+      const handoverData = {
+        chassis: data.chassis,
+        model: data.model || null,
+        dealerName: data.dealerName || null,
+        dealerSlug: data.dealerSlug || null,
+        handoverAt: data.handoverAt,
+        createdAt: new Date().toISOString(),
+        source: "customer email" as const,
+        invite: {
+          email: inviteEmail,
+        },
+      };
+      await saveHandover((data.dealerSlug || "") as string, data.chassis, handoverData);
+
+      setSubmitMsg("Email submitted successfully.");
+      setSubmitting(false);
+      resetAndClose();
+    } catch (e) {
+      console.error(e);
+      setSubmitMsg("Submit failed. Please try again.");
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(v) => (v ? setStep("assist") : resetAndClose())}>
+    <Dialog open={open} onOpenChange={(v) => (v ? setStep("mode") : resetAndClose())}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-[28px] leading-8 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
             Professional Handover Form
           </DialogTitle>
         </DialogHeader>
+
+        {step === "mode" && (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <p className="text-base font-semibold text-slate-900">How would you like to complete the form?</p>
+              {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer border-slate-200 transition hover:border-sky-400"
+                onClick={() => {
+                  setSubmitMsg(null);
+                  setStep("assist");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSubmitMsg(null);
+                    setStep("assist");
+                  }
+                }}
+              >
+                <CardHeader>
+                  <CardTitle>Assist the customer now</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-slate-600">
+                  Fill in the customer's information together and submit directly from this form.
+                </CardContent>
+              </Card>
+              <Card
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer border-slate-200 transition hover:border-sky-400"
+                onClick={() => {
+                  setSubmitMsg(null);
+                  setStep("email");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSubmitMsg(null);
+                    setStep("email");
+                  }
+                }}
+              >
+                <CardHeader>
+                  <CardTitle>Let the customer finish later</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-slate-600">
+                  Send the form to the customer's email so they can complete it on their own time.
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
 
         {step === "assist" && (
           <div className="space-y-6">
@@ -245,14 +334,33 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
         )}
 
         {step === "email" && (
-          <div className="space-y-3">
-            <div className="text-sm font-medium">{emailTo}</div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setStep("assist")}>
-                Back
-              </Button>
-              <Button className="bg-sky-600 hover:bg-sky-700" onClick={resetAndClose}>
-                Done
+          <div className="space-y-6">
+            <Card className="border-slate-200">
+              <CardHeader>
+                <CardTitle>Send to customer</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="customer-email">Customer Email</Label>
+                  <Input
+                    id="customer-email"
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
+              </CardContent>
+            </Card>
+            <div className="flex flex-wrap gap-3">
+              <Button variant="secondary" onClick={() => setStep("mode")}>Back</Button>
+              <Button
+                className="bg-sky-600 hover:bg-sky-700"
+                disabled={submitting || !inviteEmail}
+                onClick={handleSubmitEmail}
+              >
+                {submitting ? "Submitting..." : "Send Email"}
               </Button>
             </div>
           </div>
