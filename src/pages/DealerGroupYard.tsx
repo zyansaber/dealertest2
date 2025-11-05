@@ -146,9 +146,10 @@ function countTop15(rows: ExcelRow[]) {
   return cnt;
 }
 
-// Days in Yard buckets
+// Days in Yard buckets (updated)
 const yardRangeDefs = [
-  { label: "0–90", min: 0, max: 90 },
+  { label: "0–30", min: 0, max: 30 },
+  { label: "31–90", min: 31, max: 90 },
   { label: "91–180", min: 91, max: 180 },
   { label: "180+", min: 181, max: 9999 },
 ];
@@ -551,7 +552,7 @@ export default function DealerGroupYard() {
                           <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
                             Receive
                           </Button>
-                        </TableCell>
+                        </Cell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -567,7 +568,7 @@ export default function DealerGroupYard() {
             <CardTitle className="text-sm">KPI Overview</CardTitle>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="h-9 rounded-md border px-2 text sm"
+                className="h-9 rounded-md border px-2 text-sm"
                 value={kpiRangeType}
                 onChange={(e) => setKpiRangeType(e.target.value as typeof kpiRangeType)}
               >
@@ -644,51 +645,127 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* Yard Range Bar Chart above Yard Inventory */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">Days In Yard Buckets</CardTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={selectedRangeBucket === null ? "default" : "outline"}
-                className={selectedRangeBucket === null ? "" : "!bg-transparent !hover:bg-transparent"}
-                onClick={() => setSelectedRangeBucket(null)}
-              >
-                All
-              </Button>
-              {yardRangeDefs.map((b) => (
+        {/* Side-by-side: Days In Yard + Stock Analysis */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Days In Yard Buckets (Left) */}
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="text-sm">Days In Yard</CardTitle>
+              <div className="flex items-center gap-2">
                 <Button
-                  key={b.label}
-                  variant={selectedRangeBucket === b.label ? "default" : "outline"}
-                  className={selectedRangeBucket === b.label ? "" : "!bg-transparent !hover:bg-transparent"}
-                  onClick={() => setSelectedRangeBucket((prev) => (prev === b.label ? null : b.label))}
+                  variant={selectedRangeBucket === null ? "default" : "outline"}
+                  className={selectedRangeBucket === null ? "" : "!bg-transparent !hover:bg-transparent"}
+                  onClick={() => setSelectedRangeBucket(null)}
+                  title="Clear Days In Yard filter"
                 >
-                  {b.label}
+                  All
                 </Button>
-              ))}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={yardRangeBuckets}>
-                <XAxis dataKey="label" />
-                <YAxis allowDecimals={false} />
-                <ReTooltip />
-                <Bar dataKey="count" fill="#6366f1" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+                {yardRangeDefs.map((b) => (
+                  <Button
+                    key={b.label}
+                    variant={selectedRangeBucket === b.label ? "default" : "outline"}
+                    className={selectedRangeBucket === b.label ? "" : "!bg-transparent !hover:bg-transparent"}
+                    onClick={() => setSelectedRangeBucket((prev) => (prev === b.label ? null : b.label))}
+                  >
+                    {b.label}
+                  </Button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={yardRangeBuckets}>
+                  <XAxis dataKey="label" />
+                  <YAxis allowDecimals={false} />
+                  <ReTooltip />
+                  <Bar
+                    dataKey="count"
+                    fill="#6366f1"
+                    onClick={(_, idx: number) => {
+                      const label = yardRangeBuckets[idx]?.label;
+                      if (label) setSelectedRangeBucket(label);
+                    }}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Stock Analysis (Right) */}
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle className="text-sm">Stock Analysis</CardTitle>
+              <div className="flex flex-wrap gap-2 items-center">
+                <div className="flex flex-wrap gap-1">
+                  <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
+                  <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
+                  <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
+                  <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
+                  <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
+                  <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
+                </div>
+                <Button
+                  variant="outline"
+                  className="!bg-transparent !hover:bg-transparent"
+                  onClick={() => {
+                    setSelectedModelRange("All");
+                  }}
+                  title="Clear Model Range filter"
+                >
+                  Clear
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <ResponsiveContainer width="100%" height={220}>
+                {activeCategory === "length" ? (
+                  <BarChart data={analysisData.map((x) => ({ label: x.name, count: x.value }))}>
+                    <XAxis dataKey="label" />
+                    <YAxis allowDecimals={false} />
+                    <ReTooltip />
+                    <Bar dataKey="count" fill="#0ea5e9" />
+                  </BarChart>
+                ) : (
+                  <PieChart>
+                    <Pie
+                      data={analysisData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={90}
+                      innerRadius={50}
+                      onClick={(data: any) => {
+                        if (activeCategory === "range" && data?.name) {
+                          setSelectedModelRange(String(data.name));
+                        }
+                      }}
+                      label={({ name, value }) => `${name} (${value})`}
+                    >
+                      {analysisData.map((entry, index) => (
+                        <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Legend />
+                    <ReTooltip />
+                  </PieChart>
+                )}
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Yard Inventory */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between">
+          <CardHeader className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle>Yard Inventory</CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full md:w-auto items-stretch md:items-center gap-2">
+              {/* Manual entry on the left */}
               <Input
                 placeholder="Enter chassis number manually"
                 value={manualChassis}
                 onChange={(e) => setManualChassis(e.target.value)}
+                className="md:min-w-[240px]"
               />
               <Button onClick={handleAddManual} className="bg-sky-600 hover:bg-sky-700">
                 Add to Yard
@@ -698,6 +775,9 @@ export default function DealerGroupYard() {
                   {manualStatus.msg}
                 </div>
               )}
+            </div>
+            {/* Filters on the right */}
+            <div className="flex items-center gap-2">
               <select
                 className="h-9 rounded-md border px-2 text-sm"
                 value={selectedModelRange}
@@ -708,6 +788,17 @@ export default function DealerGroupYard() {
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
+              <Button
+                variant="outline"
+                className="!bg-transparent !hover:bg-transparent"
+                onClick={() => {
+                  setSelectedRangeBucket(null);
+                  setSelectedModelRange("All");
+                }}
+                title="Clear all filters"
+              >
+                Clear Filters
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -769,43 +860,6 @@ export default function DealerGroupYard() {
                 </Table>
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Stock Analysis — Pie Chart */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">Stock Analysis (Pie)</CardTitle>
-            <div className="flex flex-wrap gap-1">
-              <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
-              <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
-              <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
-              <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
-              <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
-              <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <Pie
-                  data={analysisData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={120}
-                  innerRadius={60}
-                  label={({ name, value }) => `${name} (${value})`}
-                >
-                  {analysisData.map((entry, index) => (
-                    <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Legend />
-                <ReTooltip />
-              </PieChart>
-            </ResponsiveContainer>
           </CardContent>
         </Card>
 
