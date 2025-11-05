@@ -129,8 +129,18 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     }
   };
 
-  const canSubmit = () =>
-    Boolean(firstName && lastName && custEmail && phone && address && (data.dealerSlug || "") && data.chassis);
+  const canSubmit = () => {
+    const dealerSlug = (data.dealerSlug || "").trim();
+    return Boolean(
+      firstName.trim() &&
+      lastName.trim() &&
+      custEmail.trim() &&
+      phone.trim() &&
+      address.trim() &&
+      dealerSlug &&
+      data.chassis
+    );
+  };
 
   const handleSubmitAssist = async () => {
     if (!canSubmit()) {
@@ -140,62 +150,84 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     setSubmitting(true);
     setSubmitMsg(null);
     try {
+      const dealerSlug = (data.dealerSlug || "").trim();
+      if (!dealerSlug) {
+        throw new Error("Dealer slug missing");
+      }
+      const trimmedFirstName = firstName.trim();
+      const trimmedLastName = lastName.trim();
+      const trimmedEmail = custEmail.trim();
+      const trimmedPhone = phone.trim();
+      const trimmedAddress = address.trim();
       const handoverData = {
         chassis: data.chassis,
         model: data.model || null,
         dealerName: data.dealerName || null,
-        dealerSlug: data.dealerSlug || null,
+        dealerSlug,
         handoverAt: data.handoverAt,
         customer: {
-          firstName,
-          lastName,
-          email: custEmail,
-          phone,
-          address,
+          firstName: trimmedFirstName,
+          lastName: trimmedLastName,
+          email: trimmedEmail,
+          phone: trimmedPhone,
+          address: trimmedAddress,
         },
         createdAt: new Date().toISOString(),
         source: "dealer_assist_form" as const,
       };
-      await saveHandover((data.dealerSlug || "") as string, data.chassis, handoverData);
+      await saveHandover(dealerSlug, data.chassis, handoverData);
 
       setSubmitMsg("Submitted successfully.");
       setSubmitting(false);
       resetAndClose();
     } catch (e) {
       console.error(e);
-      setSubmitMsg("Submit failed. Please try again.");
+      const message =
+        e instanceof Error && e.message === "Dealer slug missing"
+          ? "Dealer information is missing. Please reopen the handover form."
+          : "Submit failed. Please try again.";
+      setSubmitMsg(message);
       setSubmitting(false);
     }
   };
 
   const handleSubmitEmail = async () => {
-    if (!inviteEmail) {
+    const trimmedEmail = inviteEmail.trim();
+    if (!trimmedEmail) {
       setSubmitMsg("Please enter the customer's email.");
       return;
     }
     setSubmitting(true);
     setSubmitMsg(null);
     try {
+      const dealerSlug = (data.dealerSlug || "").trim();
+      if (!dealerSlug) {
+        throw new Error("Dealer slug missing");
+      }
       const handoverData = {
         chassis: data.chassis,
         model: data.model || null,
         dealerName: data.dealerName || null,
-        dealerSlug: data.dealerSlug || null,
+        dealerSlug,
         handoverAt: data.handoverAt,
         createdAt: new Date().toISOString(),
         source: "customer email" as const,
         invite: {
-          email: inviteEmail,
+          email: trimmedEmail,
         },
       };
-      await saveHandover((data.dealerSlug || "") as string, data.chassis, handoverData);
+      await saveHandover(dealerSlug, data.chassis, handoverData);
 
       setSubmitMsg("Email submitted successfully.");
       setSubmitting(false);
       resetAndClose();
     } catch (e) {
       console.error(e);
-      setSubmitMsg("Submit failed. Please try again.");
+      const message =
+        e instanceof Error && e.message === "Dealer slug missing"
+          ? "Dealer information is missing. Please reopen the handover form."
+          : "Submit failed. Please try again.";
+      setSubmitMsg(message);
       setSubmitting(false);
     }
   };
@@ -318,6 +350,16 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
             </div>
 
             <div className="flex flex-wrap gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSubmitMsg(null);
+                  setStep("mode");
+                }}
+                disabled={submitting}
+              >
+                Back
+              </Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleDownloadPDF}>
                 Download PDF
               </Button>
@@ -354,10 +396,18 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
               </CardContent>
             </Card>
             <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" onClick={() => setStep("mode")}>Back</Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSubmitMsg(null);
+                  setStep("mode");
+                }}
+              >
+                Back
+              </Button>
               <Button
                 className="bg-sky-600 hover:bg-sky-700"
-                disabled={submitting || !inviteEmail}
+                disabled={submitting || !inviteEmail.trim()}
                 onClick={handleSubmitEmail}
               >
                 {submitting ? "Submitting..." : "Send Email"}

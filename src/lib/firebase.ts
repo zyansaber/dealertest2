@@ -324,26 +324,39 @@ export async function saveProductRegistration(
 /**
  * Save handover data under handover/{dealerSlug}/{chassis} and remove the unit from yardstock.
  */
-export async function saveHandover(
-  dealerSlug: string,
-  chassis: string,
-  data: {
-    chassis: string;
-    model: string | null;
-    dealerName: string | null;
-    dealerSlug: string | null;
-    handoverAt: string;
-    customer: {
-      firstName: string;
-      lastName: string;
-      email: string;
-      phone: string;
-      address: string;
-    };
-    createdAt: string;
-    source: "dealer_assist_form";
-  }
-) {
+type DealerAssistHandover = {
+  chassis: string;
+  model: string | null;
+  dealerName: string | null;
+  dealerSlug: string | null;
+  handoverAt: string;
+  customer: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    address: string;
+  };
+  createdAt: string;
+  source: "dealer_assist_form";
+};
+
+type CustomerEmailHandover = {
+  chassis: string;
+  model: string | null;
+  dealerName: string | null;
+  dealerSlug: string | null;
+  handoverAt: string;
+  createdAt: string;
+  source: "customer email";
+  invite: {
+    email: string;
+  };
+};
+
+export type HandoverPayload = DealerAssistHandover | CustomerEmailHandover;
+
+export async function saveHandover(dealerSlug: string, chassis: string, data: HandoverPayload) {
   const targetRef = ref(database, `handover/${dealerSlug}/${chassis}`);
   await set(targetRef, data);
   const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
