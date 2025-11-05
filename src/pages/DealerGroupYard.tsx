@@ -20,19 +20,38 @@ import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import { Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
-  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
-  Tooltip,
-  LabelList,
+  Tooltip as ReTooltip,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+  ResponsiveContainer,
 } from "recharts";
 
-type AnyMap = Record<string, any>;
+type PGIRec = {
+  pgidate?: string | null;
+  dealer?: string | null;
+  model?: string | null;
+  customer?: string | null;
+};
+type YardRec = {
+  receivedAt?: string | null;
+  model?: string | null;
+  customer?: string | null;
+};
+type HandoverRec = {
+  handoverAt?: string | null;
+  createdAt?: string | null;
+  dealerSlug?: string | null;
+  dealerName?: string | null;
+};
 
-const toStr = (v: any) => String(v ?? "");
-const lower = (v: any) => toStr(v).toLowerCase();
+const toStr = (v: unknown) => String(v ?? "");
+const lower = (v: unknown) => toStr(v).toLowerCase();
 
 function normalizeDealerSlug(raw?: string): string {
   const slug = lower(raw);
@@ -57,7 +76,9 @@ function parseDDMMYYYY(dateStr?: string | null): Date | null {
       const d = new Date(year, month, day);
       if (!isNaN(d.getTime())) return d;
     }
-  } catch {}
+  } catch (e) {
+    console.warn("parseDDMMYYYY failed:", e);
+  }
   return null;
 }
 function daysSinceISO(iso?: string | null): number {
@@ -73,111 +94,6 @@ function isDateWithinRange(d: Date | null, start: Date | null, end: Date | null)
   const s = start ? start.getTime() : -Infinity;
   const e = end ? end.getTime() : Infinity;
   return t >= s && t <= e;
-}
-
-type PGIRecord = {
-  pgidate?: string | null;
-  dealer?: string | null;
-  model?: string | null;
-  customer?: string | null;
-};
-
-type TrendPoint = { label: string; count: number };
-
-function WeeklyBarChart({ points }: { points: TrendPoint[] }) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <div className="flex items-end gap-3 h-28">
-      {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full">
-          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-4 rounded-sm bg-gradient-to-b from-violet-400 via-indigo-600 to-blue-700 shadow-[0_4px_12px_rgba(79,70,229,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
-            title={`${p.label}: ${p.count}`}
-          />
-          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-function MonthlyBarChart({ points }: { points: TrendPoint[] }) {
-  const max = Math.max(1, ...points.map((p) => p.count));
-  return (
-    <div className="flex items-end gap-3 h-28">
-      {points.map((p, idx) => (
-        <div key={idx} className="flex flex-col items-center h-full">
-          <div className="text-[11px] text-slate-600 mb-1">{p.count}</div>
-          <div
-            className="w-4 rounded-sm bg-gradient-to-b from-cyan-400 via-blue-600 to-indigo-700 shadow-[0_4px_12px_rgba(56,189,248,0.35)]"
-            style={{ height: `${Math.round((p.count / max) * 100)}%`, minHeight: p.count > 0 ? "6px" : "0px" }}
-            title={`${p.label}: ${p.count}`}
-          />
-          <div className="text-[10px] mt-1 text-slate-500">{p.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function makeWeeklyBuckets(weeks: number = 12): Date[] {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const day = start.getDay();
-  const diffToMonday = (day + 6) % 7;
-  start.setDate(start.getDate() - diffToMonday);
-  const buckets: Date[] = [];
-  for (let i = weeks - 1; i >= 0; i--) {
-    const d = new Date(start);
-    d.setDate(start.getDate() - i * 7);
-    buckets.push(d);
-  }
-  return buckets;
-}
-function formatWeekLabel(d: Date): string {
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  return `${m}/${day}`;
-}
-function groupCountsByWeek(dates: Date[], values: Date[]): TrendPoint[] {
-  const points: TrendPoint[] = dates.map((d) => ({ label: formatWeekLabel(d), count: 0 }));
-  for (const v of values) {
-    for (let i = 0; i < dates.length; i++) {
-      const start = dates[i];
-      const end = i + 1 < dates.length ? dates[i + 1] : new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
-      if (v >= start && v < end) {
-        points[i].count += 1;
-        break;
-      }
-    }
-  }
-  return points;
-}
-function makeMonthBucketsCurrentYear(): Date[] {
-  const y = new Date().getFullYear();
-  const arr: Date[] = [];
-  for (let m = 0; m < 12; m++) {
-    arr.push(new Date(y, m, 1));
-  }
-  return arr;
-}
-function monthLabel(d: Date): string {
-  return d.toLocaleString("en-US", { month: "short" });
-}
-function groupCountsByMonth(months: Date[], values: Date[]): TrendPoint[] {
-  const points: TrendPoint[] = months.map((m) => ({ label: monthLabel(m), count: 0 }));
-  for (const v of values) {
-    for (let i = 0; i < months.length; i++) {
-      const start = months[i];
-      const end = i + 1 < months.length ? months[i + 1] : new Date(start.getFullYear() + 1, 0, 1);
-      if (v >= start && v < end) {
-        points[i].count += 1;
-        break;
-      }
-    }
-  }
-  return points;
 }
 
 // Excel rows type
@@ -196,9 +112,9 @@ type ExcelRow = {
   "Top15"?: string | number;
 };
 
-function parseNum(val: any): number | null {
+function parseNum(val: unknown): number | null {
   if (val == null) return null;
-  const s = String(val).replace(/[^\d\.]/g, "");
+  const s = String(val).replace(/[^\d.]/g, "");
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
 }
@@ -237,19 +153,26 @@ const yardRangeDefs = [
   { label: "180+", min: 181, max: 9999 },
 ];
 
+const PIE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#84cc16", "#d946ef", "#0ea5e9", "#14b8a6"];
+
 export default function DealerGroupYard() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
-  const [pgi, setPgi] = useState<Record<string, PGIRecord>>({});
-  const [yard, setYard] = useState<Record<string, any>>({});
-  const [handover, setHandover] = useState<Record<string, any>>({});
+  const [pgi, setPgi] = useState<Record<string, PGIRec>>({});
+  const [yard, setYard] = useState<Record<string, YardRec>>({});
+  const [handover, setHandover] = useState<Record<string, HandoverRec>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
 
-  // Date range for KPI
+  // On The Road date range (PGI list controls)
   const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
   const [customStart, setCustomStart] = useState<string>("");
   const [customEnd, setCustomEnd] = useState<string>("");
+
+  // KPI date range (independent)
+  const [kpiRangeType, setKpiRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
+  const [kpiCustomStart, setKpiCustomStart] = useState<string>("");
+  const [kpiCustomEnd, setKpiCustomEnd] = useState<string>("");
 
   // Modal
   const [handoverOpen, setHandoverOpen] = useState(false);
@@ -262,8 +185,10 @@ export default function DealerGroupYard() {
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
   const [activeCategory, setActiveCategory] = useState<"range" | "function" | "layout" | "axle" | "length" | "height">("range");
-  const [selectedRange, setSelectedRange] = useState<string | null>(null);
-  const [selectedAnalysis, setSelectedAnalysis] = useState<string | null>(null);
+
+  // Yard Inventory filters
+  const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
+  const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -301,11 +226,13 @@ export default function DealerGroupYard() {
     })();
   }, []);
 
+  type Sched = Partial<ScheduleItem> & { Chassis?: string; Customer?: string; Model?: string };
   const scheduleByChassis = useMemo(() => {
-    const map: Record<string, ScheduleItem> = {};
+    const map: Record<string, Sched> = {};
     for (const item of schedule) {
-      const ch = toStr((item as any)?.Chassis);
-      if (ch) map[ch] = item;
+      const sch = (item as unknown) as Sched;
+      const ch = toStr(sch.Chassis);
+      if (ch) map[ch] = sch;
     }
     return map;
   }, [schedule]);
@@ -315,8 +242,7 @@ export default function DealerGroupYard() {
     return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
-  // Date range
-  const now = new Date();
+  // PGI list date range
   const [startDate, endDate] = useMemo(() => {
     if (rangeType === "custom" && customStart && customEnd) {
       const s = new Date(customStart);
@@ -324,12 +250,12 @@ export default function DealerGroupYard() {
       e.setHours(23, 59, 59, 999);
       return [s, e] as [Date, Date];
     }
-    const map: Record<typeof rangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
-    const days = map[rangeType];
+    const mapDays: Record<typeof rangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
+    const days = mapDays[rangeType];
     const e = new Date();
     e.setHours(23, 59, 59, 999);
     const s = new Date();
-    s.setDate(now.getDate() - (days - 1));
+    s.setDate(e.getDate() - (days - 1));
     s.setHours(0, 0, 0, 0);
     return [s, e] as [Date, Date];
   }, [rangeType, customStart, customEnd]);
@@ -344,121 +270,95 @@ export default function DealerGroupYard() {
     [onTheRoadAll, dealerSlug, startDate, endDate]
   );
 
+  // KPI date range separate
+  const [kpiStartDate, kpiEndDate] = useMemo(() => {
+    if (kpiRangeType === "custom" && kpiCustomStart && kpiCustomEnd) {
+      const s = new Date(kpiCustomStart);
+      const e = new Date(kpiCustomEnd);
+      e.setHours(23, 59, 59, 999);
+      return [s, e] as [Date, Date];
+    }
+    const mapDays: Record<typeof kpiRangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
+    const days = mapDays[kpiRangeType];
+    const e = new Date();
+    e.setHours(23, 59, 59, 999);
+    const s = new Date();
+    s.setDate(e.getDate() - (days - 1));
+    s.setHours(0, 0, 0, 0);
+    return [s, e] as [Date, Date];
+  }, [kpiRangeType, kpiCustomStart, kpiCustomEnd]);
+
+  const modelToRangeMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    excelRows.forEach((r) => {
+      const mdl = toStr(r.Model).trim().toLowerCase();
+      const rng = toStr(r["Model Range"]).trim();
+      if (mdl && rng) map[mdl] = rng;
+    });
+    return map;
+  }, [excelRows]);
+
   const yardList = useMemo(() => {
     const entries = Object.entries(yard || {});
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
-      const customer = toStr(sch?.Customer || (rec as AnyMap)?.customer);
+      const customer = toStr(sch?.Customer ?? rec?.customer);
       const type = customer.toLowerCase().endsWith("stock") ? "Stock" : "Customer";
-      const model = toStr(sch?.Model || (rec as AnyMap)?.model);
-      const receivedAtISO = (rec as AnyMap)?.receivedAt ?? null;
+      const model = toStr(sch?.Model ?? rec?.model);
+      const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard };
+      const modelRange = (() => {
+        const key = model.trim().toLowerCase();
+        return modelToRangeMap[key] ?? "Unknown";
+      })();
+      return { chassis, receivedAt: receivedAtISO, model, customer, type, daysInYard, modelRange };
     });
-  }, [yard, scheduleByChassis]);
+  }, [yard, scheduleByChassis, modelToRangeMap]);
 
-  const yardReceivedInRange = useMemo(
+  // KPI
+  const kpiPgiCount = useMemo(
     () =>
-      yardList.filter((x) => isDateWithinRange(x.receivedAt ? new Date(x.receivedAt) : null, startDate, endDate)),
-    [yardList, startDate, endDate]
+      onTheRoadAll.filter(
+        (row) =>
+          slugifyDealerName(row.dealer) === dealerSlug &&
+          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), kpiStartDate, kpiEndDate)
+      ).length,
+    [onTheRoadAll, dealerSlug, kpiStartDate, kpiEndDate]
+  );
+
+  const kpiReceivedCount = useMemo(
+    () =>
+      yardList.filter((x) =>
+        isDateWithinRange(x.receivedAt ? new Date(x.receivedAt) : null, kpiStartDate, kpiEndDate)
+      ).length,
+    [yardList, kpiStartDate, kpiEndDate]
   );
 
   const handoverList = useMemo(() => {
     const entries = Object.entries(handover || {});
     return entries.map(([chassis, rec]) => {
-      const r = rec as AnyMap;
-      const handoverAt = r?.handoverAt ?? r?.createdAt ?? null;
-      const dealerSlugFromRec = slugifyDealerName(r?.dealerSlug || r?.dealerName || "");
+      const hand: HandoverRec = rec || {};
+      const handoverAt = hand?.handoverAt ?? hand?.createdAt ?? null;
+      const dealerSlugFromRec = slugifyDealerName(hand?.dealerSlug || hand?.dealerName || "");
       return { chassis, handoverAt, dealerSlugFromRec };
     });
   }, [handover]);
 
-  const handoverInRange = useMemo(
+  const kpiHandoverCount = useMemo(
     () =>
       handoverList.filter(
         (x) =>
           dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, startDate, endDate)
-      ),
-    [handoverList, dealerSlug, startDate, endDate]
+          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate)
+      ).length,
+    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
   );
 
-  // KPI
-  const kpiPgiCount = onTheRoadInRange.length;
-  const kpiReceivedCount = yardReceivedInRange.length;
-  const kpiHandoverCount = handoverInRange.length;
   const kpiYardStockCurrent = useMemo(() => {
     const stock = yardList.filter((x) => x.type === "Stock").length;
     const customer = yardList.filter((x) => x.type === "Customer").length;
     return { stock, customer, total: yardList.length };
   }, [yardList]);
-
-  // Trends
-  const weekBuckets = useMemo(() => makeWeeklyBuckets(12), []);
-  const yardDates = useMemo(() => {
-    return yardList
-      .map((x) => {
-        const d = x.receivedAt ? new Date(x.receivedAt) : null;
-        if (!d || isNaN(d.getTime())) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [yardList]);
-  const yardTrend = useMemo(() => groupCountsByWeek(weekBuckets, yardDates), [weekBuckets, yardDates]);
-
-  const monthBuckets = useMemo(() => makeMonthBucketsCurrentYear(), []);
-  const pgiDatesDealer = useMemo(() => {
-    return onTheRoadAll
-      .filter((row) => slugifyDealerName(row.dealer) === dealerSlug)
-      .map((x) => {
-        const d = parseDDMMYYYY(x.pgidate);
-        if (!d) return null;
-        d.setHours(0, 0, 0, 0);
-        return d;
-      })
-      .filter(Boolean) as Date[];
-  }, [onTheRoadAll, dealerSlug]);
-  const pgiMonthlyTrendDealer = useMemo(
-    () => groupCountsByMonth(monthBuckets, pgiDatesDealer),
-    [monthBuckets, pgiDatesDealer]
-  );
-
-  // Stock Analysis
-  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
-  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
-  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
-  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
-  const heightCategories = useMemo(() => {
-    const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
-    excelRows.forEach((r) => {
-      const raw = r.Height;
-      const s = toStr(raw).toLowerCase();
-      if (!s) return;
-      if (s.includes("pop")) {
-        map["Pop-top"] += 1;
-      } else {
-        map["Full Height"] += 1;
-      }
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [excelRows]);
-  const lengthBuckets = useMemo(() => {
-    const buckets = [
-      { label: "<=5.00m", min: 0, max: 5.0 },
-      { label: "5.01–7.00m", min: 5.01, max: 7.0 },
-      { label: ">=7.01m", min: 7.01, max: 100 },
-    ];
-    const map: Record<string, number> = {};
-    excelRows.forEach((r) => {
-      const num = parseNum(r.Length);
-      const b = buckets.find((bb) => num != null && !isNaN(num) && num >= bb.min && num <= bb.max);
-      if (!b) return;
-      map[b.label] = (map[b.label] || 0) + 1;
-    });
-    return buckets.map((b) => ({ name: b.label, value: map[b.label] || 0 }));
-  }, [excelRows]);
-  const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
 
   const yardRangeBuckets = useMemo(() => {
     return yardRangeDefs.map(({ label, min, max }) => ({
@@ -468,22 +368,28 @@ export default function DealerGroupYard() {
   }, [yardList]);
 
   const yardListDisplay = useMemo(() => {
-    if (!selectedRange) return yardList;
-    const def = yardRangeDefs.find((d) => d.label === selectedRange);
-    if (!def) return yardList;
-    return yardList.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
-  }, [selectedRange, yardList]);
+    let list = yardList;
+    if (selectedRangeBucket) {
+      const def = yardRangeDefs.find((d) => d.label === selectedRangeBucket);
+      if (def) list = list.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
+    }
+    if (selectedModelRange && selectedModelRange !== "All") {
+      list = list.filter((x) => x.modelRange === selectedModelRange);
+    }
+    return list;
+  }, [yardList, selectedRangeBucket, selectedModelRange]);
 
-  const formatDateOnly = (iso?: string | null) => {
-    if (!iso) return "-";
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "-";
-    return d.toLocaleDateString();
-  };
+  const modelRangeOptions = useMemo(() => {
+    const set = new Set<string>();
+    yardList.forEach((x) => set.add(x.modelRange));
+    const arr = Array.from(set).filter(Boolean);
+    arr.sort((a, b) => a.localeCompare(b));
+    return ["All", ...arr];
+  }, [yardList]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
 
-  const handleReceive = async (chassis: string, rec: PGIRecord) => {
+  const handleReceive = async (chassis: string, rec: PGIRec) => {
     try {
       await receiveChassisToYard(dealerSlug, chassis, rec);
     } catch (e) {
@@ -507,38 +413,64 @@ export default function DealerGroupYard() {
     }
   };
 
-  // Analysis table
+  // Stock Analysis data
   type AnalysisRow = { name: string; value: number };
-  function renderAnalysisTable(rows: AnalysisRow[]) {
-    const sorted = [...rows].sort((a, b) => b.value - a.value);
-    return (
-      <div className="rounded-lg border overflow-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-2/3">Category</TableHead>
-              <TableHead className="w-1/3 text-right">Count</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.map((r) => {
-              const active = selectedAnalysis === r.name;
-              return (
-                <TableRow
-                  key={r.name}
-                  className={active ? "bg-blue-50" : "cursor-pointer hover:bg-slate-50"}
-                  onClick={() => setSelectedAnalysis((prev) => (prev === r.name ? null : r.name))}
-                >
-                  <TableCell className="font-medium">{r.name}</TableCell>
-                  <TableCell className="text-right">{r.value}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-    );
-  }
+  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
+  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
+  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
+  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
+  const heightCategories = useMemo(() => {
+    const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
+    excelRows.forEach((r) => {
+      const raw = r.Height;
+      const s = toStr(raw).toLowerCase();
+      if (!s) return;
+      if (s.includes("pop")) map["Pop-top"] += 1;
+      else map["Full Height"] += 1;
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [excelRows]);
+  const lengthBuckets = useMemo(() => {
+    const buckets = [
+      { label: "<=5.00m", min: 0, max: 5.0 },
+      { label: "5.01–7.00m", min: 5.01, max: 7.0 },
+      { label: ">=7.01m", min: 7.01, max: 100 },
+    ];
+    const map: Record<string, number> = {};
+    excelRows.forEach((r) => {
+      const num = parseNum(r.Length);
+      const b = buckets.find((bb) => num != null && !isNaN(num) && num >= bb.min && num <= bb.max);
+      if (!b) return;
+      map[b.label] = (map[b.label] || 0) + 1;
+    });
+    return buckets.map((b) => ({ name: b.label, value: map[b.label] || 0 }));
+  }, [excelRows]);
+
+  const analysisData = useMemo<AnalysisRow[]>(() => {
+    switch (activeCategory) {
+      case "range":
+        return rangeCounts;
+      case "function":
+        return functionCounts;
+      case "layout":
+        return layoutCounts;
+      case "axle":
+        return axleCounts;
+      case "length":
+        return lengthBuckets;
+      case "height":
+        return heightCategories;
+      default:
+        return rangeCounts;
+    }
+  }, [activeCategory, rangeCounts, functionCounts, layoutCounts, axleCounts, lengthBuckets, heightCategories]);
+
+  const formatDateOnly = (iso?: string | null) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString();
+  };
 
   return (
     <div className="flex min-h-screen">
@@ -575,18 +507,8 @@ export default function DealerGroupYard() {
               </select>
               {rangeType === "custom" && (
                 <>
-                  <Input
-                    type="date"
-                    className="h-9 w-[160px]"
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                  />
-                  <Input
-                    type="date"
-                    className="h-9 w-[160px]"
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                  />
+                  <Input type="date" className="h-9 w-[160px]" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
+                  <Input type="date" className="h-9 w-[160px]" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
                 </>
               )}
               <div className="text-xs text-slate-500">
@@ -639,10 +561,31 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* KPI Cards */}
+        {/* KPI Cards with independent range */}
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="flex items-center justify-between">
             <CardTitle className="text-sm">KPI Overview</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="h-9 rounded-md border px-2 text sm"
+                value={kpiRangeType}
+                onChange={(e) => setKpiRangeType(e.target.value as typeof kpiRangeType)}
+              >
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="custom">Custom</option>
+              </select>
+              {kpiRangeType === "custom" && (
+                <>
+                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomStart} onChange={(e) => setKpiCustomStart(e.target.value)} />
+                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomEnd} onChange={(e) => setKpiCustomEnd(e.target.value)} />
+                </>
+              )}
+              <div className="text-xs text-slate-500">
+                Range: {kpiStartDate.toLocaleDateString()} ~ {kpiEndDate.toLocaleDateString()}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -656,7 +599,6 @@ export default function DealerGroupYard() {
                     <Truck className="w-5 h-5 text-blue-600" />
                   </div>
                 </div>
-                <div className="text-xs text-slate-500 mt-1">pgirecord.pgidate (dealer = {dealerDisplayName})</div>
               </div>
 
               <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -665,11 +607,10 @@ export default function DealerGroupYard() {
                     <div className="text-xs uppercase tracking-wide text-slate-500">Received Vans</div>
                     <div className="text-2xl font-semibold">{kpiReceivedCount}</div>
                   </div>
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justifycenter">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
                     <PackageCheck className="w-5 h-5 text-emerald-600" />
                   </div>
                 </div>
-                <div className="text-xs text-slate-500 mt-1">yardstock.receivedAt</div>
               </div>
 
               <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -682,7 +623,6 @@ export default function DealerGroupYard() {
                     <Handshake className="w-5 h-5 text-purple-600" />
                   </div>
                 </div>
-                <div className="text-xs text-slate-500 mt-1">handover.handoverAt</div>
               </div>
 
               <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -704,25 +644,47 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* Trends */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">Inventory Trend (Weekly)</CardTitle></CardHeader>
-            <CardContent><WeeklyBarChart points={yardTrend} /></CardContent>
-          </Card>
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader><CardTitle className="text-sm">PGI Trend (Monthly, This Year)</CardTitle></CardHeader>
-            <CardContent><MonthlyBarChart points={pgiMonthlyTrendDealer} /></CardContent>
-          </Card>
-        </div>
+        {/* Yard Range Bar Chart above Yard Inventory */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm">Days In Yard Buckets</CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={selectedRangeBucket === null ? "default" : "outline"}
+                className={selectedRangeBucket === null ? "" : "!bg-transparent !hover:bg-transparent"}
+                onClick={() => setSelectedRangeBucket(null)}
+              >
+                All
+              </Button>
+              {yardRangeDefs.map((b) => (
+                <Button
+                  key={b.label}
+                  variant={selectedRangeBucket === b.label ? "default" : "outline"}
+                  className={selectedRangeBucket === b.label ? "" : "!bg-transparent !hover:bg-transparent"}
+                  onClick={() => setSelectedRangeBucket((prev) => (prev === b.label ? null : b.label))}
+                >
+                  {b.label}
+                </Button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={yardRangeBuckets}>
+                <XAxis dataKey="label" />
+                <YAxis allowDecimals={false} />
+                <ReTooltip />
+                <Bar dataKey="count" fill="#6366f1" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
 
         {/* Yard Inventory */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader>
+          <CardHeader className="flex items-center justify-between">
             <CardTitle>Yard Inventory</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Input
                 placeholder="Enter chassis number manually"
                 value={manualChassis}
@@ -736,8 +698,19 @@ export default function DealerGroupYard() {
                   {manualStatus.msg}
                 </div>
               )}
+              <select
+                className="h-9 rounded-md border px-2 text-sm"
+                value={selectedModelRange}
+                onChange={(e) => setSelectedModelRange(e.target.value as typeof selectedModelRange)}
+                title="Filter by Model Range"
+              >
+                {modelRangeOptions.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
-
+          </CardHeader>
+          <CardContent className="space-y-4">
             {yardListDisplay.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
             ) : (
@@ -748,6 +721,7 @@ export default function DealerGroupYard() {
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">Received At</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
+                      <TableHead className="font-semibold">Model Range</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
@@ -760,6 +734,7 @@ export default function DealerGroupYard() {
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
+                        <TableCell>{toStr(row.modelRange) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>
                           <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
@@ -797,10 +772,10 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* Stock Analysis — interactive table */}
+        {/* Stock Analysis — Pie Chart */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">Stock Analysis</CardTitle>
+            <CardTitle className="text-sm">Stock Analysis (Pie)</CardTitle>
             <div className="flex flex-wrap gap-1">
               <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
               <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
@@ -811,13 +786,26 @@ export default function DealerGroupYard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="text-xs text-slate-500">Top 15 Count: <span className="font-semibold">{top15Count}</span></div>
-            {activeCategory === "range" && renderAnalysisTable(rangeCounts as AnalysisRow[])}
-            {activeCategory === "function" && renderAnalysisTable(functionCounts as AnalysisRow[])}
-            {activeCategory === "layout" && renderAnalysisTable(layoutCounts as AnalysisRow[])}
-            {activeCategory === "axle" && renderAnalysisTable(axleCounts as AnalysisRow[])}
-            {activeCategory === "length" && renderAnalysisTable(lengthBuckets as AnalysisRow[])}
-            {activeCategory === "height" && renderAnalysisTable(heightCategories as AnalysisRow[])}
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart>
+                <Pie
+                  data={analysisData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={120}
+                  innerRadius={60}
+                  label={({ name, value }) => `${name} (${value})`}
+                >
+                  {analysisData.map((entry, index) => (
+                    <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Legend />
+                <ReTooltip />
+              </PieChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
