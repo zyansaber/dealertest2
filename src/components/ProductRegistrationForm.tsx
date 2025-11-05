@@ -276,7 +276,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-[28px] leading-8 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
-            Professional Handover Form
+            Handover Form
           </DialogTitle>
         </DialogHeader>
 
