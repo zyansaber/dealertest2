@@ -22,330 +22,298 @@ const firebaseConfig = {
   appId: "1:432092773012:web:ebc7203ea570b0da2ad281",
 };
 
-const app = initializeApp(firebaseConfig);
-const database = getDatabase(app);
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export const db = getDatabase(app);
 
-export { database };
+/* =========================
+ *  工具函数
+ * ========================= */
+export type Unsubscribe = () => void;
 
-/** -------------------- schedule -------------------- */
-export const subscribeToSchedule = (
-  callback: (data: ScheduleItem[]) => void,
-  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => {
-  const { includeNoChassis = false, includeNoCustomer = false, includeFinished = false } = options;
-
-  const scheduleRef = ref(database, "schedule");
-
-  const handler = (snapshot: DataSnapshot) => {
-    const raw = snapshot.val();
-
-    const list: any[] = raw
-      ? Array.isArray(raw)
-        ? raw.filter(Boolean)
-        : Object.values(raw).filter(Boolean)
-      : [];
-
-    const filtered: ScheduleItem[] = list.filter((item: any) => {
-      if (!includeFinished) {
-        const rp = String(item?.["Regent Production"] ?? "").toLowerCase();
-        if (rp === "finished" || rp === "finish") return false;
-      }
-      if (!includeNoChassis) {
-        if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
-      }
-      if (!includeNoCustomer) {
-        if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
-      }
-      return true;
-    });
-
-    callback(filtered);
-  };
-
-  onValue(scheduleRef, handler);
-  return () => off(scheduleRef, "value", handler);
+const toStr = (v: any) => String(v ?? "");
+const lower = (v: any) => toStr(v).toLowerCase();
+const clampSlug = (s: string) => lower(s).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+export const normalizeDealerSlug = (raw?: string) => {
+  const slug = lower(raw);
+  const m = slug?.match(/^(.*?)-([a-z0-9]{6})$/);
+  return m ? m[1] : slug;
 };
 
-/** -------------------- spec_plan -------------------- */
-export const subscribeToSpecPlan = (
-  callback: (data: SpecPlan | Record<string, any> | any[]) => void
-) => {
-  const paths = ["spec_plan", "specPlan", "specplan"];
-  const unsubs: Array<() => void> = [];
-
-  paths.forEach((p) => {
-    const r = ref(database, p);
-    const handler = (snap: DataSnapshot) => {
-      const val = snap.exists() ? snap.val() : null;
-      if (val && (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)) {
-        callback(val);
-      }
-    };
-    onValue(r, handler);
-    unsubs.push(() => off(r, "value", handler));
-  });
-
-  return () => unsubs.forEach((u) => u && u());
-};
-
-/** -------------------- dateTrack -------------------- */
-export const subscribeToDateTrack = (
-  callback: (data: DateTrack | Record<string, any> | any[]) => void
-) => {
-  const paths = ["dateTrack", "datetrack"];
-  const unsubs: Array<() => void> = [];
-
-  paths.forEach((p) => {
-    const r = ref(database, p);
-    const handler = (snap: DataSnapshot) => {
-      const val = snap.exists() ? snap.val() : null;
-      if (val && (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)) {
-        callback(val);
-      }
-    };
-    onValue(r, handler);
-    unsubs.push(() => off(r, "value", handler));
-  });
-
-  return () => unsubs.forEach((u) => u && u());
-};
-
-/** -------------------- Dealer Config Functions -------------------- */
-export const subscribeAllDealerConfigs = (callback: (data: any) => void) => {
-  const configsRef = ref(database, "dealerConfigs");
-
-  const handler = (snapshot: DataSnapshot) => {
-    const data = snapshot.val();
-    callback(data || {});
-  };
-
-  onValue(configsRef, handler);
-  return () => off(configsRef, "value", handler);
-};
-
-export const subscribeDealerConfig = (dealerSlug: string, callback: (data: any) => void) => {
-  const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
-
-  const handler = (snapshot: DataSnapshot) => {
-    const data = snapshot.val();
-    callback(data || null);
-  };
-
-  onValue(configRef, handler);
-  return () => off(configRef, "value", handler);
-};
-
-export const setDealerConfig = async (dealerSlug: string, config: any) => {
-  const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
-  await set(configRef, {
-    ...config,
-    slug: dealerSlug,
-    updatedAt: new Date().toISOString(),
-  });
-};
-
-export const removeDealerConfig = async (dealerSlug: string) => {
-  const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
-  await remove(configRef);
-};
-
-export const setPowerbiUrl = async (dealerSlug: string, url: string) => {
-  const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
-  await set(urlRef, url);
-  const updatedAtRef = ref(database, `dealerConfigs/${dealerSlug}/updatedAt`);
-  await set(updatedAtRef, new Date().toISOString());
-};
-
-export const getPowerbiUrl = async (dealerSlug: string): Promise<string | null> => {
-  const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
-  const snapshot = await get(urlRef);
-  return snapshot.exists() ? snapshot.val() : null;
-};
-
-export function generateRandomCode(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+const tsToISO = (v: any): string | null => {
+  if (v == null) return null;
+  if (typeof v === "number") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d.toISOString();
   }
-  return result;
-}
-
-export function dealerNameToSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
-/** -------------------- utils -------------------- */
-const parseDDMMYYYY = (dateStr: string | null): Date => {
-  if (!dateStr || dateStr.trim() === "") return new Date(9999, 11, 31);
-  try {
-    const parts = dateStr.split("/");
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      const date = new Date(year, month, day);
-      if (isNaN(date.getTime())) return new Date(9999, 11, 31);
-      return date;
-    }
-  } catch {}
-  return new Date(9999, 11, 31);
+  if (typeof v === "string") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  return null;
 };
 
-export const sortOrders = (orders: ScheduleItem[]): ScheduleItem[] => {
-  return orders.sort((a, b) => {
-    const dateA = parseDDMMYYYY(a["Forecast Production Date"]);
-    const dateB = parseDDMMYYYY(b["Forecast Production Date"]);
-    const dateCompare = dateA.getTime() - dateB.getTime();
-    if (dateCompare !== 0) return dateCompare;
+function safeOnValue<T = any>(r: DatabaseReference, cb: (val: T) => void): Unsubscribe {
+  const handler = (snap: any) => cb((snap.val() ?? {}) as T);
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
 
-    const safeString = (value: any): string => (value == null ? "" : String(value));
+/* =========================
+ *  通用订阅：Schedule / Dealer Config / Stock / Reallocation / PGI
+ * ========================= */
 
-    const index1Compare = safeString(a.Index1).localeCompare(safeString(b.Index1));
-    if (index1Compare !== 0) return index1Compare;
-
-    const rank1Compare = safeString(a.Rank1).localeCompare(safeString(b.Rank1));
-    if (rank1Compare !== 0) return rank1Compare;
-
-    return safeString(a.Rank2).localeCompare(safeString(b.Rank2));
+// Schedule 订阅（返回数组，元素含 Chassis/Model/Customer 等；未做强过滤）
+// options 目前保留形参，后续需要时可在这里实现 includeNoChassis 等筛选
+export function subscribeToSchedule(
+  callback: (rows: any[]) => void,
+  _options?: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean }
+): Unsubscribe {
+  // 你的历史项目里有多写法：schedule/spec_plan/dateTrack 等并存
+  // 这里只订 schedule 根；如需兼容其它命名，可自行扩展
+  const r = ref(db, "schedule");
+  return safeOnValue<Record<string, any>>(r, (obj) => {
+    const rows: any[] = [];
+    Object.entries(obj || {}).forEach(([chassis, v]: any) => {
+      // 允许两种常见字段命名
+      const item = {
+        Chassis: chassis,
+        Model: v?.Model ?? v?.model ?? "",
+        Customer: v?.Customer ?? v?.customer ?? "",
+        Dealer: v?.Dealer ?? v?.dealer ?? "",
+        ...(v || {}),
+      };
+      rows.push(item);
+    });
+    callback(rows);
   });
-};
-
-export const formatDateDDMMYYYY = (dateStr: string | null): string => {
-  if (!dateStr || dateStr.trim() === "") return "Not set";
-  try {
-    const parts = dateStr.split("/");
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10);
-      const year = parseInt(parts[2], 10);
-      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-        return `${day.toString().padStart(2, "0")}/${month
-          .toString()
-          .padStart(2, "0")}/${year}`;
-      }
-    }
-  } catch {}
-  return dateStr as string;
-};
-
-/** -------------------- stock / reallocation -------------------- */
-export function subscribeToStock(cb: (value: any) => void) {
-  const r = ref(database, "stockorder");
-  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? snap.val() ?? {} : {});
-  onValue(r, handler);
-  return () => off(r, "value", handler);
 }
 
-export function subscribeToReallocation(cb: (value: any) => void) {
-  const r = ref(database, "reallocation");
-  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? snap.val() ?? {} : {});
-  onValue(r, handler);
-  return () => off(r, "value", handler);
+// Dealer 配置
+export function subscribeDealerConfig(slug: string, callback: (cfg: any | null) => void): Unsubscribe {
+  const s = normalizeDealerSlug(slug);
+  const r = ref(db, `dealerConfigs/${s}`);
+  return safeOnValue<any>(r, (v) => callback(v || null));
+}
+export function subscribeAllDealerConfigs(callback: (map: Record<string, any>) => void): Unsubscribe {
+  const r = ref(db, "dealerConfigs");
+  return safeOnValue<Record<string, any>>(r, (v) => callback(v || {}));
+}
+export async function setDealerConfig(slug: string, cfg: any) {
+  const s = normalizeDealerSlug(slug);
+  await set(ref(db, `dealerConfigs/${s}`), cfg ?? {});
+}
+export async function removeDealerConfig(slug: string) {
+  const s = normalizeDealerSlug(slug);
+  await remove(ref(db, `dealerConfigs/${s}`));
+}
+export async function setPowerbiUrl(slug: string, url: string) {
+  const s = normalizeDealerSlug(slug);
+  await update(ref(db, `dealerConfigs/${s}`), { powerbiUrl: url });
 }
 
-/** -------------------- PGI / Yard Stock -------------------- */
-export function subscribeToPGIRecords(cb: (value: Record<string, any>) => void) {
-  const r = ref(database, "pgirecord");
-  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
-  onValue(r, handler);
-  return () => off(r, "value", handler);
+// Stock / Reallocation（只读）
+export function subscribeToStock(callback: (data: Record<string, any>) => void): Unsubscribe {
+  return safeOnValue<Record<string, any>>(ref(db, "stockorder"), (v) => callback(v || {}));
+}
+export function subscribeToReallocation(callback: (data: Record<string, any>) => void): Unsubscribe {
+  return safeOnValue<Record<string, any>>(ref(db, "reallocation"), (v) => callback(v || {}));
 }
 
-export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<string, any>) => void) {
-  const r = ref(database, `yardstock/${dealerSlug}`);
-  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
-  onValue(r, handler);
-  return () => off(r, "value", handler);
+// PGI 记录（pgirecord）
+export function subscribeToPGIRecords(callback: (map: Record<string, any>) => void): Unsubscribe {
+  return safeOnValue<Record<string, any>>(ref(db, "pgirecord"), (v) => callback(v || {}));
 }
 
+/* =========================
+ *  Yard / Handover 订阅与写入
+ * ========================= */
+
+// 单经销商 Yard
+export function subscribeToYardStock(dealerSlug: string, callback: (map: Record<string, any>) => void): Unsubscribe {
+  const s = normalizeDealerSlug(dealerSlug);
+  return safeOnValue<Record<string, any>>(ref(db, `yardstock/${s}`), (v) => callback(v || {}));
+}
+
+// 单经销商 Handover
+export function subscribeToHandover(dealerSlug: string, callback: (map: Record<string, any>) => void): Unsubscribe {
+  const s = normalizeDealerSlug(dealerSlug);
+  return safeOnValue<Record<string, any>>(ref(db, `handover/${s}`), (v) => callback(v || {}));
+}
+
+// 多经销商 Handover 聚合（用于集团页）
+export function subscribeToHandoverForDealers(
+  dealerSlugs: string[],
+  callback: (all: Record<string, Record<string, any>>) => void
+): Unsubscribe {
+  const slugs = (dealerSlugs || []).map((x) => normalizeDealerSlug(x)).filter(Boolean);
+  const offList: Unsubscribe[] = [];
+  const accum: Record<string, Record<string, any>> = {};
+
+  slugs.forEach((slug) => {
+    const unsub = safeOnValue<Record<string, any>>(ref(db, `handover/${slug}`), (v) => {
+      accum[slug] = v || {};
+      // 返回一个合并后的快照
+      callback({ ...accum });
+    });
+    offList.push(unsub);
+  });
+
+  return () => offList.forEach((fn) => fn());
+}
+
+/* Yard 写入：收货/手动入场/发车/交接保存 */
 export async function receiveChassisToYard(
   dealerSlug: string,
   chassis: string,
-  pgiData: { pgidate?: string | null; dealer?: string | null; model?: string | null; customer?: string | null }
+  payload?: { model?: string; customer?: string } & Record<string, any>
 ) {
-  const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
-  const now = new Date().toISOString();
-  await set(targetRef, {
-    receivedAt: now,
-    from_pgidate: pgiData?.pgidate ?? null,
-    dealer: pgiData?.dealer ?? null,
-    model: pgiData?.model ?? null,
-    customer: pgiData?.customer ?? null,
-  });
-
-  const pgiRef = ref(database, `pgirecord/${chassis}`);
-  await remove(pgiRef);
+  const s = normalizeDealerSlug(dealerSlug);
+  const ch = (chassis || "").toUpperCase();
+  const path = `yardstock/${s}/${ch}`;
+  const receivedAtISO = new Date().toISOString();
+  const body = {
+    chassis: ch,
+    model: payload?.model ?? payload?.Model ?? "",
+    customer: payload?.customer ?? payload?.Customer ?? "",
+    dealer: s,
+    receivedAt: receivedAtISO,
+    source: payload?.source ?? "PGI",
+    ...(payload || {}),
+  };
+  await set(ref(db, path), body);
 }
 
-export async function addManualChassisToYard(dealerSlug: string, chassis: string) {
-  const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
-  const now = new Date().toISOString();
-  await set(targetRef, {
-    receivedAt: now,
-    dealer: null,
-    model: null,
-    customer: null,
-    manual: true,
-  });
-}
-
-export async function dispatchFromYard(dealerSlug: string, chassis: string) {
-  const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
-  await remove(yardRef);
-}
-
-/** -------------------- Product Registration -------------------- */
-export async function saveProductRegistration(
+export async function addManualChassisToYard(
   dealerSlug: string,
   chassis: string,
-  data: {
-    chassis: string;
-    model: string | null;
-    dealerName: string | null;
-    dealerSlug: string | null;
-    handoverAt: string;
-    customer: {
-      firstName: string;
-      lastName: string;
-      email: string;
-      phone: string;
-      address: string;
-    };
-    createdAt: string;
-    method: "dealer_assist";
-  }
+  extra?: { model?: string; customer?: string }
 ) {
-  const targetRef = ref(database, `registrations/${dealerSlug}/${chassis}`);
-  await set(targetRef, data);
+  const s = normalizeDealerSlug(dealerSlug);
+  const ch = (chassis || "").toUpperCase();
+  const path = `yardstock/${s}/${ch}`;
+  const body = {
+    chassis: ch,
+    model: extra?.model ?? "",
+    customer: extra?.customer ?? "Stock",
+    dealer: s,
+    receivedAt: new Date().toISOString(),
+    source: "manual",
+  };
+  await set(ref(db, path), body);
 }
 
-/** -------------------- Handover -------------------- */
+// 发车（仅从 yard 移除；真正的 handover 由 saveHandover 写入）
+export async function dispatchFromYard(dealerSlug: string, chassis: string) {
+  const s = normalizeDealerSlug(dealerSlug);
+  const ch = (chassis || "").toUpperCase();
+  await remove(ref(db, `yardstock/${s}/${ch}`));
+}
+
 /**
- * Save handover data under handover/{dealerSlug}/{chassis} and remove the unit from yardstock.
+ * 保存 Handover（并从 yard 删除）
+ * data 典型：
+ * {
+ *   chassis: "1TPQ205",
+ *   dealerName: "St James",
+ *   dealerSlug: "stjames",
+ *   handoverAt: "2025-10-23T00:00:00.000Z",
+ *   customer: "NA",
+ *   model: "SRP19",
+ *   source: "SAPdata" | "form" | ...
+ * }
  */
 export async function saveHandover(
   dealerSlug: string,
   chassis: string,
   data: {
-    chassis: string;
-    model: string | null;
-    dealerName: string | null;
-    dealerSlug: string | null;
-    handoverAt: string;
-    customer: {
-      firstName: string;
-      lastName: string;
-      email: string;
-      phone: string;
-      address: string;
-    };
-    createdAt: string;
-    source: "dealer_assist_form";
+    handoverAt?: string;
+    customer?: string;
+    model?: string;
+    dealerName?: string;
+    dealerSlug?: string;
+    source?: string;
+    createdAt?: string;
+    [k: string]: any;
   }
 ) {
-  const targetRef = ref(database, `handover/${dealerSlug}/${chassis}`);
-  await set(targetRef, data);
-  const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
-  await remove(yardRef);
+  const s = normalizeDealerSlug(dealerSlug);
+  const ch = (chassis || "").toUpperCase();
+  const nowISO = new Date().toISOString();
+  const nodeRef = ref(db, `handover/${s}/${ch}`);
+
+  // 兼容你的数据口径：createdAt 与 handoverAt 都写，默认用 now
+  const body = {
+    chassis: ch,
+    dealerName: data?.dealerName ?? s,
+    dealerSlug: s,
+    model: data?.model ?? "",
+    customer: data?.customer ?? "NA",
+    source: data?.source ?? "SAPdata",
+    createdAt: data?.createdAt ?? nowISO,
+    handoverAt: data?.handoverAt ?? nowISO,
+    ...data,
+  };
+
+  // 1) handover/{dealer}/{chassis}
+  await set(nodeRef, body);
+
+  // 2) 从 yard 移除
+  await remove(ref(db, `yardstock/${s}/${ch}`));
+}
+
+/* =========================
+ *  SpecPlan / DateTrack（只读，保留老接口方便其它页面）
+ * ========================= */
+export function subscribeToSpecPlan(callback: (map: Record<string, any>) => void): Unsubscribe {
+  // 历史里有 spec_plan/specPlan/specplan 三种；这里按优先级订阅一个存在的节点
+  const candidates = ["spec_plan", "specPlan", "specplan"];
+  let stopped = false;
+  const offList: Unsubscribe[] = [];
+
+  const install = (path: string) =>
+    safeOnValue<Record<string, any>>(ref(db, path), (v) => !stopped && callback(v || {}));
+
+  candidates.forEach((p) => offList.push(install(p)));
+  return () => {
+    stopped = true;
+    offList.forEach((fn) => fn());
+  };
+}
+
+export function subscribeToDateTrack(callback: (map: Record<string, any>) => void): Unsubscribe {
+  const candidates = ["dateTrack", "DateTrack", "date_track"];
+  let stopped = false;
+  const offList: Unsubscribe[] = [];
+
+  const install = (path: string) =>
+    safeOnValue<Record<string, any>>(ref(db, path), (v) => !stopped && callback(v || {}));
+
+  candidates.forEach((p) => offList.push(install(p)));
+  return () => {
+    stopped = true;
+    offList.forEach((fn) => fn());
+  };
+}
+
+/* =========================
+ *  Subscriptions（chassis 订阅/取消）
+ * ========================= */
+export function subscribeToSubscriptions(callback: (map: Record<string, any>) => void): Unsubscribe {
+  return safeOnValue<Record<string, any>>(ref(db, "subscriptions"), (v) => callback(v || {}));
+}
+export async function addSubscription(chassis: string, payload: any) {
+  const ch = (chassis || "").toUpperCase();
+  await set(ref(db, `subscriptions/${ch}`), { chassis: ch, createdAt: serverTimestamp(), ...(payload || {}) });
+}
+export async function removeSubscription(chassis: string) {
+  const ch = (chassis || "").toUpperCase();
+  await remove(ref(db, `subscriptions/${ch}`));
+}
+
+/* =========================
+ *  Utils（如果需要写入通用日志）
+ * ========================= */
+export async function appendLog(path: string, payload: any) {
+  const keyRef = push(ref(db, path));
+  await set(keyRef, { createdAt: serverTimestamp(), ...payload });
 }
