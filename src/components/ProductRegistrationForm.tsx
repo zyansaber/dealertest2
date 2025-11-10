@@ -7,8 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { saveHandover } from "@/lib/firebase";
 
-// ---------------- Types ----------------
-export type RegistrationData = {
+type RegistrationData = {
   chassis: string;
   model?: string | null;
   dealerName?: string | null;
@@ -20,39 +19,9 @@ type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   initial?: RegistrationData | null;
+  onCompleted?: (handover: { chassis: string; dealerSlug?: string | null }) => void | Promise<void>;
 };
 
-type HandoverAssistPayload = {
-  chassis: string;
-  model: string | null;
-  dealerName: string | null;
-  dealerSlug: string | null;
-  handoverAt: string; // ISO
-  customer: {
-    firstName: string;
-    lastName: string;
-    email?: string;
-    phone?: string;
-    address?: string;
-  };
-  createdAt: string; // ISO
-  source: "dealer_assist_form";
-};
-
-type HandoverInvitePayload = {
-  chassis: string;
-  model: string | null;
-  dealerName: string | null;
-  dealerSlug: string | null;
-  handoverAt: string; // ISO
-  createdAt: string; // ISO
-  source: "customer email";
-  invite: {
-    email: string;
-  };
-};
-
-// ---------------- Globals for UMD libs ----------------
 declare global {
   interface Window {
     html2canvas?: any;
@@ -71,13 +40,15 @@ async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
       s.async = true;
       s.crossOrigin = "anonymous";
       s.onload = () => resolve();
-      s.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+      s.onerror = (e) => reject(new Error(`Failed to load script: ${src}`));
       document.head.appendChild(s);
     });
 
+  // Load html2canvas if not present
   if (!window.html2canvas) {
     await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
   }
+  // Load jsPDF UMD if not present
   if (!window.jspdf || !window.jspdf.jsPDF) {
     await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
   }
@@ -90,7 +61,7 @@ async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
   return { html2canvas, jsPDF };
 }
 
-export default function ProductRegistrationForm({ open, onOpenChange, initial }: Props) {
+export default function ProductRegistrationForm({ open, onOpenChange, initial, onCompleted }: Props) {
   const [step, setStep] = useState<"mode" | "assist" | "email">("mode");
   const [inviteEmail, setInviteEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -102,22 +73,20 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const data = useMemo<RegistrationData>(() => {
-    return (
-      initial ?? {
-        chassis: "",
-        model: "",
-        dealerName: "",
-        dealerSlug: "",
-        handoverAt: new Date().toISOString(),
-      }
-    );
+  const data = useMemo(() => {
+    return initial ?? {
+      chassis: "",
+      model: "",
+      dealerName: "",
+      dealerSlug: "",
+      handoverAt: new Date().toISOString(),
+    };
   }, [initial]);
 
   const handoverDateStr = useMemo(() => {
     try {
       const d = new Date(data.handoverAt);
-      return isNaN(d.getTime()) ? data.handoverAt : d.toLocaleDateString();
+      return d.toLocaleDateString();
     } catch {
       return data.handoverAt;
     }
@@ -139,13 +108,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
     onOpenChange(false);
   };
 
-  const canSubmit = () => {
-    // 必要条件：至少有姓名其一 或 email/phone 之一；且有 chassis
-    return Boolean(
-      data.chassis && (firstName.trim() || lastName.trim() || custEmail.trim() || phone.trim())
-    );
-  };
-
   const handleDownloadPDF = async () => {
     const el = printRef.current;
     if (!el) return;
@@ -159,114 +121,124 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
       const margin = 32;
       const imgWidth = pageWidth - margin * 2;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let y = margin;
-      if (imgHeight <= pageHeight - margin * 2) {
-        pdf.addImage(imgData, "PNG", margin, y, imgWidth, imgHeight);
-      } else {
-        // 多页
-        let remaining = imgHeight;
-        const pageCanvas = document.createElement("canvas");
-        const pageCtx = pageCanvas.getContext("2d");
-        const scale = imgWidth / canvas.width;
-        const pageDrawHeight = pageHeight - margin * 2;
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = Math.floor(pageDrawHeight / scale);
-
-        let sY = 0; // 源 y 偏移
-        while (remaining > 0) {
-          if (!pageCtx) break;
-          pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-          pageCtx.drawImage(
-            canvas,
-            0,
-            sY,
-            canvas.width,
-            pageCanvas.height,
-            0,
-            0,
-            pageCanvas.width,
-            pageCanvas.height
-          );
-          const pageImg = pageCanvas.toDataURL("image/png");
-          pdf.addImage(pageImg, "PNG", margin, margin, imgWidth, pageDrawHeight);
-          remaining -= pageDrawHeight;
-          sY += pageCanvas.height;
-          if (remaining > 0) pdf.addPage();
-        }
-      }
-
-      pdf.save(`${data.chassis || "handover"}.pdf`);
-    } catch (e) {
-      console.error(e);
-      setSubmitMsg("PDF download failed. Please try again.");
+      pdf.addImage(imgData, "PNG", margin, margin, imgWidth, Math.min(imgHeight, pageHeight - margin * 2));
+      pdf.save(`handover_${data.chassis}.pdf`);
+      setSubmitMsg("PDF downloaded.");
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      setSubmitMsg("PDF generation failed. Please try again.");
     }
+  };
+
+  const canSubmit = () => {
+    const dealerSlug = (data.dealerSlug || "").trim();
+    return Boolean(
+      firstName.trim() &&
+        lastName.trim() &&
+        custEmail.trim() &&
+        phone.trim() &&
+        address.trim() &&
+        dealerSlug &&
+        data.chassis
+    );
   };
 
   const handleSubmitAssist = async () => {
     if (!canSubmit()) {
-      setSubmitMsg("Please complete the required customer information.");
+      setSubmitMsg("Please complete all required fields.");
       return;
     }
     setSubmitting(true);
     setSubmitMsg(null);
     try {
-      const payload: HandoverAssistPayload = {
+      const dealerSlug = (data.dealerSlug || "").trim();
+      if (!dealerSlug) {
+        throw new Error("Dealer slug missing");
+      }
+      const trimmedFirstName = firstName.trim();
+      const trimmedLastName = lastName.trim();
+      const trimmedEmail = custEmail.trim();
+      const trimmedPhone = phone.trim();
+      const trimmedAddress = address.trim();
+      const handoverData = {
         chassis: data.chassis,
         model: data.model || null,
         dealerName: data.dealerName || null,
-        dealerSlug: data.dealerSlug || null,
+        dealerSlug,
         handoverAt: data.handoverAt,
         customer: {
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          email: custEmail.trim() || undefined,
-          phone: phone.trim() || undefined,
-          address: address.trim() || undefined,
+          firstName: trimmedFirstName,
+          lastName: trimmedLastName,
+          email: trimmedEmail,
+          phone: trimmedPhone,
+          address: trimmedAddress,
         },
         createdAt: new Date().toISOString(),
-        source: "dealer_assist_form",
+        source: "dealer_assist_form" as const,
       };
-
-      await saveHandover((data.dealerSlug || "") as string, data.chassis, payload as any);
+      await saveHandover(dealerSlug, data.chassis, handoverData);
+      try {
+        await onCompleted?.({ chassis: data.chassis, dealerSlug: data.dealerSlug ?? dealerSlug });
+      } catch (err) {
+        console.error("Post-handover completion failed:", err);
+      }
 
       setSubmitMsg("Submitted successfully.");
       setSubmitting(false);
       resetAndClose();
     } catch (e) {
       console.error(e);
-      setSubmitMsg("Submit failed. Please try again.");
+      const message =
+        e instanceof Error && e.message === "Dealer slug missing"
+          ? "Dealer information is missing. Please reopen the handover form."
+          : "Submit failed. Please try again.";
+      setSubmitMsg(message);
       setSubmitting(false);
     }
   };
 
   const handleSubmitEmail = async () => {
-    if (!inviteEmail) {
+    const trimmedEmail = inviteEmail.trim();
+    if (!trimmedEmail) {
       setSubmitMsg("Please enter the customer's email.");
       return;
     }
     setSubmitting(true);
     setSubmitMsg(null);
     try {
-      const payload: HandoverInvitePayload = {
+      const dealerSlug = (data.dealerSlug || "").trim();
+      if (!dealerSlug) {
+        throw new Error("Dealer slug missing");
+      }
+      const handoverData = {
         chassis: data.chassis,
         model: data.model || null,
         dealerName: data.dealerName || null,
-        dealerSlug: data.dealerSlug || null,
+        dealerSlug,
         handoverAt: data.handoverAt,
         createdAt: new Date().toISOString(),
-        source: "customer email",
-        invite: { email: inviteEmail.trim() },
+        source: "customer email" as const,
+        invite: {
+          email: trimmedEmail,
+        },
       };
-
-      await saveHandover((data.dealerSlug || "") as string, data.chassis, payload as any);
+      await saveHandover(dealerSlug, data.chassis, handoverData);
+      try {
+        await onCompleted?.({ chassis: data.chassis, dealerSlug: data.dealerSlug ?? dealerSlug });
+      } catch (err) {
+        console.error("Post-handover completion failed:", err);
+      }
 
       setSubmitMsg("Email submitted successfully.");
       setSubmitting(false);
       resetAndClose();
     } catch (e) {
       console.error(e);
-      setSubmitMsg("Submit failed. Please try again.");
+      const message =
+        e instanceof Error && e.message === "Dealer slug missing"
+          ? "Dealer information is missing. Please reopen the handover form."
+          : "Submit failed. Please try again.";
+      setSubmitMsg(message);
       setSubmitting(false);
     }
   };
@@ -276,7 +248,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-[28px] leading-8 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
-            Handover Form
+            Professional Handover Form
           </DialogTitle>
         </DialogHeader>
 
@@ -363,32 +335,42 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
                 <div className="text-base font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
                   Customer Information
                 </div>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 mt-2">
                   <div>
                     <Label>First Name</Label>
-                    <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                    <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
                   </div>
                   <div>
                     <Label>Last Name</Label>
-                    <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                    <Input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
                   </div>
                   <div>
                     <Label>Email</Label>
-                    <Input type="email" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} />
+                    <Input type="email" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} required />
                   </div>
                   <div>
-                    <Label>Phone</Label>
-                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+                    <Label>Phone Number</Label>
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} required />
                   </div>
                   <div className="md:col-span-2">
                     <Label>Home Address</Label>
-                    <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+                    <Input value={address} onChange={(e) => setAddress(e.target.value)} required />
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSubmitMsg(null);
+                  setStep("mode");
+                }}
+                disabled={submitting}
+              >
+                Back
+              </Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleDownloadPDF}>
                 Download PDF
               </Button>
@@ -425,12 +407,18 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
               </CardContent>
             </Card>
             <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" onClick={() => setStep("mode")}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSubmitMsg(null);
+                  setStep("mode");
+                }}
+              >
                 Back
               </Button>
               <Button
                 className="bg-sky-600 hover:bg-sky-700"
-                disabled={submitting || !inviteEmail}
+                disabled={submitting || !inviteEmail.trim()}
                 onClick={handleSubmitEmail}
               >
                 {submitting ? "Submitting..." : "Send Email"}
