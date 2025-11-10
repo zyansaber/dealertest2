@@ -1,6 +1,6 @@
 // src/pages/DealerGroupYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,11 +14,14 @@ import {
   addManualChassisToYard,
   dispatchFromYard,
   subscribeToHandover,
+  subscribeDealerConfig,
+  subscribeAllDealerConfigs,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import { Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
+import { isDealerGroup } from "@/types/dealer";
 import {
   BarChart,
   Bar,
@@ -176,13 +179,24 @@ const yardRangeDefs = [
 const PIE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#84cc16", "#d946ef", "#0ea5e9", "#14b8a6"];
 
 export default function DealerGroupYard() {
-  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
+  const { dealerSlug: rawDealerSlug, selectedDealerSlug: rawSelectedDealerSlug } = useParams<{
+    dealerSlug: string;
+    selectedDealerSlug?: string;
+  }>();
+  const navigate = useNavigate();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+  const selectedDealerSlug = useMemo(
+    () => normalizeDealerSlug(rawSelectedDealerSlug),
+    [rawSelectedDealerSlug]
+  );
 
   const [pgi, setPgi] = useState<Record<string, PGIRec>>({});
   const [yard, setYard] = useState<Record<string, YardRec>>({});
   const [handover, setHandover] = useState<Record<string, HandoverRec>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [dealerConfig, setDealerConfig] = useState<any>(null);
+  const [allDealerConfigs, setAllDealerConfigs] = useState<any>({});
+  const [configLoading, setConfigLoading] = useState(true);
 
   // On The Road date range (PGI list controls)
   const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
@@ -218,19 +232,84 @@ export default function DealerGroupYard() {
       includeNoCustomer: true,
       includeFinished: true,
     });
-    let unsubYard: (() => void) | undefined;
-    let unsubHandover: (() => void) | undefined;
-    if (dealerSlug) {
-      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
-      unsubHandover = subscribeToHandover(dealerSlug, (data) => setHandover(data || {}));
-    }
     return () => {
       unsubPGI?.();
-      unsubYard?.();
       unsubSched?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!dealerSlug) return;
+
+    const unsubConfig = subscribeDealerConfig(dealerSlug, (config) => {
+      setDealerConfig(config);
+      setConfigLoading(false);
+    });
+
+    return unsubConfig;
+  }, [dealerSlug]);
+
+  useEffect(() => {
+    const unsubAllConfigs = subscribeAllDealerConfigs((data) => setAllDealerConfigs(data || {}));
+    return unsubAllConfigs;
+  }, []);
+
+  const includedDealerSlugs = useMemo(() => {
+    if (!dealerConfig || !isDealerGroup(dealerConfig)) {
+      return [dealerSlug];
+    }
+    return dealerConfig.includedDealers || [];
+  }, [dealerConfig, dealerSlug]);
+
+  useEffect(() => {
+    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !rawSelectedDealerSlug) {
+      const firstDealer = includedDealerSlugs[0];
+      if (firstDealer) {
+        navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/yard`, { replace: true });
+      }
+    }
+  }, [
+    configLoading,
+    dealerConfig,
+    includedDealerSlugs,
+    rawSelectedDealerSlug,
+    rawDealerSlug,
+    navigate,
+  ]);
+
+  const activeDealerSlug = useMemo(
+    () => normalizeDealerSlug(selectedDealerSlug || includedDealerSlugs[0] || dealerSlug),
+    [selectedDealerSlug, includedDealerSlugs, dealerSlug]
+  );
+
+  const includedDealerNames = useMemo(() => {
+    if (!dealerConfig || !isDealerGroup(dealerConfig)) {
+      return null;
+    }
+    return (includedDealerSlugs || []).map((slug: string) => {
+      const config = allDealerConfigs?.[slug];
+      return {
+        slug,
+        name: config?.name || prettifyDealerName(slug),
+      };
+    });
+  }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
+
+  useEffect(() => {
+    let unsubYard: (() => void) | undefined;
+    let unsubHandover: (() => void) | undefined;
+    if (activeDealerSlug) {
+      unsubYard = subscribeToYardStock(activeDealerSlug, (data) => setYard(data || {}));
+      unsubHandover = subscribeToHandover(activeDealerSlug, (data) => setHandover(data || {}));
+    } else {
+      setYard({});
+      setHandover({});
+    }
+    return () => {
+      unsubYard?.();
       unsubHandover?.();
     };
-  }, [dealerSlug]);
+  }, [activeDealerSlug]);
 
   useEffect(() => {
     (async () => {
@@ -285,10 +364,10 @@ export default function DealerGroupYard() {
     () =>
       onTheRoadAll.filter(
         (row) =>
-          slugifyDealerName(row.dealer) === dealerSlug &&
+          slugifyDealerName(row.dealer) === activeDealerSlug &&
           isDateWithinRange(parseDDMMYYYY(row.pgidate || null), startDate, endDate)
       ),
-    [onTheRoadAll, dealerSlug, startDate, endDate]
+    [onTheRoadAll, activeDealerSlug, startDate, endDate]
   );
 
   // KPI date range separate
@@ -385,10 +464,10 @@ export default function DealerGroupYard() {
     () =>
       onTheRoadAll.filter(
         (row) =>
-          slugifyDealerName(row.dealer) === dealerSlug &&
+          slugifyDealerName(row.dealer) === activeDealerSlug &&
           isDateWithinRange(parseDDMMYYYY(row.pgidate || null), kpiStartDate, kpiEndDate)
       ).length,
-    [onTheRoadAll, dealerSlug, kpiStartDate, kpiEndDate]
+    [onTheRoadAll, activeDealerSlug, kpiStartDate, kpiEndDate]
   );
 
   const kpiReceivedCount = useMemo(
@@ -413,21 +492,21 @@ export default function DealerGroupYard() {
     () =>
       handoverList.filter(
         (x) =>
-          dealerSlug === x.dealerSlugFromRec &&
+          activeDealerSlug === x.dealerSlugFromRec &&
           isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate)
       ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, activeDealerSlug, kpiStartDate, kpiEndDate]
   );
 
   const kpiSecondhandCount = useMemo(
     () =>
       handoverList.filter(
         (x) =>
-          dealerSlug === x.dealerSlugFromRec &&
+          activeDealerSlug === x.dealerSlugFromRec &&
           isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate) &&
           isSecondhandChassis(x.chassis)
       ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, activeDealerSlug, kpiStartDate, kpiEndDate]
   );
 
   const kpiYardStockCurrent = useMemo(() => {
@@ -477,14 +556,14 @@ export default function DealerGroupYard() {
     handoverList.forEach((x) => {
       const d = x.handoverAt ? new Date(x.handoverAt) : null;
       if (!d) return;
-      if (dealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
+      if (activeDealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
       const key = fmtMonthKey(d);
       const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
       if (!map[key]) map[key] = { key, label, count: 0 };
       map[key].count += 1;
     });
     return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [handoverList, dealerSlug, kpiStartDate, kpiEndDate]);
+  }, [handoverList, activeDealerSlug, kpiStartDate, kpiEndDate]);
 
   const stockLevel10Weeks = useMemo(() => {
     const now = new Date();
@@ -508,7 +587,7 @@ export default function DealerGroupYard() {
       const e = nextStarts[i];
       return handoverList.filter((x) => {
         const d = x.handoverAt ? new Date(x.handoverAt) : null;
-        return d && d >= s && d < e && x.dealerSlugFromRec === dealerSlug;
+        return d && d >= s && d < e && x.dealerSlugFromRec === activeDealerSlug;
       }).length;
     });
 
@@ -522,13 +601,22 @@ export default function DealerGroupYard() {
     });
 
     return starts.map((s, i) => ({ week: fmtWeekLabel(s), level: levels[i] }));
-  }, [yardList, handoverList, dealerSlug, kpiYardStockCurrent.total]);
+  }, [yardList, handoverList, activeDealerSlug, kpiYardStockCurrent.total]);
 
-  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
+  const dealerDisplayName = useMemo(() => {
+    if (selectedDealerSlug) {
+      const selected = includedDealerNames?.find((dealer) => dealer.slug === selectedDealerSlug);
+      if (selected?.name) return selected.name;
+      return prettifyDealerName(selectedDealerSlug);
+    }
+    if (dealerConfig?.name) return dealerConfig.name;
+    return prettifyDealerName(dealerSlug);
+  }, [selectedDealerSlug, includedDealerNames, dealerConfig, dealerSlug]);
 
   const handleReceive = async (chassis: string, rec: PGIRec) => {
+    if (!activeDealerSlug) return;
     try {
-      await receiveChassisToYard(dealerSlug, chassis, rec);
+      await receiveChassisToYard(activeDealerSlug, chassis, rec);
     } catch (e) {
       console.error("receive failed", e);
     }
@@ -540,8 +628,12 @@ export default function DealerGroupYard() {
       setManualStatus({ type: "err", msg: "请输入车架号" });
       return;
     }
+    if (!activeDealerSlug) {
+      setManualStatus({ type: "err", msg: "当前经销商尚未载入，请稍后再试。" });
+      return;
+    }
     try {
-      await addManualChassisToYard(dealerSlug, ch);
+      await addManualChassisToYard(activeDealerSlug, ch);
       setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
       setManualChassis("");
     } catch (e) {
@@ -608,6 +700,8 @@ export default function DealerGroupYard() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
+        isGroup={!!dealerConfig && isDealerGroup(dealerConfig)}
+        includedDealers={includedDealerNames}
       />
       <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
@@ -996,12 +1090,18 @@ export default function DealerGroupYard() {
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
                               (async () => {
-                                try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
+                                if (!activeDealerSlug) return;
+                                try {
+                                  await dispatchFromYard(activeDealerSlug, row.chassis);
+                                } catch (e) {
+                                  console.error(e);
+                                  return;
+                                }
                                 setHandoverData({
                                   chassis: row.chassis,
                                   model: row.model,
                                   dealerName: dealerDisplayName,
-                                  dealerSlug,
+                                  dealerSlug: activeDealerSlug,
                                   handoverAt: new Date().toISOString(),
                                 });
                                 setHandoverOpen(true);
