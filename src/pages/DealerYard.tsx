@@ -55,6 +55,8 @@ type HandoverRec = {
   dealerName?: string | null;
 };
 
+const PRICE_ENABLED_DEALERS = new Set(["frankston", "geelong", "launceston", "st-james", "traralgon"]);
+
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();
 const cleanLabel = (v: unknown, fallback = "Unknown") => {
@@ -134,6 +136,8 @@ function isSecondhandChassis(chassis?: string | null): boolean {
   return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
 }
 
+
+
 const currencyFormatter = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
@@ -151,6 +155,35 @@ function parseWholesale(val: unknown): number | null {
 function formatWholesale(val: unknown): string {
   const num = parseWholesale(val);
   return num == null ? "-" : currencyFormatter.format(num);
+}
+
+function extractLatestWholesale(record: any): number | null {
+  if (!record) return null;
+  if (!Array.isArray(record) && typeof record !== "object") {
+    return parseWholesale(record);
+  }
+
+  const values = Array.isArray(record) ? record : Object.values(record ?? {});
+  if (!values.length) return null;
+
+  const ranked = values
+    .map((entry, index) => {
+      const price = parseWholesale(
+        entry?.wholesalepo ?? entry?.wholesalePo ?? entry?.wholesalePO ?? entry?.price ?? entry?.amount
+      );
+      const tsCandidates = [entry?.updatedAt, entry?.createdAt, entry?.handoverAt, entry?.timestamp];
+      const ts = tsCandidates
+        .map((t) => (t ? Date.parse(String(t)) : NaN))
+        .find((t) => !Number.isNaN(t));
+      return { price, ts: Number.isFinite(ts ?? NaN) ? (ts as number) : -Infinity, index };
+    })
+    .filter((item) => item.price != null)
+    .sort((a, b) => {
+      if (a.ts === b.ts) return b.index - a.index;
+      return b.ts - a.ts;
+    });
+
+  return ranked.length > 0 ? ranked[0].price : null;
 }
 
 
@@ -378,7 +411,11 @@ export default function DealerYard() {
   }, [excelRows]);
 
   const yardList = useMemo(() => {
-    const entries = Object.entries(yard || {});
+        const dealerChassisRecords =
+      (yard && typeof yard === "object" && (yard as any)["dealer-chassis"]) ||
+      (yard && typeof yard === "object" && (yard as any).dealerChassis) ||
+      {};
+    const entries = Object.entries(yard || {}).filter(([chassis]) => chassis !== "dealer-chassis");
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
@@ -404,6 +441,7 @@ export default function DealerYard() {
       const axle = meta?.axle ?? "Unknown";
       const length = meta?.length ?? "Unknown";
       const height = meta?.height ?? "Unknown";
+      const wholesalePo = extractLatestWholesale((dealerChassisRecords as Record<string, any>)[chassis]);
       return {
         chassis,
         receivedAt: receivedAtISO,
@@ -417,6 +455,7 @@ export default function DealerYard() {
         axle,
         length,
         height,
+        wholesalePo,
       };
     });
   }, [yard, scheduleByChassis, modelMetaMap]);
@@ -570,6 +609,7 @@ export default function DealerYard() {
   }, [yardList, handoverList, dealerSlug, kpiYardStockCurrent.total]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
+  const showPriceColumn = PRICE_ENABLED_DEALERS.has(dealerSlug);
 
   const handleReceive = async (chassis: string, rec: PGIRec) => {
     try {
@@ -1060,7 +1100,7 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">Received At</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
-                      <TableHead className="font-semibold">Model Range</TableHead>
+                      {showPriceColumn && <TableHead className="font-semibold">AUD Price</TableHead>}
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
@@ -1073,7 +1113,7 @@ export default function DealerYard() {
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        <TableCell>{toStr(row.modelRange) || "-"}</TableCell>
+                         {showPriceColumn && <TableCell>{formatWholesale(row.wholesalePo)}</TableCell>}
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>
                           <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
@@ -1086,17 +1126,14 @@ export default function DealerYard() {
                             size="sm"
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
-                              (async () => {
-                                try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
-                                setHandoverData({
-                                  chassis: row.chassis,
-                                  model: row.model,
-                                  dealerName: dealerDisplayName,
-                                  dealerSlug,
-                                  handoverAt: new Date().toISOString(),
-                                });
-                                setHandoverOpen(true);
-                              })();
+                                                            setHandoverData({
+                                chassis: row.chassis,
+                                model: row.model,
+                                dealerName: dealerDisplayName,
+                                dealerSlug,
+                                handoverAt: new Date().toISOString(),
+                              });
+                              setHandoverOpen(true);
                             }}
                           >
                             Handover
@@ -1112,7 +1149,27 @@ export default function DealerYard() {
         </Card>
 
         {/* Handover Modal */}
-        <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
+                <ProductRegistrationForm
+          open={handoverOpen}
+          onOpenChange={(open) => {
+            setHandoverOpen(open);
+            if (!open) {
+              setHandoverData(null);
+            }
+          }}
+          initial={handoverData}
+          onCompleted={async ({ chassis, dealerSlug: slugFromForm }) => {
+            const targetSlug = slugFromForm ?? dealerSlug;
+            if (!targetSlug || !chassis) return;
+            try {
+              await dispatchFromYard(targetSlug, chassis);
+            } catch (err) {
+              console.error("Failed to dispatch from yard after handover:", err);
+            } finally {
+              setHandoverData(null);
+            }
+          }}
+        />
       </main>
     </div>
   );
