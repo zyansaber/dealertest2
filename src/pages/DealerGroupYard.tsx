@@ -1,6 +1,6 @@
 // src/pages/DealerGroupYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,14 +14,11 @@ import {
   addManualChassisToYard,
   dispatchFromYard,
   subscribeToHandover,
-  subscribeDealerConfig,
-  subscribeAllDealerConfigs,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import { Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
-import { isDealerGroup } from "@/types/dealer";
 import {
   BarChart,
   Bar,
@@ -42,14 +39,12 @@ type PGIRec = {
   dealer?: string | null;
   model?: string | null;
   customer?: string | null;
+  wholesalepo?: string | number | null;
 };
 type YardRec = {
   receivedAt?: string | null;
   model?: string | null;
   customer?: string | null;
-  type?: string | null;
-  Type?: string | null;
-  wholesalepo?: string | number | null;
 };
 type HandoverRec = {
   handoverAt?: string | null;
@@ -60,11 +55,6 @@ type HandoverRec = {
 
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();
-const cleanLabel = (v: unknown, fallback = "Unknown") => {
-  const str = toStr(v).trim();
-  if (!str) return fallback;
-  return str;
-};
 
 function normalizeDealerSlug(raw?: string): string {
   const slug = lower(raw);
@@ -136,6 +126,25 @@ function isSecondhandChassis(chassis?: string | null): boolean {
   return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
 }
 
+const currencyFormatter = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+});
+
+function parseWholesale(val: unknown): number | null {
+  if (val == null) return null;
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).replace(/[^\d.-]/g, "");
+  if (!str) return null;
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
+
+function formatWholesale(val: unknown): string {
+  const num = parseWholesale(val);
+  return num == null ? "-" : currencyFormatter.format(num);
+}
+
 // Excel rows type
 type ExcelRow = {
   Model?: string;
@@ -150,23 +159,6 @@ type ExcelRow = {
   "Top 15"?: string | number;
   "TOP15"?: string | number;
   "Top15"?: string | number;
-};
-
-const WHOLESALE_SLUGS = new Set(["frankston", "geelong", "launceston", "st-james", "tralagon"]);
-
-const currencyFormatter = new Intl.NumberFormat("en-AU", {
-  style: "currency",
-  currency: "AUD",
-  minimumFractionDigits: 2,
-});
-
-const parseWholesaleValue = (val: unknown): number | null => {
-  if (val == null) return null;
-  if (typeof val === "number" && !isNaN(val)) return val;
-  const str = String(val).replace(/[^\d.-]/g, "");
-  if (!str) return null;
-  const num = Number(str);
-  return isNaN(num) ? null : num;
 };
 
 function parseNum(val: unknown): number | null {
@@ -197,25 +189,13 @@ const yardRangeDefs = [
 const PIE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#84cc16", "#d946ef", "#0ea5e9", "#14b8a6"];
 
 export default function DealerGroupYard() {
-  const { dealerSlug: rawDealerSlug, selectedDealerSlug: routeSelectedDealerSlug } = useParams<{
-    dealerSlug: string;
-    selectedDealerSlug?: string;
-  }>();
-  const navigate = useNavigate();
+  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
-  const selectedDealerSlugRaw = routeSelectedDealerSlug || "";
-  const selectedDealerSlug = useMemo(
-    () => normalizeDealerSlug(selectedDealerSlugRaw),
-    [selectedDealerSlugRaw]
-  );
 
   const [pgi, setPgi] = useState<Record<string, PGIRec>>({});
   const [yard, setYard] = useState<Record<string, YardRec>>({});
   const [handover, setHandover] = useState<Record<string, HandoverRec>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
-  const [dealerConfig, setDealerConfig] = useState<any>(null);
-  const [allDealerConfigs, setAllDealerConfigs] = useState<any>({});
-  const [configLoading, setConfigLoading] = useState(true);
 
   // On The Road date range (PGI list controls)
   const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
@@ -242,9 +222,6 @@ export default function DealerGroupYard() {
   // Yard Inventory filters (charts-only)
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
-  const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
-
-  const showWholesaleColumn = WHOLESALE_SLUGS.has(activeDealerSlug);
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -253,119 +230,19 @@ export default function DealerGroupYard() {
       includeNoCustomer: true,
       includeFinished: true,
     });
+    let unsubYard: (() => void) | undefined;
+    let unsubHandover: (() => void) | undefined;
+    if (dealerSlug) {
+      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
+      unsubHandover = subscribeToHandover(dealerSlug, (data) => setHandover(data || {}));
+    }
     return () => {
       unsubPGI?.();
+      unsubYard?.();
       unsubSched?.();
+      unsubHandover?.();
     };
-  }, []);
-
-  useEffect(() => {
-    if (!dealerSlug) return;
-
-    const unsubConfig = subscribeDealerConfig(dealerSlug, (config) => {
-      setDealerConfig(config);
-      setConfigLoading(false);
-    });
-
-    return unsubConfig;
   }, [dealerSlug]);
-
-  useEffect(() => {
-    const unsubAllConfigs = subscribeAllDealerConfigs((data) => setAllDealerConfigs(data || {}));
-    return unsubAllConfigs;
-  }, []);
-
-  const includedDealerSlugs = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) {
-      return [dealerSlug];
-    }
-    return dealerConfig.includedDealers || [];
-  }, [dealerConfig, dealerSlug]);
-
-  useEffect(() => {
-    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !routeSelectedDealerSlug) {
-      const firstDealer = includedDealerSlugs[0];
-      if (firstDealer) {
-        navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/yard`, { replace: true });
-      }
-    }
-  }, [
-    configLoading,
-    dealerConfig,
-    includedDealerSlugs,
-    routeSelectedDealerSlug,
-    rawDealerSlug,
-    navigate,
-  ]);
-
-  const activeDealerSlugRaw = useMemo(() => {
-    if (selectedDealerSlugRaw) return selectedDealerSlugRaw;
-    if (includedDealerSlugs && includedDealerSlugs.length > 0) return includedDealerSlugs[0];
-    return rawDealerSlug || "";
-  }, [selectedDealerSlugRaw, includedDealerSlugs, rawDealerSlug]);
-
-  const activeDealerSlug = useMemo(
-    () => normalizeDealerSlug(activeDealerSlugRaw),
-    [activeDealerSlugRaw]
-  );
-
-  const includedDealerNames = useMemo(() => {
-    if (!dealerConfig || !isDealerGroup(dealerConfig)) {
-      return null;
-    }
-    return (includedDealerSlugs || []).map((slug: string) => {
-      const config = allDealerConfigs?.[slug];
-      return {
-        slug,
-        name: config?.name || prettifyDealerName(slug),
-      };
-    });
-  }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
-
-  useEffect(() => {
-    const slugCandidates = Array.from(
-      new Set([activeDealerSlugRaw, activeDealerSlug].filter((slug): slug is string => !!slug))
-    );
-
-    if (slugCandidates.length === 0) {
-      setYard({});
-      setHandover({});
-      return;
-    }
-
-    const yardBySlug: Record<string, Record<string, YardRec>> = {};
-    const handoverBySlug: Record<string, Record<string, HandoverRec>> = {};
-
-    const pickBest = <T extends Record<string, any>>(map: Record<string, T>) => {
-      for (const slug of slugCandidates) {
-        const data = map[slug];
-        if (data && Object.keys(data).length > 0) {
-          return data;
-        }
-      }
-      const fallback = slugCandidates[0];
-      return map[fallback] || {};
-    };
-
-    const yardUnsubs = slugCandidates.map((slug) =>
-      subscribeToYardStock(slug, (data) => {
-        yardBySlug[slug] = data || {};
-        setYard(pickBest(yardBySlug));
-      })
-    );
-
-    const handoverUnsubs = slugCandidates.map((slug) =>
-      subscribeToHandover(slug, (data) => {
-        handoverBySlug[slug] = data || {};
-        setHandover(pickBest(handoverBySlug));
-      })
-    );
-
-    return () => {
-      yardUnsubs.forEach((fn) => fn?.());
-      handoverUnsubs.forEach((fn) => fn?.());
-    };
-  }, [activeDealerSlugRaw, activeDealerSlug]);
 
   useEffect(() => {
     (async () => {
@@ -420,10 +297,10 @@ export default function DealerGroupYard() {
     () =>
       onTheRoadAll.filter(
         (row) =>
-          slugifyDealerName(row.dealer) === activeDealerSlug &&
+          slugifyDealerName(row.dealer) === dealerSlug &&
           isDateWithinRange(parseDDMMYYYY(row.pgidate || null), startDate, endDate)
       ),
-    [onTheRoadAll, activeDealerSlug, startDate, endDate]
+    [onTheRoadAll, dealerSlug, startDate, endDate]
   );
 
   // KPI date range separate
@@ -444,29 +321,12 @@ export default function DealerGroupYard() {
     return [s, e] as [Date, Date];
   }, [kpiRangeType, kpiCustomStart, kpiCustomEnd]);
 
-  const modelMetaMap = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        range: string;
-        functionName: string;
-        layout: string;
-        axle: string;
-        length: string;
-        height: string;
-      }
-    > = {};
+  const modelToRangeMap = useMemo(() => {
+    const map: Record<string, string> = {};
     excelRows.forEach((r) => {
       const mdl = toStr(r.Model).trim().toLowerCase();
-      if (!mdl) return;
-      map[mdl] = {
-        range: cleanLabel(r["Model Range"]),
-        functionName: cleanLabel(r.Function),
-        layout: cleanLabel(r.Layout),
-        axle: cleanLabel(r.Axle),
-        length: cleanLabel(r.Length),
-        height: cleanLabel(r.Height),
-      };
+      const rng = toStr(r["Model Range"]).trim();
+      if (mdl && rng) map[mdl] = rng;
     });
     return map;
   }, [excelRows]);
@@ -476,58 +336,38 @@ export default function DealerGroupYard() {
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
-      const rawType = toStr(rec?.type ?? rec?.Type).trim().toLowerCase();
-      const wholesaleRaw =
-        (rec as any)?.wholesalepo ?? (rec as any)?.wholesalePO ?? (rec as any)?.wholesalePo ?? null;
-      const wholesalePrice = parseWholesaleValue(wholesaleRaw);
-      const normalizedType = (() => {
-        if (!rawType) {
-          if (/stock$/i.test(customer)) return "Stock";
-          return "Customer";
-        }
-        if (rawType === "stock" || rawType.includes("stock")) return "Stock";
-        if (rawType === "customer" || rawType === "retail" || rawType.includes("customer")) return "Customer";
-        if (rawType) return cleanLabel(rec?.type ?? rec?.Type);
-        return "Customer";
-      })();
+      const type = customer.toLowerCase().endsWith("stock") ? "Stock" : "Customer";
       const model = toStr(sch?.Model ?? rec?.model);
       const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      const key = model.trim().toLowerCase();
-      const meta = modelMetaMap[key];
-      const modelRange = meta?.range ?? "Unknown";
-      const functionName = meta?.functionName ?? "Unknown";
-      const layout = meta?.layout ?? "Unknown";
-      const axle = meta?.axle ?? "Unknown";
-      const length = meta?.length ?? "Unknown";
-      const height = meta?.height ?? "Unknown";
+      const pgiRec = pgi?.[chassis];
+      const wholesalePrice = pgiRec?.wholesalepo ?? null;
+      const modelRange = (() => {
+        const key = model.trim().toLowerCase();
+        return modelToRangeMap[key] ?? "Unknown";
+      })();
       return {
         chassis,
         receivedAt: receivedAtISO,
         model,
         customer,
-        type: normalizedType,
+        type,
         daysInYard,
         modelRange,
-        functionName,
-        layout,
-        axle,
-        length,
-        height,
         wholesalePrice,
       };
     });
-  }, [yard, scheduleByChassis, modelMetaMap]);
+  }, [yard, scheduleByChassis, modelToRangeMap, pgi]);
 
   // KPI
   const kpiPgiCount = useMemo(
     () =>
       onTheRoadAll.filter(
         (row) =>
-          slugifyDealerName(row.dealer) === activeDealerSlug &&
+          slugifyDealerName(row.dealer) === dealerSlug &&
           isDateWithinRange(parseDDMMYYYY(row.pgidate || null), kpiStartDate, kpiEndDate)
       ).length,
-    [onTheRoadAll, activeDealerSlug, kpiStartDate, kpiEndDate]
+    [onTheRoadAll, dealerSlug, kpiStartDate, kpiEndDate]
   );
 
   const kpiReceivedCount = useMemo(
@@ -552,21 +392,21 @@ export default function DealerGroupYard() {
     () =>
       handoverList.filter(
         (x) =>
-          activeDealerSlug === x.dealerSlugFromRec &&
+          dealerSlug === x.dealerSlugFromRec &&
           isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate)
       ).length,
-    [handoverList, activeDealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
   );
 
   const kpiSecondhandCount = useMemo(
     () =>
       handoverList.filter(
         (x) =>
-          activeDealerSlug === x.dealerSlugFromRec &&
+          dealerSlug === x.dealerSlugFromRec &&
           isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate) &&
           isSecondhandChassis(x.chassis)
       ).length,
-    [handoverList, activeDealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
   );
 
   const kpiYardStockCurrent = useMemo(() => {
@@ -591,11 +431,8 @@ export default function DealerGroupYard() {
     if (selectedModelRange && selectedModelRange !== "All") {
       list = list.filter((x) => x.modelRange === selectedModelRange);
     }
-    if (selectedType !== "All") {
-      list = list.filter((x) => x.type === selectedType);
-    }
     return list;
-  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType]);
+  }, [yardList, selectedRangeBucket, selectedModelRange]);
 
   // Monthly charts within KPI range
   const receivedMonthlyData = useMemo(() => {
@@ -616,14 +453,14 @@ export default function DealerGroupYard() {
     handoverList.forEach((x) => {
       const d = x.handoverAt ? new Date(x.handoverAt) : null;
       if (!d) return;
-      if (activeDealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
+      if (dealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
       const key = fmtMonthKey(d);
       const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
       if (!map[key]) map[key] = { key, label, count: 0 };
       map[key].count += 1;
     });
     return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [handoverList, activeDealerSlug, kpiStartDate, kpiEndDate]);
+  }, [handoverList, dealerSlug, kpiStartDate, kpiEndDate]);
 
   const stockLevel10Weeks = useMemo(() => {
     const now = new Date();
@@ -647,7 +484,7 @@ export default function DealerGroupYard() {
       const e = nextStarts[i];
       return handoverList.filter((x) => {
         const d = x.handoverAt ? new Date(x.handoverAt) : null;
-        return d && d >= s && d < e && x.dealerSlugFromRec === activeDealerSlug;
+        return d && d >= s && d < e && x.dealerSlugFromRec === dealerSlug;
       }).length;
     });
 
@@ -661,29 +498,13 @@ export default function DealerGroupYard() {
     });
 
     return starts.map((s, i) => ({ week: fmtWeekLabel(s), level: levels[i] }));
-  }, [yardList, handoverList, activeDealerSlug, kpiYardStockCurrent.total]);
+  }, [yardList, handoverList, dealerSlug, kpiYardStockCurrent.total]);
 
-  const dealerDisplayName = useMemo(() => {
-    if (selectedDealerSlugRaw) {
-      const selected = includedDealerNames?.find((dealer) => dealer.slug === selectedDealerSlugRaw);
-      if (selected?.name) return selected.name;
-      return prettifyDealerName(selectedDealerSlug);
-    }
-    if (dealerConfig?.name) return dealerConfig.name;
-    return prettifyDealerName(dealerSlug);
-  }, [
-    selectedDealerSlugRaw,
-    selectedDealerSlug,
-    includedDealerNames,
-    dealerConfig,
-    dealerSlug,
-  ]);
+  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
 
   const handleReceive = async (chassis: string, rec: PGIRec) => {
-    const slug = activeDealerSlugRaw || activeDealerSlug;
-    if (!slug) return;
     try {
-      await receiveChassisToYard(slug, chassis, rec);
+      await receiveChassisToYard(dealerSlug, chassis, rec);
     } catch (e) {
       console.error("receive failed", e);
     }
@@ -695,13 +516,8 @@ export default function DealerGroupYard() {
       setManualStatus({ type: "err", msg: "请输入车架号" });
       return;
     }
-    const slug = activeDealerSlugRaw || activeDealerSlug;
-    if (!slug) {
-      setManualStatus({ type: "err", msg: "当前经销商尚未载入，请稍后再试。" });
-      return;
-    }
     try {
-      await addManualChassisToYard(slug, ch);
+      await addManualChassisToYard(dealerSlug, ch);
       setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
       setManualChassis("");
     } catch (e) {
@@ -712,26 +528,10 @@ export default function DealerGroupYard() {
 
   // Stock Analysis data
   type AnalysisRow = { name: string; value: number };
-  const stockAnalysisRows = useMemo<ExcelRow[]>(() => {
-    return yardList
-      .filter((row) => row.type === "Stock")
-      .map((row) => ({
-        Model: row.model,
-        "Model Range": row.modelRange,
-        Function: row.functionName,
-        Layout: row.layout,
-        Axle: row.axle,
-        Length: row.length,
-        Height: row.height,
-      }));
-  }, [yardList]);
-
-  const rangeCounts = useMemo(() => countBy(stockAnalysisRows, "Model Range"), [stockAnalysisRows]);
-  const functionCounts = useMemo(() => countBy(stockAnalysisRows, "Function"), [stockAnalysisRows]);
-  const layoutCounts = useMemo(() => countBy(stockAnalysisRows, "Layout"), [stockAnalysisRows]);
-  const axleCounts = useMemo(() => countBy(stockAnalysisRows, "Axle"), [stockAnalysisRows]);
-  const lengthCounts = useMemo(() => countBy(stockAnalysisRows, "Length"), [stockAnalysisRows]);
-  const heightCounts = useMemo(() => countBy(stockAnalysisRows, "Height"), [stockAnalysisRows]);
+  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
+  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
+  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
+  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
 
   const analysisData = useMemo<AnalysisRow[]>(() => {
     switch (activeCategory) {
@@ -743,25 +543,16 @@ export default function DealerGroupYard() {
         return layoutCounts;
       case "axle":
         return axleCounts;
-      case "length":
-        return lengthCounts.map((x) => ({ name: x.name, value: x.value }));
-      case "height":
-        return heightCounts;
       default:
         return rangeCounts;
     }
-  }, [activeCategory, rangeCounts, functionCounts, layoutCounts, axleCounts, lengthCounts, heightCounts]);
+  }, [activeCategory, rangeCounts, functionCounts, layoutCounts, axleCounts]);
 
   const formatDateOnly = (iso?: string | null) => {
     if (!iso) return "-";
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "-";
     return d.toLocaleDateString();
-  };
-
-  const formatWholesale = (price: number | null | undefined) => {
-    if (price == null) return "-";
-    return currencyFormatter.format(price);
   };
 
   return (
@@ -773,8 +564,6 @@ export default function DealerGroupYard() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
-        isGroup={!!dealerConfig && isDealerGroup(dealerConfig)}
-        includedDealers={includedDealerNames}
       />
       <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
@@ -1073,7 +862,6 @@ export default function DealerGroupYard() {
                       onClick={(data: any) => {
                         if (activeCategory === "range" && data?.name) {
                           setSelectedModelRange(String(data.name));
-                          setSelectedType("Stock");
                         }
                       }}
                     >
@@ -1112,20 +900,6 @@ export default function DealerGroupYard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-slate-600">Type:</span>
-              {(["All", "Stock", "Customer"] as const).map((option) => (
-                <Button
-                  key={option}
-                  size="sm"
-                  variant={selectedType === option ? "default" : "outline"}
-                  className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
-                  onClick={() => setSelectedType(option)}
-                >
-                  {option}
-                </Button>
-              ))}
-            </div>
             {yardListDisplay.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
             ) : (
@@ -1139,9 +913,7 @@ export default function DealerGroupYard() {
                       <TableHead className="font-semibold">Model Range</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
-                      {showWholesaleColumn && (
-                        <TableHead className="font-semibold">Wholesale Price (excl. GST)</TableHead>
-                      )}
+                      <TableHead className="font-semibold">Wholesale Price (excl. GST)</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
                       <TableHead className="font-semibold">Handover</TableHead>
                     </TableRow>
@@ -1159,23 +931,24 @@ export default function DealerGroupYard() {
                             {row.type}
                           </span>
                         </TableCell>
-                        {showWholesaleColumn && <TableCell>{formatWholesale(row.wholesalePrice)}</TableCell>}
+                        <TableCell>{formatWholesale(row.wholesalePrice)}</TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
                           <Button
                             size="sm"
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
-                              const slug = activeDealerSlugRaw || activeDealerSlug;
-                              if (!slug) return;
-                              setHandoverData({
-                                chassis: row.chassis,
-                                model: row.model,
-                                dealerName: dealerDisplayName,
-                                dealerSlug: slug,
-                                handoverAt: new Date().toISOString(),
-                              });
-                              setHandoverOpen(true);
+                              (async () => {
+                                try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
+                                setHandoverData({
+                                  chassis: row.chassis,
+                                  model: row.model,
+                                  dealerName: dealerDisplayName,
+                                  dealerSlug,
+                                  handoverAt: new Date().toISOString(),
+                                });
+                                setHandoverOpen(true);
+                              })();
                             }}
                           >
                             Handover
@@ -1191,20 +964,7 @@ export default function DealerGroupYard() {
         </Card>
 
         {/* Handover Modal */}
-        <ProductRegistrationForm
-          open={handoverOpen}
-          onOpenChange={setHandoverOpen}
-          initial={handoverData}
-          onCompleted={async ({ chassis, dealerSlug: completedSlug }) => {
-            const slug = completedSlug || activeDealerSlugRaw || activeDealerSlug;
-            if (!slug) return;
-            try {
-              await dispatchFromYard(slug, chassis);
-            } catch (err) {
-              console.error(err);
-            }
-          }}
-        />
+        <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
       </main>
     </div>
   );

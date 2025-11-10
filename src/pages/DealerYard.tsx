@@ -39,14 +39,12 @@ type PGIRec = {
   dealer?: string | null;
   model?: string | null;
   customer?: string | null;
+  wholesalepo?: string | number | null;
 };
 type YardRec = {
   receivedAt?: string | null;
   model?: string | null;
   customer?: string | null;
-  type?: string | null;
-  Type?: string | null;
-  wholesalepo?: string | number | null;
 };
 type HandoverRec = {
   handoverAt?: string | null;
@@ -57,11 +55,6 @@ type HandoverRec = {
 
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();
-const cleanLabel = (v: unknown, fallback = "Unknown") => {
-  const str = toStr(v).trim();
-  if (!str) return fallback;
-  return str;
-};
 
 function normalizeDealerSlug(raw?: string): string {
   const slug = lower(raw);
@@ -134,6 +127,25 @@ function isSecondhandChassis(chassis?: string | null): boolean {
   return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
 }
 
+const currencyFormatter = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+});
+
+function parseWholesale(val: unknown): number | null {
+  if (val == null) return null;
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).replace(/[^\d.-]/g, "");
+  if (!str) return null;
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
+
+function formatWholesale(val: unknown): string {
+  const num = parseWholesale(val);
+  return num == null ? "-" : currencyFormatter.format(num);
+}
+
 // Excel rows type
 type ExcelRow = {
   Model?: string;
@@ -148,23 +160,6 @@ type ExcelRow = {
   "Top 15"?: string | number;
   "TOP15"?: string | number;
   "Top15"?: string | number;
-};
-
-const WHOLESALE_SLUGS = new Set(["frankston", "geelong", "launceston", "st-james", "tralagon"]);
-
-const currencyFormatter = new Intl.NumberFormat("en-AU", {
-  style: "currency",
-  currency: "AUD",
-  minimumFractionDigits: 2,
-});
-
-const parseWholesaleValue = (val: unknown): number | null => {
-  if (val == null) return null;
-  if (typeof val === "number" && !isNaN(val)) return val;
-  const str = String(val).replace(/[^\d.-]/g, "");
-  if (!str) return null;
-  const num = Number(str);
-  return isNaN(num) ? null : num;
 };
 
 function parseNum(val: unknown): number | null {
@@ -246,9 +241,6 @@ export default function DealerYard() {
   // Yard Inventory filters (controlled only via charts)
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
-  const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
-
-  const showWholesaleColumn = WHOLESALE_SLUGS.has(dealerSlug);
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -349,29 +341,12 @@ export default function DealerYard() {
   }, [kpiRangeType, kpiCustomStart, kpiCustomEnd]);
 
   // Yard list
-  const modelMetaMap = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        range: string;
-        functionName: string;
-        layout: string;
-        axle: string;
-        length: string;
-        height: string;
-      }
-    > = {};
+  const modelToRangeMap = useMemo(() => {
+    const map: Record<string, string> = {};
     excelRows.forEach((r) => {
       const mdl = toStr(r.Model).trim().toLowerCase();
-      if (!mdl) return;
-      map[mdl] = {
-        range: cleanLabel(r["Model Range"]),
-        functionName: cleanLabel(r.Function),
-        layout: cleanLabel(r.Layout),
-        axle: cleanLabel(r.Axle),
-        length: cleanLabel(r.Length),
-        height: cleanLabel(r.Height),
-      };
+      const rng = toStr(r["Model Range"]).trim();
+      if (mdl && rng) map[mdl] = rng;
     });
     return map;
   }, [excelRows]);
@@ -381,48 +356,28 @@ export default function DealerYard() {
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
-      const rawType = toStr(rec?.type ?? rec?.Type).trim().toLowerCase();
-      const wholesaleRaw =
-        (rec as any)?.wholesalepo ?? (rec as any)?.wholesalePO ?? (rec as any)?.wholesalePo ?? null;
-      const wholesalePrice = parseWholesaleValue(wholesaleRaw);
-      const normalizedType = (() => {
-        if (!rawType) {
-          if (/stock$/i.test(customer)) return "Stock";
-          return "Customer";
-        }
-        if (rawType === "stock" || rawType.includes("stock")) return "Stock";
-        if (rawType === "customer" || rawType === "retail" || rawType.includes("customer")) return "Customer";
-        if (rawType) return cleanLabel(rec?.type ?? rec?.Type);
-        return "Customer";
-      })();
+      const type = customer.toLowerCase().endsWith("stock") ? "Stock" : "Customer";
       const model = toStr(sch?.Model ?? rec?.model);
       const receivedAtISO = rec?.receivedAt ?? null;
       const daysInYard = daysSinceISO(receivedAtISO);
-      const key = model.trim().toLowerCase();
-      const meta = modelMetaMap[key];
-      const modelRange = meta?.range ?? "Unknown";
-      const functionName = meta?.functionName ?? "Unknown";
-      const layout = meta?.layout ?? "Unknown";
-      const axle = meta?.axle ?? "Unknown";
-      const length = meta?.length ?? "Unknown";
-      const height = meta?.height ?? "Unknown";
+      const pgiRec = pgi?.[chassis];
+      const wholesalePrice = pgiRec?.wholesalepo ?? null;
+      const modelRange = (() => {
+        const key = model.trim().toLowerCase();
+        return modelToRangeMap[key] ?? "Unknown";
+      })();
       return {
         chassis,
         receivedAt: receivedAtISO,
         model,
         customer,
-        type: normalizedType,
+        type,
         daysInYard,
         modelRange,
-        functionName,
-        layout,
-        axle,
-        length,
-        height,
         wholesalePrice,
       };
     });
-  }, [yard, scheduleByChassis, modelMetaMap]);
+  }, [yard, scheduleByChassis, modelToRangeMap, pgi]);
 
   // KPI calculations using KPI date range
   const kpiPgiCount = useMemo(
@@ -498,11 +453,8 @@ export default function DealerYard() {
     if (selectedModelRange && selectedModelRange !== "All") {
       list = list.filter((x) => x.modelRange === selectedModelRange);
     }
-    if (selectedType !== "All") {
-      list = list.filter((x) => x.type === selectedType);
-    }
     return list;
-  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType]);
+  }, [yardList, selectedRangeBucket, selectedModelRange]);
 
   // Monthly charts data within KPI range
   const receivedMonthlyData = useMemo(() => {
@@ -598,73 +550,39 @@ export default function DealerYard() {
     }
   };
 
-  // Stock Analysis data by category (Stock-only units)
+  // Stock Analysis data by category
   type AnalysisRow = { name: string; value: number };
-  const stockUnits = useMemo(() => yardList.filter((row) => row.type === "Stock"), [yardList]);
-  const rangeCounts = useMemo(() => {
-    const map: Record<string, number> = {};
-    stockUnits.forEach((row) => {
-      const key = cleanLabel(row.modelRange);
-      map[key] = (map[key] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [stockUnits]);
-  const functionCounts = useMemo(() => {
-    const map: Record<string, number> = {};
-    stockUnits.forEach((row) => {
-      const key = cleanLabel(row.functionName);
-      map[key] = (map[key] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [stockUnits]);
-  const layoutCounts = useMemo(() => {
-    const map: Record<string, number> = {};
-    stockUnits.forEach((row) => {
-      const key = cleanLabel(row.layout);
-      map[key] = (map[key] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [stockUnits]);
-  const axleCounts = useMemo(() => {
-    const map: Record<string, number> = {};
-    stockUnits.forEach((row) => {
-      const key = cleanLabel(row.axle);
-      map[key] = (map[key] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [stockUnits]);
+  const rangeCounts = useMemo(() => countBy(excelRows, "Model Range"), [excelRows]);
+  const functionCounts = useMemo(() => countBy(excelRows, "Function"), [excelRows]);
+  const layoutCounts = useMemo(() => countBy(excelRows, "Layout"), [excelRows]);
+  const axleCounts = useMemo(() => countBy(excelRows, "Axle"), [excelRows]);
   const heightCategories = useMemo(() => {
-    const map: Record<string, number> = {};
-    stockUnits.forEach((row) => {
-      const s = toStr(row.height).toLowerCase();
-      const label = !s || s === "unknown" ? "Unknown" : s.includes("pop") ? "Pop-top" : "Full Height";
-      map[label] = (map[label] || 0) + 1;
+    const map: Record<string, number> = { "Full Height": 0, "Pop-top": 0 };
+    excelRows.forEach((r) => {
+      const raw = r.Height;
+      const s = toStr(raw).toLowerCase();
+      if (!s) return;
+      if (s.includes("pop")) map["Pop-top"] += 1;
+      else map["Full Height"] += 1;
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [stockUnits]);
+  }, [excelRows]);
   const lengthBuckets = useMemo(() => {
     const buckets = [
       { label: "<=5.00m", min: 0, max: 5.0 },
       { label: "5.01–7.00m", min: 5.01, max: 7.0 },
       { label: ">=7.01m", min: 7.01, max: 100 },
     ];
-    const counts = buckets.map(() => 0);
-    stockUnits.forEach((row) => {
-      const num = parseNum(row.length);
-      if (num == null || isNaN(num)) return;
-      const idx = buckets.findIndex((bb) => num >= bb.min && num <= bb.max);
-      if (idx >= 0) counts[idx] += 1;
+    const map: Record<string, number> = {};
+    excelRows.forEach((r) => {
+      const num = parseNum(r.Length);
+      const b = buckets.find((bb) => num != null && !isNaN(num) && num >= bb.min && num <= bb.max);
+      if (!b) return;
+      map[b.label] = (map[b.label] || 0) + 1;
     });
-    return buckets.map((b, idx) => ({ name: b.label, value: counts[idx] }));
-  }, [stockUnits]);
+    return buckets.map((b) => ({ name: b.label, value: map[b.label] || 0 }));
+  }, [excelRows]);
+  const top15Count = useMemo(() => countTop15(excelRows), [excelRows]);
 
   const analysisData = useMemo<AnalysisRow[]>(() => {
     switch (activeCategory) {
@@ -690,11 +608,6 @@ export default function DealerYard() {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "-";
     return d.toLocaleDateString();
-  };
-
-  const formatWholesale = (price: number | null | undefined) => {
-    if (price == null) return "-";
-    return currencyFormatter.format(price);
   };
 
   return (
@@ -1004,7 +917,6 @@ export default function DealerYard() {
                       onClick={(data: any) => {
                         if (activeCategory === "range" && data?.name) {
                           setSelectedModelRange(String(data.name));
-                          setSelectedType("Stock");
                         }
                       }}
                     >
@@ -1044,20 +956,6 @@ export default function DealerYard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-slate-600">Type:</span>
-              {(["All", "Stock", "Customer"] as const).map((option) => (
-                <Button
-                  key={option}
-                  size="sm"
-                  variant={selectedType === option ? "default" : "outline"}
-                  className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
-                  onClick={() => setSelectedType(option)}
-                >
-                  {option}
-                </Button>
-              ))}
-            </div>
             {yardListDisplay.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
             ) : (
@@ -1071,9 +969,7 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Model Range</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
-                      {showWholesaleColumn && (
-                        <TableHead className="font-semibold">Wholesale Price (excl. GST)</TableHead>
-                      )}
+                      <TableHead className="font-semibold">Wholesale Price (excl. GST)</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
                       <TableHead className="font-semibold">Handover</TableHead>
                     </TableRow>
@@ -1091,21 +987,24 @@ export default function DealerYard() {
                             {row.type}
                           </span>
                         </TableCell>
-                        {showWholesaleColumn && <TableCell>{formatWholesale(row.wholesalePrice)}</TableCell>}
+                        <TableCell>{formatWholesale(row.wholesalePrice)}</TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
                           <Button
                             size="sm"
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
-                              setHandoverData({
-                                chassis: row.chassis,
-                                model: row.model,
-                                dealerName: dealerDisplayName,
-                                dealerSlug,
-                                handoverAt: new Date().toISOString(),
-                              });
-                              setHandoverOpen(true);
+                              (async () => {
+                                try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
+                                setHandoverData({
+                                  chassis: row.chassis,
+                                  model: row.model,
+                                  dealerName: dealerDisplayName,
+                                  dealerSlug,
+                                  handoverAt: new Date().toISOString(),
+                                });
+                                setHandoverOpen(true);
+                              })();
                             }}
                           >
                             Handover
@@ -1121,20 +1020,7 @@ export default function DealerYard() {
         </Card>
 
         {/* Handover Modal */}
-        <ProductRegistrationForm
-          open={handoverOpen}
-          onOpenChange={setHandoverOpen}
-          initial={handoverData}
-          onCompleted={async ({ chassis, dealerSlug: completedSlug }) => {
-            const slugToUse = (completedSlug ?? dealerSlug) || "";
-            if (!slugToUse) return;
-            try {
-              await dispatchFromYard(slugToUse, chassis);
-            } catch (err) {
-              console.error(err);
-            }
-          }}
-        />
+        <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
       </main>
     </div>
   );
