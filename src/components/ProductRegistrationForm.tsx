@@ -19,6 +19,7 @@ type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   initial?: RegistrationData | null;
+  onCompleted?: (handover: { chassis: string; dealerSlug?: string | null }) => void | Promise<void>;
 };
 
 declare global {
@@ -60,7 +61,7 @@ async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
   return { html2canvas, jsPDF };
 }
 
-export default function ProductRegistrationForm({ open, onOpenChange, initial }: Props) {
+export default function ProductRegistrationForm({ open, onOpenChange, initial, onCompleted }: Props) {
   const [step, setStep] = useState<"mode" | "assist" | "email">("mode");
   const [inviteEmail, setInviteEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -176,6 +177,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
         source: "dealer_assist_form" as const,
       };
       await saveHandover(dealerSlug, data.chassis, handoverData);
+      try {
+        await onCompleted?.({ chassis: data.chassis, dealerSlug: data.dealerSlug ?? dealerSlug });
+      } catch (err) {
+        console.error("Post-handover completion failed:", err);
+      }
 
       setSubmitMsg("Submitted successfully.");
       setSubmitting(false);
@@ -217,6 +223,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial }:
         },
       };
       await saveHandover(dealerSlug, data.chassis, handoverData);
+      try {
+        await onCompleted?.({ chassis: data.chassis, dealerSlug: data.dealerSlug ?? dealerSlug });
+      } catch (err) {
+        console.error("Post-handover completion failed:", err);
+      }
 
       setSubmitMsg("Email submitted successfully.");
       setSubmitting(false);

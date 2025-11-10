@@ -49,6 +49,7 @@ type YardRec = {
   customer?: string | null;
   type?: string | null;
   Type?: string | null;
+  wholesalepo?: string | number | null;
 };
 type HandoverRec = {
   handoverAt?: string | null;
@@ -151,6 +152,23 @@ type ExcelRow = {
   "Top15"?: string | number;
 };
 
+const WHOLESALE_SLUGS = new Set(["frankston", "geelong", "launceston", "st-james", "tralagon"]);
+
+const currencyFormatter = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+  minimumFractionDigits: 2,
+});
+
+const parseWholesaleValue = (val: unknown): number | null => {
+  if (val == null) return null;
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).replace(/[^\d.-]/g, "");
+  if (!str) return null;
+  const num = Number(str);
+  return isNaN(num) ? null : num;
+};
+
 function parseNum(val: unknown): number | null {
   if (val == null) return null;
   const s = String(val).replace(/[^\d.]/g, "");
@@ -225,6 +243,8 @@ export default function DealerGroupYard() {
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
+
+  const showWholesaleColumn = WHOLESALE_SLUGS.has(activeDealerSlug);
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -457,6 +477,9 @@ export default function DealerGroupYard() {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
       const rawType = toStr(rec?.type ?? rec?.Type).trim().toLowerCase();
+      const wholesaleRaw =
+        (rec as any)?.wholesalepo ?? (rec as any)?.wholesalePO ?? (rec as any)?.wholesalePo ?? null;
+      const wholesalePrice = parseWholesaleValue(wholesaleRaw);
       const normalizedType = (() => {
         if (!rawType) {
           if (/stock$/i.test(customer)) return "Stock";
@@ -491,6 +514,7 @@ export default function DealerGroupYard() {
         axle,
         length,
         height,
+        wholesalePrice,
       };
     });
   }, [yard, scheduleByChassis, modelMetaMap]);
@@ -733,6 +757,11 @@ export default function DealerGroupYard() {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "-";
     return d.toLocaleDateString();
+  };
+
+  const formatWholesale = (price: number | null | undefined) => {
+    if (price == null) return "-";
+    return currencyFormatter.format(price);
   };
 
   return (
@@ -1110,6 +1139,9 @@ export default function DealerGroupYard() {
                       <TableHead className="font-semibold">Model Range</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
+                      {showWholesaleColumn && (
+                        <TableHead className="font-semibold">Wholesale Price (excl. GST)</TableHead>
+                      )}
                       <TableHead className="font-semibold">Days In Yard</TableHead>
                       <TableHead className="font-semibold">Handover</TableHead>
                     </TableRow>
@@ -1127,30 +1159,23 @@ export default function DealerGroupYard() {
                             {row.type}
                           </span>
                         </TableCell>
+                        {showWholesaleColumn && <TableCell>{formatWholesale(row.wholesalePrice)}</TableCell>}
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
                           <Button
                             size="sm"
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
-                              (async () => {
-                                const slug = activeDealerSlugRaw || activeDealerSlug;
-                                if (!slug) return;
-                                try {
-                                  await dispatchFromYard(slug, row.chassis);
-                                } catch (e) {
-                                  console.error(e);
-                                  return;
-                                }
-                                setHandoverData({
-                                  chassis: row.chassis,
-                                  model: row.model,
-                                  dealerName: dealerDisplayName,
-                                  dealerSlug: slug,
-                                  handoverAt: new Date().toISOString(),
-                                });
-                                setHandoverOpen(true);
-                              })();
+                              const slug = activeDealerSlugRaw || activeDealerSlug;
+                              if (!slug) return;
+                              setHandoverData({
+                                chassis: row.chassis,
+                                model: row.model,
+                                dealerName: dealerDisplayName,
+                                dealerSlug: slug,
+                                handoverAt: new Date().toISOString(),
+                              });
+                              setHandoverOpen(true);
                             }}
                           >
                             Handover
@@ -1166,7 +1191,20 @@ export default function DealerGroupYard() {
         </Card>
 
         {/* Handover Modal */}
-        <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
+        <ProductRegistrationForm
+          open={handoverOpen}
+          onOpenChange={setHandoverOpen}
+          initial={handoverData}
+          onCompleted={async ({ chassis, dealerSlug: completedSlug }) => {
+            const slug = completedSlug || activeDealerSlugRaw || activeDealerSlug;
+            if (!slug) return;
+            try {
+              await dispatchFromYard(slug, chassis);
+            } catch (err) {
+              console.error(err);
+            }
+          }}
+        />
       </main>
     </div>
   );
