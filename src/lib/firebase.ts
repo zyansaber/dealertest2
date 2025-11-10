@@ -322,7 +322,7 @@ export async function saveProductRegistration(
 
 /** -------------------- Handover -------------------- */
 /**
- * Save handover data under handover/{dealerSlug}/{chassis} and remove the unit from yardstock.
+ * Save handover data under handover/{dealerSlug}/{chassis}.
  */
 type DealerAssistHandover = {
   chassis: string;
@@ -359,8 +359,6 @@ export type HandoverPayload = DealerAssistHandover | CustomerEmailHandover;
 export async function saveHandover(dealerSlug: string, chassis: string, data: HandoverPayload) {
   const targetRef = ref(database, `handover/${dealerSlug}/${chassis}`);
   await set(targetRef, data);
-  const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
-  await remove(yardRef);
 }
 
 /**
