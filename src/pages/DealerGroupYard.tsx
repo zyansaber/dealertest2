@@ -179,15 +179,16 @@ const yardRangeDefs = [
 const PIE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#84cc16", "#d946ef", "#0ea5e9", "#14b8a6"];
 
 export default function DealerGroupYard() {
-  const { dealerSlug: rawDealerSlug, selectedDealerSlug: rawSelectedDealerSlug } = useParams<{
+  const { dealerSlug: rawDealerSlug, selectedDealerSlug: routeSelectedDealerSlug } = useParams<{
     dealerSlug: string;
     selectedDealerSlug?: string;
   }>();
   const navigate = useNavigate();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+  const selectedDealerSlugRaw = routeSelectedDealerSlug || "";
   const selectedDealerSlug = useMemo(
-    () => normalizeDealerSlug(rawSelectedDealerSlug),
-    [rawSelectedDealerSlug]
+    () => normalizeDealerSlug(selectedDealerSlugRaw),
+    [selectedDealerSlugRaw]
   );
 
   const [pgi, setPgi] = useState<Record<string, PGIRec>>({});
@@ -262,7 +263,7 @@ export default function DealerGroupYard() {
   }, [dealerConfig, dealerSlug]);
 
   useEffect(() => {
-    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !rawSelectedDealerSlug) {
+    if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !routeSelectedDealerSlug) {
       const firstDealer = includedDealerSlugs[0];
       if (firstDealer) {
         navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/yard`, { replace: true });
@@ -272,14 +273,20 @@ export default function DealerGroupYard() {
     configLoading,
     dealerConfig,
     includedDealerSlugs,
-    rawSelectedDealerSlug,
+    routeSelectedDealerSlug,
     rawDealerSlug,
     navigate,
   ]);
 
+  const activeDealerSlugRaw = useMemo(() => {
+    if (selectedDealerSlugRaw) return selectedDealerSlugRaw;
+    if (includedDealerSlugs && includedDealerSlugs.length > 0) return includedDealerSlugs[0];
+    return rawDealerSlug || "";
+  }, [selectedDealerSlugRaw, includedDealerSlugs, rawDealerSlug]);
+
   const activeDealerSlug = useMemo(
-    () => normalizeDealerSlug(selectedDealerSlug || includedDealerSlugs[0] || dealerSlug),
-    [selectedDealerSlug, includedDealerSlugs, dealerSlug]
+    () => normalizeDealerSlug(activeDealerSlugRaw),
+    [activeDealerSlugRaw]
   );
 
   const includedDealerNames = useMemo(() => {
@@ -296,20 +303,49 @@ export default function DealerGroupYard() {
   }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
 
   useEffect(() => {
-    let unsubYard: (() => void) | undefined;
-    let unsubHandover: (() => void) | undefined;
-    if (activeDealerSlug) {
-      unsubYard = subscribeToYardStock(activeDealerSlug, (data) => setYard(data || {}));
-      unsubHandover = subscribeToHandover(activeDealerSlug, (data) => setHandover(data || {}));
-    } else {
+    const slugCandidates = Array.from(
+      new Set([activeDealerSlugRaw, activeDealerSlug].filter((slug): slug is string => !!slug))
+    );
+
+    if (slugCandidates.length === 0) {
       setYard({});
       setHandover({});
+      return;
     }
-    return () => {
-      unsubYard?.();
-      unsubHandover?.();
+
+    const yardBySlug: Record<string, Record<string, YardRec>> = {};
+    const handoverBySlug: Record<string, Record<string, HandoverRec>> = {};
+
+    const pickBest = <T extends Record<string, any>>(map: Record<string, T>) => {
+      for (const slug of slugCandidates) {
+        const data = map[slug];
+        if (data && Object.keys(data).length > 0) {
+          return data;
+        }
+      }
+      const fallback = slugCandidates[0];
+      return map[fallback] || {};
     };
-  }, [activeDealerSlug]);
+
+    const yardUnsubs = slugCandidates.map((slug) =>
+      subscribeToYardStock(slug, (data) => {
+        yardBySlug[slug] = data || {};
+        setYard(pickBest(yardBySlug));
+      })
+    );
+
+    const handoverUnsubs = slugCandidates.map((slug) =>
+      subscribeToHandover(slug, (data) => {
+        handoverBySlug[slug] = data || {};
+        setHandover(pickBest(handoverBySlug));
+      })
+    );
+
+    return () => {
+      yardUnsubs.forEach((fn) => fn?.());
+      handoverUnsubs.forEach((fn) => fn?.());
+    };
+  }, [activeDealerSlugRaw, activeDealerSlug]);
 
   useEffect(() => {
     (async () => {
@@ -604,19 +640,26 @@ export default function DealerGroupYard() {
   }, [yardList, handoverList, activeDealerSlug, kpiYardStockCurrent.total]);
 
   const dealerDisplayName = useMemo(() => {
-    if (selectedDealerSlug) {
-      const selected = includedDealerNames?.find((dealer) => dealer.slug === selectedDealerSlug);
+    if (selectedDealerSlugRaw) {
+      const selected = includedDealerNames?.find((dealer) => dealer.slug === selectedDealerSlugRaw);
       if (selected?.name) return selected.name;
       return prettifyDealerName(selectedDealerSlug);
     }
     if (dealerConfig?.name) return dealerConfig.name;
     return prettifyDealerName(dealerSlug);
-  }, [selectedDealerSlug, includedDealerNames, dealerConfig, dealerSlug]);
+  }, [
+    selectedDealerSlugRaw,
+    selectedDealerSlug,
+    includedDealerNames,
+    dealerConfig,
+    dealerSlug,
+  ]);
 
   const handleReceive = async (chassis: string, rec: PGIRec) => {
-    if (!activeDealerSlug) return;
+    const slug = activeDealerSlugRaw || activeDealerSlug;
+    if (!slug) return;
     try {
-      await receiveChassisToYard(activeDealerSlug, chassis, rec);
+      await receiveChassisToYard(slug, chassis, rec);
     } catch (e) {
       console.error("receive failed", e);
     }
@@ -628,12 +671,13 @@ export default function DealerGroupYard() {
       setManualStatus({ type: "err", msg: "请输入车架号" });
       return;
     }
-    if (!activeDealerSlug) {
+    const slug = activeDealerSlugRaw || activeDealerSlug;
+    if (!slug) {
       setManualStatus({ type: "err", msg: "当前经销商尚未载入，请稍后再试。" });
       return;
     }
     try {
-      await addManualChassisToYard(activeDealerSlug, ch);
+      await addManualChassisToYard(slug, ch);
       setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
       setManualChassis("");
     } catch (e) {
@@ -1090,9 +1134,10 @@ export default function DealerGroupYard() {
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
                               (async () => {
-                                if (!activeDealerSlug) return;
+                                const slug = activeDealerSlugRaw || activeDealerSlug;
+                                if (!slug) return;
                                 try {
-                                  await dispatchFromYard(activeDealerSlug, row.chassis);
+                                  await dispatchFromYard(slug, row.chassis);
                                 } catch (e) {
                                   console.error(e);
                                   return;
@@ -1101,7 +1146,7 @@ export default function DealerGroupYard() {
                                   chassis: row.chassis,
                                   model: row.model,
                                   dealerName: dealerDisplayName,
-                                  dealerSlug: activeDealerSlug,
+                                  dealerSlug: slug,
                                   handoverAt: new Date().toISOString(),
                                 });
                                 setHandoverOpen(true);
