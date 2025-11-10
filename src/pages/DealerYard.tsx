@@ -46,6 +46,7 @@ type YardRec = {
   customer?: string | null;
   type?: string | null;
   Type?: string | null;
+  wholesalepo?: string | number | null;
 };
 type HandoverRec = {
   handoverAt?: string | null;
@@ -149,6 +150,23 @@ type ExcelRow = {
   "Top15"?: string | number;
 };
 
+const WHOLESALE_SLUGS = new Set(["frankston", "geelong", "launceston", "st-james", "tralagon"]);
+
+const currencyFormatter = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+  minimumFractionDigits: 2,
+});
+
+const parseWholesaleValue = (val: unknown): number | null => {
+  if (val == null) return null;
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).replace(/[^\d.-]/g, "");
+  if (!str) return null;
+  const num = Number(str);
+  return isNaN(num) ? null : num;
+};
+
 function parseNum(val: unknown): number | null {
   if (val == null) return null;
   const s = String(val).replace(/[^\d.]/g, "");
@@ -228,67 +246,60 @@ export default function DealerYard() {
   // Yard Inventory filters (controlled only via charts)
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
-  const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
+  const [selectedFunction, setSelectedFunction] = useState<string | "All">("All");
+  const [selectedLayout, setSelectedLayout] = useState<string | "All">("All");
+  const [selectedType, setSelectedType] = useState<"Stock" | "Customer" | "All">("Stock");
 
-  useEffect(() => {
-    const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
-    const unsubSched = subscribeToSchedule((data) => setSchedule(Array.isArray(data) ? data : []), {
-      includeNoChassis: true,
-      includeNoCustomer: true,
-      includeFinished: true,
-    });
-    let unsubYard: (() => void) | undefined;
-    let unsubHandover: (() => void) | undefined;
-    if (dealerSlug) {
-      unsubYard = subscribeToYardStock(dealerSlug, (data) => setYard(data || {}));
-      unsubHandover = subscribeToHandover(dealerSlug, (data) => setHandover(data || {}));
-    }
-    return () => {
-      unsubPGI?.();
-      unsubYard?.();
-      unsubSched?.();
-      unsubHandover?.();
-    };
-  }, [dealerSlug]);
+  const [onTheRoadAll, setOnTheRoadAll] = useState<PGIRec[]>([]);
+  const [yardStockAll, setYardStockAll] = useState<Record<string, YardRec>>({});
+  const [handoverAll, setHandoverAll] = useState<Record<string, HandoverRec>>({});
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const resp = await fetch("/assets/data/caravan_classification_3.xlsx");
-        const buf = await resp.arrayBuffer();
-        const wb = XLSX.read(buf, { type: "array" });
-        const first = wb.Sheets[wb.SheetNames[0]];
-        const json: ExcelRow[] = XLSX.utils.sheet_to_json(first);
-        setExcelRows(json || []);
-      } catch (e) {
-        console.warn("Failed to load excel(3) for insights:", e);
-      }
-    })();
-  }, []);
-
-  type Sched = Partial<ScheduleItem> & { Chassis?: string; Customer?: string; Model?: string };
   const scheduleByChassis = useMemo(() => {
-    const map: Record<string, Sched> = {};
-    for (const item of schedule) {
-      const sch = (item as unknown) as Sched;
-      const ch = toStr(sch.Chassis);
-      if (ch) map[ch] = sch;
-    }
+    const map: Record<string, ScheduleItem> = {};
+    schedule.forEach((item) => {
+      const chassis = String(item?.Chassis ?? "").trim();
+      if (!chassis) return;
+      map[chassis] = item;
+    });
     return map;
   }, [schedule]);
 
-  const onTheRoadAll = useMemo(() => {
-    const entries = Object.entries(pgi || {});
-    return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
-  }, [pgi]);
+  useEffect(() => {
+    const unsubPGI = subscribeToPGIRecords((value) => {
+      setPgi(value || {});
+      setOnTheRoadAll(Object.values(value || {}));
+    });
+    return () => unsubPGI();
+  }, []);
 
-  // PGI list date range
+  useEffect(() => {
+    const unsubYard = subscribeToYardStock(dealerSlug, (value) => {
+      setYard(value || {});
+      setYardStockAll(value || {});
+    });
+    return () => unsubYard();
+  }, [dealerSlug]);
+
+  useEffect(() => {
+    const unsubHandover = subscribeToHandover(dealerSlug, (value) => {
+      setHandover(value || {});
+      setHandoverAll(value || {});
+    });
+    return () => unsubHandover();
+  }, [dealerSlug]);
+
+  useEffect(() => {
+    const unsubSchedule = subscribeToSchedule((items) => {
+      setSchedule(items);
+    });
+    return () => unsubSchedule();
+  }, []);
+
+  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
+
   const [startDate, endDate] = useMemo(() => {
-    if (rangeType === "custom" && kpiCustomStart && kpiCustomEnd) {
-      const s = new Date(customStart);
-      const e = new Date(customEnd);
-      e.setHours(23, 59, 59, 999);
-      return [s, e] as [Date, Date];
+    if (rangeType === "custom" && customStart && customEnd) {
+      return [new Date(customStart), new Date(customEnd)] as [Date, Date];
     }
     const mapDays: Record<typeof rangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
     const days = mapDays[rangeType];
@@ -300,23 +311,9 @@ export default function DealerYard() {
     return [s, e] as [Date, Date];
   }, [rangeType, customStart, customEnd]);
 
-  const onTheRoadInRange = useMemo(
-    () =>
-      onTheRoadAll.filter(
-        (row) =>
-          slugifyDealerName(row.dealer) === dealerSlug &&
-          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), startDate, endDate)
-      ),
-    [onTheRoadAll, dealerSlug, startDate, endDate]
-  );
-
-  // KPI date range separate
   const [kpiStartDate, kpiEndDate] = useMemo(() => {
     if (kpiRangeType === "custom" && kpiCustomStart && kpiCustomEnd) {
-      const s = new Date(kpiCustomStart);
-      const e = new Date(kpiCustomEnd);
-      e.setHours(23, 59, 59, 999);
-      return [s, e] as [Date, Date];
+      return [new Date(kpiCustomStart), new Date(kpiCustomEnd)] as [Date, Date];
     }
     const mapDays: Record<typeof kpiRangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
     const days = mapDays[kpiRangeType];
@@ -362,6 +359,9 @@ export default function DealerYard() {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
       const rawType = toStr(rec?.type ?? rec?.Type).trim().toLowerCase();
+      const wholesaleRaw =
+        (rec as any)?.wholesalepo ?? (rec as any)?.wholesalePO ?? (rec as any)?.wholesalePo ?? null;
+      const wholesalePrice = parseWholesaleValue(wholesaleRaw);
       const normalizedType = (() => {
         if (!rawType) {
           if (/stock$/i.test(customer)) return "Stock";
@@ -396,6 +396,7 @@ export default function DealerYard() {
         axle,
         length,
         height,
+        wholesalePrice,
       };
     });
   }, [yard, scheduleByChassis, modelMetaMap]);
@@ -419,168 +420,24 @@ export default function DealerYard() {
     [yardList, kpiStartDate, kpiEndDate]
   );
 
-  const handoverList = useMemo(() => {
-    const entries = Object.entries(handover || {});
-    return entries.map(([chassis, rec]) => {
-      const hand: HandoverRec = rec || {};
-      const handoverAt = hand?.handoverAt ?? hand?.createdAt ?? null;
-      const dealerSlugFromRec = slugifyDealerName(hand?.dealerSlug || hand?.dealerName || "");
-      return { chassis, handoverAt, dealerSlugFromRec };
-    });
-  }, [handover]);
+  const kpiHandoverCount = useMemo(() => {
+    const records = Object.entries(handoverAll || {});
+    return records.filter(([chassis, rec]) => {
+      const slugFromRec = normalizeDealerSlug(rec?.dealerSlug ?? dealerSlug);
+      if (slugFromRec !== dealerSlug) return false;
+      return isDateWithinRange(parseDDMMYYYY(rec?.handoverAt ?? null), kpiStartDate, kpiEndDate);
+    }).length;
+  }, [handoverAll, dealerSlug, kpiStartDate, kpiEndDate]);
 
-  const kpiHandoverCount = useMemo(
-    () =>
-      handoverList.filter(
-        (x) =>
-          dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate)
-      ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
-  );
+  const showWholesaleColumn = WHOLESALE_SLUGS.has(dealerSlug);
 
-  const kpiSecondhandCount = useMemo(
-    () =>
-      handoverList.filter(
-        (x) =>
-          dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate) &&
-          isSecondhandChassis(x.chassis)
-      ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
-  );
-
-  const kpiYardStockCurrent = useMemo(() => {
-    const stock = yardList.filter((x) => x.type === "Stock").length;
-    const customer = yardList.filter((x) => x.type === "Customer").length;
-    return { stock, customer, total: yardList.length };
-  }, [yardList]);
-
-  // Yard Range buckets
-  const yardRangeBuckets = useMemo(() => {
-    return yardRangeDefs.map(({ label, min, max }) => ({
-      label,
-      count: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max).length,
-    }));
-  }, [yardList]);
-
-  // Yard Inventory display with filters driven by charts only
-  const yardListDisplay = useMemo(() => {
-    let list = yardList;
-    if (selectedRangeBucket) {
-      const def = yardRangeDefs.find((d) => d.label === selectedRangeBucket);
-      if (def) list = list.filter((x) => x.daysInYard >= def.min && x.daysInYard <= def.max);
-    }
-    if (selectedModelRange && selectedModelRange !== "All") {
-      list = list.filter((x) => x.modelRange === selectedModelRange);
-    }
-    if (selectedType !== "All") {
-      list = list.filter((x) => x.type === selectedType);
-    }
-    return list;
-  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType]);
-
-  // Monthly charts data within KPI range
-  const receivedMonthlyData = useMemo(() => {
-    const map: Record<string, { key: string; label: string; count: number }> = {};
-    yardList.forEach((x) => {
-      const d = x.receivedAt ? new Date(x.receivedAt) : null;
-      if (!d || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
-      const key = fmtMonthKey(d);
-      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
-      if (!map[key]) map[key] = { key, label, count: 0 };
-      map[key].count += 1;
-    });
-    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [yardList, kpiStartDate, kpiEndDate]);
-
-  const handoversMonthlyData = useMemo(() => {
-    const map: Record<string, { key: string; label: string; count: number }> = {};
-    handoverList.forEach((x) => {
-      const d = x.handoverAt ? new Date(x.handoverAt) : null;
-      if (!d) return;
-      if (dealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
-      const key = fmtMonthKey(d);
-      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
-      if (!map[key]) map[key] = { key, label, count: 0 };
-      map[key].count += 1;
-    });
-    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [handoverList, dealerSlug, kpiStartDate, kpiEndDate]);
-
-  // 10-week stock level reverse projection (received=in, handover=out)
-  const stockLevel10Weeks = useMemo(() => {
-    const now = new Date();
-    const latestStart = startOfWeekMonday(now);
-    const starts: Date[] = [];
-    for (let i = 9; i >= 0; i--) {
-      const d = addDays(latestStart, -7 * i);
-      starts.push(d);
-    }
-    const nextStarts = starts.map((s) => addDays(s, 7));
-
-    const receivedByWeek: number[] = starts.map((s, i) => {
-      const e = nextStarts[i];
-      return yardList.filter((x) => {
-        const d = x.receivedAt ? new Date(x.receivedAt) : null;
-        return d && d >= s && d < e;
-      }).length;
-    });
-
-    const handoversByWeek: number[] = starts.map((s, i) => {
-      const e = nextStarts[i];
-      return handoverList.filter((x) => {
-        const d = x.handoverAt ? new Date(x.handoverAt) : null;
-        return d && d >= s && d < e && x.dealerSlugFromRec === dealerSlug;
-      }).length;
-    });
-
-    const netByWeek = starts.map((_, i) => receivedByWeek[i] - handoversByWeek[i]);
-    const current = kpiYardStockCurrent.total; // using current yard stock as baseline
-
-    // stock at end of each week in ascending order
-    const levels: number[] = starts.map((_, i) => {
-      let sumLater = 0;
-      for (let j = i + 1; j < netByWeek.length; j++) sumLater += netByWeek[j];
-      return Math.max(0, current - sumLater);
-    });
-
-    return starts.map((s, i) => ({ week: fmtWeekLabel(s), level: levels[i] }));
-  }, [yardList, handoverList, dealerSlug, kpiYardStockCurrent.total]);
-
-  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
-
-  const handleReceive = async (chassis: string, rec: PGIRec) => {
-    try {
-      await receiveChassisToYard(dealerSlug, chassis, rec);
-    } catch (e) {
-      console.error("receive failed", e);
-    }
-  };
-
-  const handleAddManual = async () => {
-    const ch = manualChassis.trim().toUpperCase();
-    if (!ch) {
-      setManualStatus({ type: "err", msg: "请输入车架号" });
-      return;
-    }
-    try {
-      await addManualChassisToYard(dealerSlug, ch);
-      setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
-      setManualChassis("");
-    } catch (e) {
-      console.error(e);
-      setManualStatus({ type: "err", msg: "添加失败，请重试。" });
-    }
-  };
-
-  // Stock Analysis data by category (Stock-only units)
-  type AnalysisRow = { name: string; value: number };
   const stockUnits = useMemo(() => yardList.filter((row) => row.type === "Stock"), [yardList]);
+  const customerUnits = useMemo(() => yardList.filter((row) => row.type === "Customer"), [yardList]);
+
   const rangeCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = cleanLabel(row.modelRange);
+      const key = row.modelRange || "Unknown";
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
@@ -590,7 +447,7 @@ export default function DealerYard() {
   const functionCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = cleanLabel(row.functionName);
+      const key = row.functionName || "Unknown";
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
@@ -600,7 +457,7 @@ export default function DealerYard() {
   const layoutCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = cleanLabel(row.layout);
+      const key = row.layout || "Unknown";
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
@@ -610,7 +467,7 @@ export default function DealerYard() {
   const axleCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = cleanLabel(row.axle);
+      const key = row.axle || "Unknown";
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
@@ -668,6 +525,11 @@ export default function DealerYard() {
     return d.toLocaleDateString();
   };
 
+  const formatWholesale = (price: number | null | undefined) => {
+    if (price == null) return "-";
+    return currencyFormatter.format(price);
+  };
+
   return (
     <div className="flex min-h-screen">
       <Sidebar
@@ -689,280 +551,258 @@ export default function DealerYard() {
         {/* On The Road (PGI list) */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle>On The Road (PGI)</CardTitle>
+            <div className="space-y-1">
+              <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                <Truck className="h-5 w-5 text-slate-500" />
+                On The Road (PGI)
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">Recently completed units heading toward this dealer</p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="h-9 rounded-md border px-2 text-sm"
                 value={rangeType}
                 onChange={(e) => setRangeType(e.target.value as typeof rangeType)}
+                className="border border-slate-200 rounded-md px-2 py-1 text-sm"
               >
                 <option value="7d">Last 7 days</option>
                 <option value="30d">Last 30 days</option>
                 <option value="90d">Last 90 days</option>
-                <option value="custom">Custom</option>
+                <option value="custom">Custom Range</option>
               </select>
               {rangeType === "custom" && (
                 <>
-                  <Input type="date" className="h-9 w-[160px]" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-                  <Input type="date" className="h-9 w-[160px]" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    className="h-8"
+                  />
+                  <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-8" />
                 </>
               )}
-              <div className="text-xs text-slate-500">
-                Range: {startDate.toLocaleDateString()} ~ {endDate.toLocaleDateString()}
-              </div>
             </div>
           </CardHeader>
-          <CardContent>
-            {onTheRoadInRange.length === 0 ? (
-              <div className="text-sm text-slate-500">No PGI records in the selected range.</div>
-            ) : (
-              <div className="rounded-lg border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">Chassis</TableHead>
-                      <TableHead className="font-semibold">PGI Date</TableHead>
-                      <TableHead className="font-semibold">Model</TableHead>
-                      <TableHead className="font-semibold">Customer</TableHead>
-                      <TableHead className="font-semibold">Days Since PGI</TableHead>
-                      <TableHead className="font-semibold">Received</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {onTheRoadInRange.map((row) => (
-                      <TableRow key={row.chassis}>
-                        <TableCell className="font-medium">{row.chassis}</TableCell>
-                        <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
-                        <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>
-                          {(() => {
-                            const d = parseDDMMYYYY(row.pgidate);
-                            if (!d) return 0;
-                            const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-                            return diff < 0 ? 0 : diff;
-                          })()}
-                        </TableCell>
-                        <TableCell>
-                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
-                            Receive
-                          </Button>
-                        </TableCell>
+          <CardContent className="space-y-4">
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-semibold">Chassis</TableHead>
+                    <TableHead className="font-semibold">PGI Date</TableHead>
+                    <TableHead className="font-semibold">Model</TableHead>
+                    <TableHead className="font-semibold">Customer</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Object.entries(pgi || {})
+                    .filter(([chassis, rec]) => {
+                      const slug = slugifyDealerName(rec?.dealer);
+                      if (slug !== dealerSlug) return false;
+                      return isDateWithinRange(parseDDMMYYYY(rec?.pgidate || null), startDate, endDate);
+                    })
+                    .map(([chassis, rec]) => (
+                      <TableRow key={chassis}>
+                        <TableCell className="font-medium">{chassis}</TableCell>
+                        <TableCell>{rec?.pgidate || "-"}</TableCell>
+                        <TableCell>{rec?.model || "-"}</TableCell>
+                        <TableCell>{rec?.customer || "-"}</TableCell>
                       </TableRow>
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
-        {/* KPI Cards with independent range */}
-        <Card className="border-slate-200 shadow-sm">
+        {/* KPI overview */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">KPI Overview</CardTitle>
+            <div className="space-y-1">
+              <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                <PackageCheck className="h-5 w-5 text-slate-500" />
+                KPI Snapshot
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">Track PGI arrivals, yard receipts, and handovers</p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="h-9 rounded-md border px-2 text-sm"
                 value={kpiRangeType}
                 onChange={(e) => setKpiRangeType(e.target.value as typeof kpiRangeType)}
+                className="border border-slate-200 rounded-md px-2 py-1 text-sm"
               >
                 <option value="7d">Last 7 days</option>
                 <option value="30d">Last 30 days</option>
                 <option value="90d">Last 90 days</option>
-                <option value="custom">Custom</option>
+                <option value="custom">Custom Range</option>
               </select>
               {kpiRangeType === "custom" && (
                 <>
-                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomStart} onChange={(e) => setKpiCustomStart(e.target.value)} />
-                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomEnd} onChange={(e) => setKpiCustomEnd(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={kpiCustomStart}
+                    onChange={(e) => setKpiCustomStart(e.target.value)}
+                    className="h-8"
+                  />
+                  <Input
+                    type="date"
+                    value={kpiCustomEnd}
+                    onChange={(e) => setKpiCustomEnd(e.target.value)}
+                    className="h-8"
+                  />
                 </>
               )}
-              <div className="text-xs text-slate-500">
-                Range: {kpiStartDate.toLocaleDateString()} ~ {kpiEndDate.toLocaleDateString()}
-              </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Factory PGI to Dealer</div>
-                    <div className="text-2xl font-semibold">{kpiPgiCount}</div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                    <Truck className="w-5 h-5 text-blue-600" />
-                  </div>
-                </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="text-sm text-muted-foreground">PGI Units</div>
+                <div className="text-2xl font-semibold mt-1">{kpiPgiCount}</div>
+                <div className="text-xs text-muted-foreground mt-2">Completed PGI entries for this period</div>
               </div>
-
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Received Vans</div>
-                    <div className="text-2xl font-semibold">{kpiReceivedCount}</div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
-                    <PackageCheck className="w-5 h-5 text-emerald-600" />
-                  </div>
-                </div>
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="text-sm text-muted-foreground">Yard Receipts</div>
+                <div className="text-2xl font-semibold mt-1">{kpiReceivedCount}</div>
+                <div className="text-xs text-muted-foreground mt-2">Units received into yard during the period</div>
               </div>
-
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Handovers</div>
-                    <div className="text-2xl font-semibold">{kpiHandoverCount}</div>
-                    <div className="text-xs text-slate-500 mt-1">Secondhand: <span className="font-medium">{kpiSecondhandCount}</span></div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
-                    <Handshake className="w-5 h-5 text-purple-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Current Yard Stock</div>
-                    <div className="text-2xl font-semibold">{kpiYardStockCurrent.total}</div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center">
-                    <Warehouse className="w-5 h-5 text-slate-700" />
-                  </div>
-                </div>
-                <div className="text-xs text-slate-500 mt-1">
-                  Stock: <span className="text-blue-700 font-medium">{kpiYardStockCurrent.stock}</span> · Customer:{" "}
-                  <span className="text-emerald-700 font-medium">{kpiYardStockCurrent.customer}</span>
-                </div>
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="text-sm text-muted-foreground">Handovers</div>
+                <div className="text-2xl font-semibold mt-1">{kpiHandoverCount}</div>
+                <div className="text-xs text-muted-foreground mt-2">Handover submissions logged in this range</div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Monthly Received / Monthly Handovers / 10-Week Stock Level */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Received Vans (Monthly)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={receivedMonthlyData}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Bar dataKey="count" fill="#10b981" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Handovers (Monthly)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={handoversMonthlyData}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Bar dataKey="count" fill="#8b5cf6" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Stock Level (Last 10 Weeks)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={stockLevel10Weeks}>
-                  <XAxis dataKey="week" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Line type="monotone" dataKey="level" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Side-by-side: Days In Yard (left) + Stock Analysis (right) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Days In Yard Buckets (Left) */}
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Days In Yard</CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={selectedRangeBucket === null ? "default" : "outline"}
-                  className={selectedRangeBucket === null ? "" : "!bg-transparent !hover:bg-transparent"}
-                  onClick={() => setSelectedRangeBucket(null)}
-                  title="Clear Days In Yard filter"
-                >
-                  All
-                </Button>
-                {yardRangeDefs.map((b) => (
+        {/* Yard Inventory controls */}
+        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+          <CardHeader>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                  <Warehouse className="h-5 w-5 text-slate-500" />
+                  Yard Inventory
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Filter by unit type, age, model range, and category insights
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1">
                   <Button
-                    key={b.label}
-                    variant={selectedRangeBucket === b.label ? "default" : "outline"}
-                    className={selectedRangeBucket === b.label ? "" : "!bg-transparent !hover:bg-transparent"}
-                    onClick={() => setSelectedRangeBucket((prev) => (prev === b.label ? null : b.label))}
+                    size="sm"
+                    variant={selectedType === "Stock" ? "default" : "outline"}
+                    onClick={() => setSelectedType("Stock")}
                   >
-                    {b.label}
+                    Stock
                   </Button>
-                ))}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={yardRangeBuckets}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Bar
-                    dataKey="count"
-                    fill="#6366f1"
-                    onClick={(_, idx: number) => {
-                      const label = yardRangeBuckets[idx]?.label;
-                      if (label) setSelectedRangeBucket(label);
-                    }}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Stock Analysis (Right) */}
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Stock Analysis</CardTitle>
-              <div className="flex flex-wrap gap-2 items-center">
-                <div className="flex flex-wrap gap-1">
-                  <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
-                  <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
-                  <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
-                  <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
-                  <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
-                  <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
+                  <Button
+                    size="sm"
+                    variant={selectedType === "Customer" ? "default" : "outline"}
+                    onClick={() => setSelectedType("Customer")}
+                  >
+                    Customer
+                  </Button>
+                  <Button size="sm" variant={selectedType === "All" ? "default" : "outline"} onClick={() => setSelectedType("All")}>
+                    All
+                  </Button>
                 </div>
+                <select
+                  value={selectedModelRange}
+                  onChange={(e) => setSelectedModelRange(e.target.value as typeof selectedModelRange)}
+                  className="border border-slate-200 rounded-md px-2 py-1 text-sm"
+                >
+                  <option value="All">All Ranges</option>
+                  {Array.from(new Set(stockUnits.map((row) => row.modelRange).filter(Boolean))).map((range) => (
+                    <option key={range} value={range!}>
+                      {range}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedFunction}
+                  onChange={(e) => setSelectedFunction(e.target.value as typeof selectedFunction)}
+                  className="border border-slate-200 rounded-md px-2 py-1 text-sm"
+                >
+                  <option value="All">All Functions</option>
+                  {Array.from(new Set(stockUnits.map((row) => row.functionName).filter(Boolean))).map((fn) => (
+                    <option key={fn} value={fn!}>
+                      {fn}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedLayout}
+                  onChange={(e) => setSelectedLayout(e.target.value as typeof selectedLayout)}
+                  className="border border-slate-200 rounded-md px-2 py-1 text-sm"
+                >
+                  <option value="All">All Layouts</option>
+                  {Array.from(new Set(stockUnits.map((row) => row.layout).filter(Boolean))).map((layout) => (
+                    <option key={layout} value={layout!}>
+                      {layout}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <ResponsiveContainer width="100%" height={220}>
-                {activeCategory === "length" ? (
-                  <BarChart data={analysisData.map((x) => ({ label: x.name, count: x.value }))}>
-                    <XAxis dataKey="label" />
-                    <YAxis allowDecimals={false} />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid lg:grid-cols-2 gap-6">
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Units by Days in Yard</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedRangeBucket(null)}
+                    className="h-7 text-xs"
+                  >
+                    Reset
+                  </Button>
+                </div>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart
+                    data={yardRangeDefs.map((bucket) => {
+                      const count = yardList.filter((row) => {
+                        if (selectedType !== "All" && row.type !== selectedType) return false;
+                        if (selectedModelRange !== "All" && row.modelRange !== selectedModelRange) return false;
+                        if (selectedFunction !== "All" && row.functionName !== selectedFunction) return false;
+                        if (selectedLayout !== "All" && row.layout !== selectedLayout) return false;
+                        return row.daysInYard >= bucket.min && row.daysInYard <= bucket.max;
+                      }).length;
+                      return { name: bucket.label, value: count };
+                    })}
+                  >
+                    <XAxis dataKey="name" stroke="#64748b" />
+                    <YAxis allowDecimals={false} stroke="#64748b" />
                     <ReTooltip />
-                    <Bar dataKey="count" fill="#0ea5e9" />
+                    <Bar
+                      dataKey="value"
+                      fill="#4f46e5"
+                      radius={[4, 4, 0, 0]}
+                      onClick={(data) => setSelectedRangeBucket(data?.name ?? null)}
+                    />
                   </BarChart>
-                ) : (
+                </ResponsiveContainer>
+              </div>
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Stock Category Breakdown</h3>
+                  <div className="flex gap-2">
+                    {(["range", "function", "layout", "axle", "length", "height"] as const).map((cat) => (
+                      <Button
+                        key={cat}
+                        size="sm"
+                        variant={activeCategory === cat ? "default" : "outline"}
+                        className="h-7 text-xs"
+                        onClick={() => setActiveCategory(cat)}
+                      >
+                        {cat[0].toUpperCase() + cat.slice(1)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
                     <Pie
                       data={analysisData}
@@ -970,69 +810,126 @@ export default function DealerYard() {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      outerRadius={90}
-                      innerRadius={50}
-                      onClick={(data: any) => {
-                        if (activeCategory === "range" && data?.name) {
-                          setSelectedModelRange(String(data.name));
-                          setSelectedType("Stock");
-                        }
-                      }}
+                      outerRadius={80}
+                      label
                     >
                       {analysisData.map((entry, index) => (
-                        <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                       ))}
                     </Pie>
                     <Legend />
-                    <ReTooltip />
                   </PieChart>
-                )}
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
+                </ResponsiveContainer>
+              </div>
+            </div>
 
-        {/* Yard Inventory */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between flex-wrap gap-2">
-            <CardTitle>Yard Inventory</CardTitle>
-            <div className="flex w-full md:w-auto items-stretch md:items-center gap-2">
-              {/* Manual entry on the left */}
-              <Input
-                placeholder="Enter chassis number manually"
-                value={manualChassis}
-                onChange={(e) => setManualChassis(e.target.value)}
-                className="md:min-w-[240px]"
-              />
-              <Button onClick={handleAddManual} className="bg-sky-600 hover:bg-sky-700">
-                Add to Yard
-              </Button>
-              {manualStatus && (
-                <div className={`text-sm ${manualStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
-                  {manualStatus.msg}
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-slate-600">Type:</span>
-              {(["All", "Stock", "Customer"] as const).map((option) => (
-                <Button
-                  key={option}
-                  size="sm"
-                  variant={selectedType === option ? "default" : "outline"}
-                  className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
-                  onClick={() => setSelectedType(option)}
+            <div className="rounded-lg border bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Stock vs Customer Trend (Last 12 Weeks)</h3>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart
+                  data={(() => {
+                    const map: Record<string, { date: Date; week: string; stock: number; customer: number }> = {};
+                    const now = new Date();
+                    const start = addDays(now, -7 * 12);
+                    for (let i = 0; i <= 12; i++) {
+                      const weekStart = addDays(start, i * 7);
+                      const weekKey = weekStart.toISOString();
+                      map[weekKey] = { date: weekStart, week: fmtWeekLabel(weekStart), stock: 0, customer: 0 };
+                    }
+                    yardList.forEach((row) => {
+                      if (!row.receivedAt) return;
+                      const d = new Date(row.receivedAt);
+                      const weekStart = startOfWeekMonday(d);
+                      const key = weekStart.toISOString();
+                      if (!map[key]) {
+                        map[key] = { date: weekStart, week: fmtWeekLabel(weekStart), stock: 0, customer: 0 };
+                      }
+                      if (row.type === "Stock") map[key].stock += 1;
+                      else map[key].customer += 1;
+                    });
+                    return Object.values(map)
+                      .sort((a, b) => a.date.getTime() - b.date.getTime())
+                      .map((row) => ({ week: row.week, Stock: row.stock, Customer: row.customer }));
+                  })()}
                 >
-                  {option}
-                </Button>
-              ))}
+                  <XAxis dataKey="week" stroke="#64748b" />
+                  <YAxis allowDecimals={false} stroke="#64748b" />
+                  <ReTooltip />
+                  <Line type="monotone" dataKey="Stock" stroke="#4f46e5" strokeWidth={2} />
+                  <Line type="monotone" dataKey="Customer" stroke="#10b981" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-            {yardListDisplay.length === 0 ? (
-              <div className="text-sm text-slate-500">No units in yard inventory.</div>
-            ) : (
-              <div className="rounded-lg border overflow-auto">
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <Card className="border-slate-200">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSelectedType("Stock")}>
+                      Stock Units ({stockUnits.length})
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    Select any unit to bring up registration or dispatch options.
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-200">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => setSelectedType("Customer")}
+                    >
+                      Customer Units ({customerUnits.length})
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    Track retail allocations and upcoming handovers for this yard.
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="rounded-lg border bg-white p-4 shadow-sm space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  value={manualChassis}
+                  onChange={(e) => setManualChassis(e.target.value)}
+                  placeholder="Manual chassis entry"
+                  className="w-48"
+                />
+                <Button
+                  onClick={async () => {
+                    const chassis = manualChassis.trim();
+                    if (!chassis) return;
+                    try {
+                      await addManualChassisToYard(dealerSlug, chassis);
+                      setManualChassis("");
+                      setManualStatus({ type: "ok", msg: `Added ${chassis} to yard.` });
+                    } catch (err) {
+                      console.error(err);
+                      setManualStatus({ type: "err", msg: "Failed to add chassis. Try again." });
+                    }
+                  }}
+                >
+                  Add Manual Entry
+                </Button>
+                {manualStatus && (
+                  <span className={manualStatus.type === "ok" ? "text-emerald-600 text-sm" : "text-red-600 text-sm"}>
+                    {manualStatus.msg}
+                  </span>
+                )}
+              </div>
+              <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1042,31 +939,45 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Model Range</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
+                      {showWholesaleColumn && (
+                        <TableHead className="font-semibold">Wholesale Price (excl. GST)</TableHead>
+                      )}
                       <TableHead className="font-semibold">Days In Yard</TableHead>
                       <TableHead className="font-semibold">Handover</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {yardListDisplay.map((row) => (
-                      <TableRow key={row.chassis}>
-                        <TableCell className="font-medium">{row.chassis}</TableCell>
-                        <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
-                        <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        <TableCell>{toStr(row.modelRange) || "-"}</TableCell>
-                        <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>
-                          <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
-                            {row.type}
-                          </span>
-                        </TableCell>
-                        <TableCell>{row.daysInYard}</TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            className="bg-purple-600 hover:bg-purple-700"
-                            onClick={() => {
-                              (async () => {
-                                try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
+                    {yardList
+                      .filter((row) => {
+                        if (selectedType !== "All" && row.type !== selectedType) return false;
+                        if (selectedRangeBucket) {
+                          const bucket = yardRangeDefs.find((b) => b.label === selectedRangeBucket);
+                          if (bucket && !(row.daysInYard >= bucket.min && row.daysInYard <= bucket.max)) return false;
+                        }
+                        if (selectedModelRange !== "All" && row.modelRange !== selectedModelRange) return false;
+                        if (selectedFunction !== "All" && row.functionName !== selectedFunction) return false;
+                        if (selectedLayout !== "All" && row.layout !== selectedLayout) return false;
+                        return true;
+                      })
+                      .map((row) => (
+                        <TableRow key={row.chassis}>
+                          <TableCell className="font-medium">{row.chassis}</TableCell>
+                          <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
+                          <TableCell>{toStr(row.model) || "-"}</TableCell>
+                          <TableCell>{toStr(row.modelRange) || "-"}</TableCell>
+                          <TableCell>{toStr(row.customer) || "-"}</TableCell>
+                          <TableCell>
+                            <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
+                              {row.type}
+                            </span>
+                          </TableCell>
+                          {showWholesaleColumn && <TableCell>{formatWholesale(row.wholesalePrice)}</TableCell>}
+                          <TableCell>{row.daysInYard}</TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              className="bg-purple-600 hover:bg-purple-700"
+                              onClick={() => {
                                 setHandoverData({
                                   chassis: row.chassis,
                                   model: row.model,
@@ -1075,23 +986,35 @@ export default function DealerYard() {
                                   handoverAt: new Date().toISOString(),
                                 });
                                 setHandoverOpen(true);
-                              })();
-                            }}
-                          >
-                            Handover
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                              }}
+                            >
+                              Handover
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
                   </TableBody>
                 </Table>
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
 
         {/* Handover Modal */}
-        <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
+        <ProductRegistrationForm
+          open={handoverOpen}
+          onOpenChange={setHandoverOpen}
+          initial={handoverData}
+          onCompleted={async ({ chassis, dealerSlug: completedSlug }) => {
+            const slugToUse = (completedSlug ?? dealerSlug) || "";
+            if (!slugToUse) return;
+            try {
+              await dispatchFromYard(slugToUse, chassis);
+            } catch (err) {
+              console.error(err);
+            }
+          }}
+        />
       </main>
     </div>
   );
