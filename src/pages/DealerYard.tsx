@@ -39,6 +39,7 @@ type PGIRec = {
   dealer?: string | null;
   model?: string | null;
   customer?: string | null;
+  wholesalepo?: string | number | null;
 };
 type YardRec = {
   receivedAt?: string | null;
@@ -132,6 +133,26 @@ function isSecondhandChassis(chassis?: string | null): boolean {
   // Three letters, first is L/N/S, followed by 23/24/25, then digits
   return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
 }
+
+const currencyFormatter = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+});
+
+function parseWholesale(val: unknown): number | null {
+  if (val == null) return null;
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).replace(/[^\d.-]/g, "");
+  if (!str) return null;
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
+
+function formatWholesale(val: unknown): string {
+  const num = parseWholesale(val);
+  return num == null ? "-" : currencyFormatter.format(num);
+}
+
 
 // Excel rows type
 type ExcelRow = {
