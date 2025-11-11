@@ -54,6 +54,8 @@ type HandoverRec = {
   dealerName?: string | null;
 };
 
+const PRICE_ENABLED_DEALERS = new Set(["frankston", "geelong", "launceston", "st-james", "traralgon"]);
+
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();
 const cleanLabel = (v: unknown, fallback = "Unknown") => {
@@ -130,6 +132,77 @@ function isSecondhandChassis(chassis?: string | null): boolean {
   if (!chassis) return false;
   const c = String(chassis).toUpperCase();
   return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
+}
+
+const currencyFormatter = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+});
+
+function parseWholesale(val: unknown): number | null {
+  if (val == null) return null;
+  if (typeof val === "number" && !isNaN(val)) return val;
+  const str = String(val).replace(/[^\d.-]/g, "");
+  if (!str) return null;
+  const num = Number(str);
+  return Number.isFinite(num) ? num : null;
+}
+
+type WholesaleCandidate = { price: number; ts: number; order: number };
+
+function collectWholesaleCandidates(source: any, out: WholesaleCandidate[], orderRef: { value: number }) {
+  if (source == null) return;
+
+  if (Array.isArray(source)) {
+    source.forEach((entry) => collectWholesaleCandidates(entry, out, orderRef));
+    return;
+  }
+
+  if (typeof source !== "object") {
+    const direct = parseWholesale(source);
+    if (direct != null) {
+      out.push({ price: direct, ts: -Infinity, order: orderRef.value++ });
+    }
+    return;
+  }
+
+  const candidate = parseWholesale(
+    (source as any)?.wholesalepo ??
+      (source as any)?.wholesalePo ??
+      (source as any)?.wholesalePO ??
+      (source as any)?.price ??
+      (source as any)?.amount
+  );
+  if (candidate != null) {
+    const tsCandidates = [
+      (source as any)?.updatedAt,
+      (source as any)?.createdAt,
+      (source as any)?.handoverAt,
+      (source as any)?.timestamp,
+    ];
+    const tsValue = tsCandidates
+      .map((t) => (t ? Date.parse(String(t)) : NaN))
+      .find((t) => !Number.isNaN(t));
+    out.push({ price: candidate, ts: Number.isFinite(tsValue ?? NaN) ? (tsValue as number) : -Infinity, order: orderRef.value++ });
+  }
+
+  Object.values(source).forEach((value) => collectWholesaleCandidates(value, out, orderRef));
+}
+
+function extractLatestWholesale(record: any): number | null {
+  if (!record) return null;
+
+  const candidates: WholesaleCandidate[] = [];
+  collectWholesaleCandidates(record, candidates, { value: 0 });
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => {
+    if (a.ts === b.ts) return b.order - a.order;
+    return b.ts - a.ts;
+  });
+
+  return candidates[0]?.price ?? null;
 }
 
 // Excel rows type
@@ -337,7 +410,11 @@ export default function DealerGroupYard() {
   }, [excelRows]);
 
   const yardList = useMemo(() => {
-    const entries = Object.entries(yard || {});
+    const dealerChassisRecords =
+      (yard && typeof yard === "object" && (yard as any)["dealer-chassis"]) ||
+      (yard && typeof yard === "object" && (yard as any).dealerChassis) ||
+      {};
+    const entries = Object.entries(yard || {}).filter(([chassis]) => chassis !== "dealer-chassis");
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
@@ -363,6 +440,14 @@ export default function DealerGroupYard() {
       const axle = meta?.axle ?? "Unknown";
       const length = meta?.length ?? "Unknown";
       const height = meta?.height ?? "Unknown";
+      const wholesalePoRecord = (dealerChassisRecords as Record<string, any>)[chassis];
+      const wholesalePoValue =
+        extractLatestWholesale(wholesalePoRecord) ??
+        parseWholesale(
+          rec?.wholesalepo ?? rec?.wholesalePo ?? rec?.wholesalePO ?? rec?.price ?? rec?.amount
+        );
+      const wholesaleDisplay =
+        wholesalePoValue == null ? "-" : currencyFormatter.format(wholesalePoValue);
       return {
         chassis,
         receivedAt: receivedAtISO,
@@ -376,6 +461,8 @@ export default function DealerGroupYard() {
         axle,
         length,
         height,
+        wholesalePo: wholesalePoValue,
+        wholesaleDisplay,
       };
     });
   }, [yard, scheduleByChassis, modelMetaMap]);
@@ -525,6 +612,7 @@ export default function DealerGroupYard() {
   }, [yardList, handoverList, dealerSlug, kpiYardStockCurrent.total]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
+  const showPriceColumn = PRICE_ENABLED_DEALERS.has(dealerSlug);
 
   const handleReceive = async (chassis: string, rec: PGIRec) => {
     try {
@@ -969,6 +1057,7 @@ export default function DealerGroupYard() {
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">Received At</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
+                      {showPriceColumn && <TableHead className="font-semibold">AUD Price</TableHead>}
                       <TableHead className="font-semibold">Model Range</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
@@ -982,6 +1071,7 @@ export default function DealerGroupYard() {
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
+                        {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
                         <TableCell>{toStr(row.modelRange) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>
@@ -995,17 +1085,14 @@ export default function DealerGroupYard() {
                             size="sm"
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
-                              (async () => {
-                                try { await dispatchFromYard(dealerSlug, row.chassis); } catch (e) { console.error(e); }
-                                setHandoverData({
-                                  chassis: row.chassis,
-                                  model: row.model,
-                                  dealerName: dealerDisplayName,
-                                  dealerSlug,
-                                  handoverAt: new Date().toISOString(),
-                                });
-                                setHandoverOpen(true);
-                              })();
+ setHandoverData({
+                                chassis: row.chassis,
+                                model: row.model,
+                                dealerName: dealerDisplayName,
+                                dealerSlug,
+                                handoverAt: new Date().toISOString(),
+                              });
+                              setHandoverOpen(true);
                             }}
                           >
                             Handover
@@ -1021,7 +1108,27 @@ export default function DealerGroupYard() {
         </Card>
 
         {/* Handover Modal */}
-        <ProductRegistrationForm open={handoverOpen} onOpenChange={setHandoverOpen} initial={handoverData} />
+        <ProductRegistrationForm
+          open={handoverOpen}
+          onOpenChange={(open) => {
+            setHandoverOpen(open);
+            if (!open) {
+              setHandoverData(null);
+            }
+          }}
+          initial={handoverData}
+          onCompleted={async ({ chassis, dealerSlug: slugFromForm }) => {
+            const targetSlug = slugFromForm ?? dealerSlug;
+            if (!targetSlug || !chassis) return;
+            try {
+              await dispatchFromYard(targetSlug, chassis);
+            } catch (err) {
+              console.error("Failed to dispatch from yard after handover:", err);
+            } finally {
+              setHandoverData(null);
+            }
+          }}
+        />
       </main>
     </div>
   );
