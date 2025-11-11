@@ -1,6 +1,6 @@
 // src/pages/DealerGroupYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ import {
   addManualChassisToYard,
   dispatchFromYard,
   subscribeToHandover,
+  subscribeDealerConfig,
+  subscribeAllDealerConfigs,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
@@ -33,6 +35,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import { isDealerGroup } from "@/types/dealer";
 
 type PGIRec = {
   pgidate?: string | null;
