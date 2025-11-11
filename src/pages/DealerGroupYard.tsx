@@ -252,8 +252,86 @@ const yardRangeDefs = [
 const PIE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#84cc16", "#d946ef", "#0ea5e9", "#14b8a6"];
 
 export default function DealerGroupYard() {
-  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
-  const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+  const navigate = useNavigate();
+  const { dealerSlug: rawDealerSlug, selectedDealerSlug: rawSelectedDealerSlug } = useParams<{
+    dealerSlug: string;
+    selectedDealerSlug?: string;
+  }>();
+  const groupSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+  const selectedDealerSlug = useMemo(
+    () => normalizeDealerSlug(rawSelectedDealerSlug),
+    [rawSelectedDealerSlug]
+  );
+
+  const [dealerConfig, setDealerConfig] = useState<any>(null);
+  const [allDealerConfigs, setAllDealerConfigs] = useState<any>({});
+  const [configLoading, setConfigLoading] = useState(true);
+
+  useEffect(() => {
+    if (!groupSlug) {
+      setDealerConfig(null);
+      setConfigLoading(false);
+      return;
+    }
+    setConfigLoading(true);
+    const unsub = subscribeDealerConfig(groupSlug, (config) => {
+      setDealerConfig(config);
+      setConfigLoading(false);
+    });
+    return () => {
+      unsub?.();
+    };
+  }, [groupSlug]);
+
+  useEffect(() => {
+    const unsub = subscribeAllDealerConfigs((data) => {
+      setAllDealerConfigs(data || {});
+    });
+    return () => {
+      unsub?.();
+    };
+  }, []);
+
+  const isGroupPortal = dealerConfig ? isDealerGroup(dealerConfig) : false;
+
+  const includedDealerSlugs = useMemo(() => {
+    if (isGroupPortal) {
+      return dealerConfig?.includedDealers || [];
+    }
+    return groupSlug ? [groupSlug] : [];
+  }, [dealerConfig, groupSlug, isGroupPortal]);
+
+  useEffect(() => {
+    if (!configLoading && isGroupPortal && !rawSelectedDealerSlug) {
+      const firstDealer = includedDealerSlugs[0];
+      if (firstDealer) {
+        navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/yard`, { replace: true });
+      }
+    }
+  }, [configLoading, isGroupPortal, rawSelectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
+
+  const dealerSlug = selectedDealerSlug || includedDealerSlugs[0] || groupSlug;
+
+  const includedDealerNames = useMemo(() => {
+    if (!isGroupPortal) return null;
+    return includedDealerSlugs.map((slug: string) => {
+      const config = allDealerConfigs?.[slug];
+      return {
+        slug,
+        name: config?.name || prettifyDealerName(slug),
+      };
+    });
+  }, [isGroupPortal, includedDealerSlugs, allDealerConfigs]);
+
+  const dealerDisplayName = useMemo(() => {
+    if (selectedDealerSlug) {
+      const config = allDealerConfigs?.[selectedDealerSlug];
+      if (config?.name) return config.name;
+      return prettifyDealerName(selectedDealerSlug);
+    }
+    if (dealerConfig?.name) return dealerConfig.name;
+    return prettifyDealerName(dealerSlug || groupSlug || "");
+  }, [selectedDealerSlug, allDealerConfigs, dealerConfig, dealerSlug, groupSlug]);
 
   const [pgi, setPgi] = useState<Record<string, PGIRec>>({});
   const [yard, setYard] = useState<Record<string, YardRec>>({});
