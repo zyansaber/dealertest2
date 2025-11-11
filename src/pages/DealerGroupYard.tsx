@@ -692,7 +692,6 @@ export default function DealerGroupYard() {
     return starts.map((s, i) => ({ week: fmtWeekLabel(s), level: levels[i] }));
   }, [yardList, handoverList, dealerSlug, kpiYardStockCurrent.total]);
 
-  const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const showPriceColumn = PRICE_ENABLED_DEALERS.has(dealerSlug);
 
   const handleReceive = async (chassis: string, rec: PGIRec) => {
@@ -777,6 +776,8 @@ export default function DealerGroupYard() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
+        isGroup={isGroupPortal}
+        includedDealers={includedDealerNames}
       />
       <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
