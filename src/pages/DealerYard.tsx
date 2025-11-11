@@ -1128,7 +1128,7 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">Received At</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
-                      {showPriceColumn && <TableHead className="font-semibold">AUD Price</TableHead>}
+                      {showPriceColumn && <TableHead className="font-semibold">AUD Price (excl. GST)</TableHead>}
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
