@@ -152,40 +152,62 @@ function parseWholesale(val: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-function formatWholesale(val: unknown): string {
-  const num = parseWholesale(val);
-  return num == null ? "-" : currencyFormatter.format(num);
+type WholesaleCandidate = { price: number; ts: number; order: number };
+
+function collectWholesaleCandidates(source: any, out: WholesaleCandidate[], orderRef: { value: number }) {
+  if (source == null) return;
+
+  if (Array.isArray(source)) {
+    source.forEach((entry) => collectWholesaleCandidates(entry, out, orderRef));
+    return;
+  }
+
+  if (typeof source !== "object") {
+    const direct = parseWholesale(source);
+    if (direct != null) {
+      out.push({ price: direct, ts: -Infinity, order: orderRef.value++ });
+    }
+    return;
+  }
+
+  const candidate = parseWholesale(
+    (source as any)?.wholesalepo ??
+      (source as any)?.wholesalePo ??
+      (source as any)?.wholesalePO ??
+      (source as any)?.price ??
+      (source as any)?.amount
+  );
+  if (candidate != null) {
+    const tsCandidates = [
+      (source as any)?.updatedAt,
+      (source as any)?.createdAt,
+      (source as any)?.handoverAt,
+      (source as any)?.timestamp,
+    ];
+    const tsValue = tsCandidates
+      .map((t) => (t ? Date.parse(String(t)) : NaN))
+      .find((t) => !Number.isNaN(t));
+    out.push({ price: candidate, ts: Number.isFinite(tsValue ?? NaN) ? (tsValue as number) : -Infinity, order: orderRef.value++ });
+  }
+
+  Object.values(source).forEach((value) => collectWholesaleCandidates(value, out, orderRef));
 }
 
 function extractLatestWholesale(record: any): number | null {
   if (!record) return null;
-  if (!Array.isArray(record) && typeof record !== "object") {
-    return parseWholesale(record);
-  }
 
-  const values = Array.isArray(record) ? record : Object.values(record ?? {});
-  if (!values.length) return null;
+  const candidates: WholesaleCandidate[] = [];
+  collectWholesaleCandidates(record, candidates, { value: 0 });
 
-  const ranked = values
-    .map((entry, index) => {
-      const price = parseWholesale(
-        entry?.wholesalepo ?? entry?.wholesalePo ?? entry?.wholesalePO ?? entry?.price ?? entry?.amount
-      );
-      const tsCandidates = [entry?.updatedAt, entry?.createdAt, entry?.handoverAt, entry?.timestamp];
-      const ts = tsCandidates
-        .map((t) => (t ? Date.parse(String(t)) : NaN))
-        .find((t) => !Number.isNaN(t));
-      return { price, ts: Number.isFinite(ts ?? NaN) ? (ts as number) : -Infinity, index };
-    })
-    .filter((item) => item.price != null)
-    .sort((a, b) => {
-      if (a.ts === b.ts) return b.index - a.index;
-      return b.ts - a.ts;
-    });
+  if (!candidates.length) return null;
 
-  return ranked.length > 0 ? ranked[0].price : null;
+  candidates.sort((a, b) => {
+    if (a.ts === b.ts) return b.order - a.order;
+    return b.ts - a.ts;
+  });
+
+  return candidates[0]?.price ?? null;
 }
-
 
 // Excel rows type
 type ExcelRow = {
@@ -411,7 +433,7 @@ export default function DealerYard() {
   }, [excelRows]);
 
   const yardList = useMemo(() => {
-        const dealerChassisRecords =
+    const dealerChassisRecords =
       (yard && typeof yard === "object" && (yard as any)["dealer-chassis"]) ||
       (yard && typeof yard === "object" && (yard as any).dealerChassis) ||
       {};
@@ -441,7 +463,12 @@ export default function DealerYard() {
       const axle = meta?.axle ?? "Unknown";
       const length = meta?.length ?? "Unknown";
       const height = meta?.height ?? "Unknown";
-      const wholesalePo = extractLatestWholesale((dealerChassisRecords as Record<string, any>)[chassis]);
+      const wholesalePoRecord = (dealerChassisRecords as Record<string, any>)[chassis];
+      const wholesalePo =
+        extractLatestWholesale(wholesalePoRecord) ??
+        parseWholesale(
+          rec?.wholesalepo ?? rec?.wholesalePo ?? rec?.wholesalePO ?? rec?.price ?? rec?.amount
+        );
       return {
         chassis,
         receivedAt: receivedAtISO,
@@ -1100,7 +1127,7 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">Received At</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
-                      {showPriceColumn && <TableHead className="font-semibold">AUD Price</TableHead>}
+                      <TableHead className="font-semibold">AUD Price</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
@@ -1113,7 +1140,7 @@ export default function DealerYard() {
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
-                         {showPriceColumn && <TableCell>{formatWholesale(row.wholesalePo)}</TableCell>}
+                        <TableCell>{formatWholesale(row.wholesalePo)}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>
                           <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
