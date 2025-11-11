@@ -705,16 +705,16 @@ export default function DealerGroupYard() {
   const handleAddManual = async () => {
     const ch = manualChassis.trim().toUpperCase();
     if (!ch) {
-      setManualStatus({ type: "err", msg: "请输入车架号" });
+      setManualStatus({ type: "err", msg: "Pleass add chassis" });
       return;
     }
     try {
       await addManualChassisToYard(dealerSlug, ch);
-      setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
+      setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
       setManualChassis("");
     } catch (e) {
       console.error(e);
-      setManualStatus({ type: "err", msg: "添加失败，请重试。" });
+      setManualStatus({ type: "err", msg: "Failed" });
     }
   };
 
@@ -751,7 +751,7 @@ export default function DealerGroupYard() {
         return layoutCounts;
       case "axle":
         return axleCounts;
-      case "length":
+          case "length":
         return lengthCounts.map((x) => ({ name: x.name, value: x.value }));
       case "height":
         return heightCounts;
@@ -1114,7 +1114,7 @@ export default function DealerGroupYard() {
               )}
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+         <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-slate-600">Type:</span>
               {(["All", "Stock", "Customer"] as const).map((option) => (
@@ -1140,7 +1140,6 @@ export default function DealerGroupYard() {
                       <TableHead className="font-semibold">Received At</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
                       {showPriceColumn && <TableHead className="font-semibold">AUD Price</TableHead>}
-                      <TableHead className="font-semibold">Model Range</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
@@ -1154,7 +1153,6 @@ export default function DealerGroupYard() {
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
                         {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
-                        <TableCell>{toStr(row.modelRange) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>
                           <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
@@ -1167,7 +1165,7 @@ export default function DealerGroupYard() {
                             size="sm"
                             className="bg-purple-600 hover:bg-purple-700"
                             onClick={() => {
- setHandoverData({
+                              setHandoverData({
                                 chassis: row.chassis,
                                 model: row.model,
                                 dealerName: dealerDisplayName,
