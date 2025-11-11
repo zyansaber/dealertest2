@@ -136,8 +136,6 @@ function isSecondhandChassis(chassis?: string | null): boolean {
   return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
 }
 
-
-
 const currencyFormatter = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
@@ -464,11 +462,13 @@ export default function DealerYard() {
       const length = meta?.length ?? "Unknown";
       const height = meta?.height ?? "Unknown";
       const wholesalePoRecord = (dealerChassisRecords as Record<string, any>)[chassis];
-      const wholesalePo =
+      const wholesalePoValue =
         extractLatestWholesale(wholesalePoRecord) ??
         parseWholesale(
           rec?.wholesalepo ?? rec?.wholesalePo ?? rec?.wholesalePO ?? rec?.price ?? rec?.amount
         );
+      const wholesaleDisplay =
+        wholesalePoValue == null ? "-" : currencyFormatter.format(wholesalePoValue);
       return {
         chassis,
         receivedAt: receivedAtISO,
@@ -482,7 +482,8 @@ export default function DealerYard() {
         axle,
         length,
         height,
-        wholesalePo,
+        wholesalePo: wholesalePoValue,
+        wholesaleDisplay,
       };
     });
   }, [yard, scheduleByChassis, modelMetaMap]);
@@ -1127,7 +1128,7 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">Received At</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
-                      <TableHead className="font-semibold">AUD Price</TableHead>
+                      {showPriceColumn && <TableHead className="font-semibold">AUD Price</TableHead>}
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
@@ -1140,7 +1141,7 @@ export default function DealerYard() {
                         <TableCell className="font-medium">{row.chassis}</TableCell>
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        <TableCell>{formatWholesale(row.wholesalePo)}</TableCell>
+                        {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
                         <TableCell>
                           <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
