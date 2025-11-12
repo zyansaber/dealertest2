@@ -113,8 +113,14 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const data = useMemo(() => {
-    return initial ?? {
+  const data = useMemo<RegistrationData>(() => {
+    if (initial) {
+      return {
+        ...initial,
+        vinnumber: initial.vinnumber != null ? String(initial.vinnumber) : "",
+      };
+    }
+    return {
       chassis: "",
       model: "",
       dealerName: "",
