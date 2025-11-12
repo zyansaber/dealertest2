@@ -296,6 +296,14 @@ export async function dispatchFromYard(dealerSlug: string, chassis: string) {
 }
 
 /** -------------------- Product Registration -------------------- */
+type CustomerAddress = {
+  street: string;
+  suburb: string;
+  country: "Australia" | "New Zealand";
+  state: string;
+  postcode: string;
+};
+
 export async function saveProductRegistration(
   dealerSlug: string,
   chassis: string,
@@ -310,7 +318,7 @@ export async function saveProductRegistration(
       lastName: string;
       email: string;
       phone: string;
-      address: string;
+      address: CustomerAddress;
     };
     createdAt: string;
     method: "dealer_assist";
@@ -335,7 +343,7 @@ type DealerAssistHandover = {
     lastName: string;
     email: string;
     phone: string;
-    address: string;
+    address: CustomerAddress;
   };
   createdAt: string;
   source: "dealer_assist_form";
@@ -353,7 +361,6 @@ type CustomerEmailHandover = {
     email: string;
   };
 };
-
 export type HandoverPayload = DealerAssistHandover | CustomerEmailHandover;
 
 export async function saveHandover(dealerSlug: string, chassis: string, data: HandoverPayload) {
