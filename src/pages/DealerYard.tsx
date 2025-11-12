@@ -40,6 +40,10 @@ type PGIRec = {
   model?: string | null;
   customer?: string | null;
   wholesalepo?: string | number | null;
+  vinnumber?: string | null;
+  VinNumber?: string | null;
+  vinNumber?: string | null;
+  [key: string]: any;
 };
 type YardRec = {
   receivedAt?: string | null;
@@ -47,6 +51,10 @@ type YardRec = {
   customer?: string | null;
   type?: string | null;
   Type?: string | null;
+  vinnumber?: string | null;
+  VinNumber?: string | null;
+  vinNumber?: string | null;
+  [key: string]: any;
 };
 type HandoverRec = {
   handoverAt?: string | null;
@@ -287,9 +295,19 @@ export default function DealerYard() {
   const [kpiCustomStart, setKpiCustomStart] = useState<string>("");
   const [kpiCustomEnd, setKpiCustomEnd] = useState<string>("");
 
-  // Modal: Product Registration
+   // Modal: Product Registration
   const [handoverOpen, setHandoverOpen] = useState(false);
-  const [handoverData, setHandoverData] = useState<null | { chassis: string; model?: string | null; dealerName?: string | null; dealerSlug?: string | null; handoverAt: string }>(null);
+  const [handoverData, setHandoverData] = useState<
+    | null
+    | {
+        chassis: string;
+        model?: string | null;
+        dealerName?: string | null;
+        dealerSlug?: string | null;
+        handoverAt: string;
+        vinnumber?: string | null;
+      }
+  >(null);
 
   // Manual add chassis
   const [manualChassis, setManualChassis] = useState("");
@@ -469,8 +487,10 @@ export default function DealerYard() {
         );
       const wholesaleDisplay =
         wholesalePoValue == null ? "-" : currencyFormatter.format(wholesalePoValue);
+      const vinRaw = rec?.vinnumber ?? rec?.VinNumber ?? rec?.vinNumber ?? null;
       return {
         chassis,
+        vinnumber: vinRaw,
         receivedAt: receivedAtISO,
         model,
         customer,
@@ -811,6 +831,7 @@ export default function DealerYard() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Chassis</TableHead>
+                      <TableHead className="font-semibold">VIN Number</TableHead>
                       <TableHead className="font-semibold">PGI Date</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Customer</TableHead>
@@ -819,31 +840,35 @@ export default function DealerYard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {onTheRoadInRange.map((row) => (
-                      <TableRow key={row.chassis}>
-                        <TableCell className="font-medium">{row.chassis}</TableCell>
-                        <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
-                        <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>
-                          {(() => {
-                            const d = parseDDMMYYYY(row.pgidate);
-                            if (!d) return 0;
-                            const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-                            return diff < 0 ? 0 : diff;
-                          })()}
-                        </TableCell>
-                        <TableCell>
-                          {yardActionsEnabled ? (
-                            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
-                              Receive
-                            </Button>
-                          ) : (
-                            <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {onTheRoadInRange.map((row) => {
+                      const vin = toStr(row.vinnumber ?? row.VinNumber ?? row.vinNumber);
+                      return (
+                        <TableRow key={row.chassis}>
+                          <TableCell className="font-medium">{row.chassis}</TableCell>
+                          <TableCell>{vin || "-"}</TableCell>
+                          <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
+                          <TableCell>{toStr(row.model) || "-"}</TableCell>
+                          <TableCell>{toStr(row.customer) || "-"}</TableCell>
+                          <TableCell>
+                            {(() => {
+                              const d = parseDDMMYYYY(row.pgidate);
+                              if (!d) return 0;
+                              const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+                              return diff < 0 ? 0 : diff;
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            {yardActionsEnabled ? (
+                              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
+                                Receive
+                              </Button>
+                            ) : (
+                              <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -1163,6 +1188,7 @@ export default function DealerYard() {
                                 setHandoverData({
                                   chassis: row.chassis,
                                   model: row.model,
+                                  vinnumber: row.vinnumber ? String(row.vinnumber) : null,
                                   dealerName: dealerDisplayName,
                                   dealerSlug,
                                   handoverAt: new Date().toISOString(),
