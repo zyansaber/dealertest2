@@ -1,10 +1,10 @@
 // src/components/ProductRegistrationForm.tsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { saveHandover } from "@/lib/firebase";
 
 type RegistrationData = {
@@ -29,6 +29,7 @@ declare global {
     jsPDF?: any; // Fallback: window.jsPDF if present
   }
 }
+
 
 async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
   const loadScript = (src: string) =>
@@ -60,15 +61,53 @@ async function ensurePdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
   }
   return { html2canvas, jsPDF };
 }
+const AU_STATES = [
+  { value: "ACT", label: "Australian Capital Territory" },
+  { value: "NSW", label: "New South Wales" },
+  { value: "NT", label: "Northern Territory" },
+  { value: "QLD", label: "Queensland" },
+  { value: "SA", label: "South Australia" },
+  { value: "TAS", label: "Tasmania" },
+  { value: "VIC", label: "Victoria" },
+  { value: "WA", label: "Western Australia" },
+] as const;
+
+const NZ_REGIONS = [
+  { value: "Auckland", label: "Auckland" },
+  { value: "Bay of Plenty", label: "Bay of Plenty" },
+  { value: "Canterbury", label: "Canterbury" },
+  { value: "Gisborne", label: "Gisborne" },
+  { value: "Hawke's Bay", label: "Hawke's Bay" },
+  { value: "Manawatu-Whanganui", label: "Manawatu-Whanganui" },
+  { value: "Marlborough", label: "Marlborough" },
+  { value: "Nelson", label: "Nelson" },
+  { value: "Northland", label: "Northland" },
+  { value: "Otago", label: "Otago" },
+  { value: "Southland", label: "Southland" },
+  { value: "Taranaki", label: "Taranaki" },
+  { value: "Tasman", label: "Tasman" },
+  { value: "Waikato", label: "Waikato" },
+  { value: "Wellington", label: "Wellington" },
+  { value: "West Coast", label: "West Coast" },
+] as const;
+
+type SupportedCountry = "Australia" | "New Zealand";
+
+const stateOptionsByCountry: Record<SupportedCountry, readonly { value: string; label: string }[]> = {
+  Australia: AU_STATES,
+  "New Zealand": NZ_REGIONS,
+};
 
 export default function ProductRegistrationForm({ open, onOpenChange, initial, onCompleted }: Props) {
-  const [step, setStep] = useState<"mode" | "assist" | "email">("mode");
-  const [inviteEmail, setInviteEmail] = useState("");
+  const [country, setCountry] = useState<SupportedCountry>("Australia");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [custEmail, setCustEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
+  const [street, setStreet] = useState("");
+  const [suburb, setSuburb] = useState("");
+  const [stateRegion, setStateRegion] = useState("");
+  const [postcode, setPostcode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
@@ -92,14 +131,20 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     }
   }, [data.handoverAt]);
 
+  useEffect(() => {
+    setStateRegion("");
+  }, [country]);
+
   const resetStates = () => {
-    setStep("mode");
-    setInviteEmail("");
+    setCountry("Australia");
     setFirstName("");
     setLastName("");
     setCustEmail("");
     setPhone("");
-    setAddress("");
+    setStreet("");
+    setSuburb("");
+    setStateRegion("");
+    setPostcode("");
     setSubmitting(false);
     setSubmitMsg(null);
   };
@@ -137,7 +182,10 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
         lastName.trim() &&
         custEmail.trim() &&
         phone.trim() &&
-        address.trim() &&
+        street.trim() &&
+        suburb.trim() &&
+        stateRegion &&
+        postcode.trim() &&
         dealerSlug &&
         data.chassis
     );
@@ -159,7 +207,9 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       const trimmedLastName = lastName.trim();
       const trimmedEmail = custEmail.trim();
       const trimmedPhone = phone.trim();
-      const trimmedAddress = address.trim();
+      const trimmedStreet = street.trim();
+      const trimmedSuburb = suburb.trim();
+      const trimmedPostcode = postcode.trim();
       const handoverData = {
         chassis: data.chassis,
         model: data.model || null,
@@ -171,7 +221,13 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
           lastName: trimmedLastName,
           email: trimmedEmail,
           phone: trimmedPhone,
-          address: trimmedAddress,
+          address: {
+            street: trimmedStreet,
+            suburb: trimmedSuburb,
+            country,
+            state: stateRegion,
+            postcode: trimmedPostcode,
+          },
         },
         createdAt: new Date().toISOString(),
         source: "dealer_assist_form" as const,
@@ -197,235 +253,121 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     }
   };
 
-  const handleSubmitEmail = async () => {
-    const trimmedEmail = inviteEmail.trim();
-    if (!trimmedEmail) {
-      setSubmitMsg("Please enter the customer's email.");
-      return;
-    }
-    setSubmitting(true);
-    setSubmitMsg(null);
-    try {
-      const dealerSlug = (data.dealerSlug || "").trim();
-      if (!dealerSlug) {
-        throw new Error("Dealer slug missing");
-      }
-      const handoverData = {
-        chassis: data.chassis,
-        model: data.model || null,
-        dealerName: data.dealerName || null,
-        dealerSlug,
-        handoverAt: data.handoverAt,
-        createdAt: new Date().toISOString(),
-        source: "customer email" as const,
-        invite: {
-          email: trimmedEmail,
-        },
-      };
-      await saveHandover(dealerSlug, data.chassis, handoverData);
-      try {
-        await onCompleted?.({ chassis: data.chassis, dealerSlug: data.dealerSlug ?? dealerSlug });
-      } catch (err) {
-        console.error("Post-handover completion failed:", err);
-      }
-
-      setSubmitMsg("Email submitted successfully.");
-      setSubmitting(false);
-      resetAndClose();
-    } catch (e) {
-      console.error(e);
-      const message =
-        e instanceof Error && e.message === "Dealer slug missing"
-          ? "Dealer information is missing. Please reopen the handover form."
-          : "Submit failed. Please try again.";
-      setSubmitMsg(message);
-      setSubmitting(false);
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={(v) => (v ? setStep("mode") : resetAndClose())}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          resetStates();
+        }
+        onOpenChange(v);
+      }}
+    >
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-[28px] leading-8 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
-            Professional Handover Form
+            Product Registration Form
           </DialogTitle>
         </DialogHeader>
-
-        {step === "mode" && (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <p className="text-base font-semibold text-slate-900">How would you like to complete the form?</p>
-              {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Card
-                role="button"
-                tabIndex={0}
-                className="cursor-pointer border-slate-200 transition hover:border-sky-400"
-                onClick={() => {
-                  setSubmitMsg(null);
-                  setStep("assist");
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSubmitMsg(null);
-                    setStep("assist");
-                  }
-                }}
-              >
-                <CardHeader>
-                  <CardTitle>Assist the customer now</CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-slate-600">
-                  Fill in the customer's information together and submit directly from this form.
-                </CardContent>
-              </Card>
-              <Card
-                role="button"
-                tabIndex={0}
-                className="cursor-pointer border-slate-200 transition hover:border-sky-400"
-                onClick={() => {
-                  setSubmitMsg(null);
-                  setStep("email");
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSubmitMsg(null);
-                    setStep("email");
-                  }
-                }}
-              >
-                <CardHeader>
-                  <CardTitle>Let the customer finish later</CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-slate-600">
-                  Send the form to the customer's email so they can complete it on their own time.
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {step === "assist" && (
-          <div className="space-y-6">
-            <div ref={printRef} className="rounded-2xl border bg-white/85 p-6 shadow-sm">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Dealer</div>
-                  <div className="text-sm font-semibold text-slate-900">{data.dealerName || "-"}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Handover Date</div>
-                  <div className="text-sm font-semibold text-slate-900">{handoverDateStr}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Chassis</div>
-                  <div className="text-sm font-semibold text-slate-900">{data.chassis}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">Model</div>
-                  <div className="text-sm font-semibold text-slate-900">{data.model || "-"}</div>
-                </div>
+        <div className="space-y-6">
+          <div ref={printRef} className="rounded-2xl border bg-white/85 p-6 shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Dealer</div>
+                <div className="text-sm font-semibold text-slate-900">{data.dealerName || "-"}</div>
               </div>
-
-              <div className="mt-5 pt-5 border-t">
-                <div className="text-base font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
-                  Customer Information
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 mt-2">
-                  <div>
-                    <Label>First Name</Label>
-                    <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label>Last Name</Label>
-                    <Input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label>Email</Label>
-                    <Input type="email" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label>Phone Number</Label>
-                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} required />
-                  </div>
-                  <div className="md:col-span-2">
-                    <Label>Home Address</Label>
-                    <Input value={address} onChange={(e) => setAddress(e.target.value)} required />
-                  </div>
-                </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Handover Date</div>
+                <div className="text-sm font-semibold text-slate-900">{handoverDateStr}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Chassis</div>
+                <div className="text-sm font-semibold text-slate-900">{data.chassis}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Model</div>
+                <div className="text-sm font-semibold text-slate-900">{data.model || "-"}</div>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setSubmitMsg(null);
-                  setStep("mode");
-                }}
-                disabled={submitting}
-              >
-                Back
-              </Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleDownloadPDF}>
-                Download PDF
-              </Button>
-              <Button
-                className="bg-indigo-600 hover:bg-indigo-700"
-                disabled={submitting || !canSubmit()}
-                onClick={handleSubmitAssist}
-              >
-                {submitting ? "Submitting..." : "Submit"}
-              </Button>
-              {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
-            </div>
-          </div>
-        )}
-
-        {step === "email" && (
-          <div className="space-y-6">
-            <Card className="border-slate-200">
-              <CardHeader>
-                <CardTitle>Send to customer</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <div className="mt-5 pt-5 border-t">
+              <div className="text-base font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-blue-700 to-sky-600">
+                Customer Information
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 mt-2">
                 <div>
-                  <Label htmlFor="customer-email">Customer Email</Label>
-                  <Input
-                    id="customer-email"
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    required
-                  />
+                  <Label>First Name</Label>
+                  <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
                 </div>
-                {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
-              </CardContent>
-            </Card>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setSubmitMsg(null);
-                  setStep("mode");
-                }}
-              >
-                Back
-              </Button>
-              <Button
-                className="bg-sky-600 hover:bg-sky-700"
-                disabled={submitting || !inviteEmail.trim()}
-                onClick={handleSubmitEmail}
-              >
-                {submitting ? "Submitting..." : "Send Email"}
-              </Button>
+                <div>
+                  <Label>Last Name</Label>
+                  <Input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} required />
+                </div>
+                <div>
+                  <Label>Phone Number</Label>
+                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} required />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Street Address</Label>
+                  <Input value={street} onChange={(e) => setStreet(e.target.value)} required />
+                </div>
+                <div>
+                  <Label>Suburb</Label>
+                  <Input value={suburb} onChange={(e) => setSuburb(e.target.value)} required />
+                </div>
+                <div>
+                  <Label>Country</Label>
+                  <Select value={country} onValueChange={(value) => setCountry(value as SupportedCountry)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Australia">Australia</SelectItem>
+                      <SelectItem value="New Zealand">New Zealand</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>{country === "Australia" ? "State / Territory" : "Region"}</Label>
+                  <Select value={stateRegion} onValueChange={(value) => setStateRegion(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={`Select ${country === "Australia" ? "state or territory" : "region"}`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {stateOptionsByCountry[country].map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Postcode</Label>
+                  <Input value={postcode} onChange={(e) => setPostcode(e.target.value)} required />
+                </div>
+              </div>
             </div>
           </div>
-        )}
+
+          <div className="flex flex-wrap gap-3">
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleDownloadPDF}>
+              Download PDF
+            </Button>
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700"
+              disabled={submitting || !canSubmit()}
+              onClick={handleSubmitAssist}
+            >
+              {submitting ? "Submitting..." : "Submit"}
+            </Button>
+            {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
