@@ -262,16 +262,28 @@ export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<stri
 export async function receiveChassisToYard(
   dealerSlug: string,
   chassis: string,
-  pgiData: { pgidate?: string | null; dealer?: string | null; model?: string | null; customer?: string | null }
+  pgiData: Record<string, any> | null | undefined
 ) {
   const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   const now = new Date().toISOString();
+  const sanitizedPGIData: Record<string, any> = {};
+  if (pgiData && typeof pgiData === "object") {
+    for (const [key, value] of Object.entries(pgiData)) {
+      sanitizedPGIData[key] = value ?? null;
+    }
+  }
   await set(targetRef, {
+    ...sanitizedPGIData,
     receivedAt: now,
-    from_pgidate: pgiData?.pgidate ?? null,
-    dealer: pgiData?.dealer ?? null,
-    model: pgiData?.model ?? null,
-    customer: pgiData?.customer ?? null,
+    from_pgidate:
+      sanitizedPGIData.pgidate ??
+      sanitizedPGIData.PGIDate ??
+      sanitizedPGIData.pgIDate ??
+      sanitizedPGIData.PgiDate ??
+      null,
+    dealer: sanitizedPGIData.dealer ?? null,
+    model: sanitizedPGIData.model ?? null,
+    customer: sanitizedPGIData.customer ?? null,
   });
 
   const pgiRef = ref(database, `pgirecord/${chassis}`);
@@ -338,6 +350,7 @@ type DealerAssistHandover = {
   dealerName: string | null;
   dealerSlug: string | null;
   handoverAt: string;
+  vinnumber?: string | null;
   customer: {
     firstName: string;
     lastName: string;
@@ -357,6 +370,7 @@ type CustomerEmailHandover = {
   handoverAt: string;
   createdAt: string;
   source: "customer email";
+  vinnumber?: string | null;
   invite: {
     email: string;
   };
