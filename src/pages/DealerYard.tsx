@@ -43,6 +43,14 @@ type PGIRec = {
   vinnumber?: string | null;
   VinNumber?: string | null;
   vinNumber?: string | null;
+  VINNumber?: string | null;
+  chassis?: {
+    vinNumber?: string | null;
+    VinNumber?: string | null;
+    vinnumber?: string | null;
+    VINNumber?: string | null;
+    [key: string]: any;
+  } | null;
   [key: string]: any;
 };
 type YardRec = {
@@ -54,6 +62,14 @@ type YardRec = {
   vinnumber?: string | null;
   VinNumber?: string | null;
   vinNumber?: string | null;
+  VINNumber?: string | null;
+  chassis?: {
+    vinNumber?: string | null;
+    VinNumber?: string | null;
+    vinnumber?: string | null;
+    VINNumber?: string | null;
+    [key: string]: any;
+  } | null;
   [key: string]: any;
 };
 type HandoverRec = {
@@ -148,6 +164,37 @@ const currencyFormatter = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
 });
+
+const extractVin = (source: any): string | null => {
+  if (source == null) return null;
+  if (typeof source !== "object") {
+    const str = String(source).trim();
+    return str ? str : null;
+  }
+
+  const directCandidates = [
+    source.vinNumber,
+    source.VinNumber,
+    source.vinnumber,
+    source.VINNumber,
+    source.vin,
+    source.VIN,
+  ];
+  for (const candidate of directCandidates) {
+    if (candidate != null) {
+      const str = String(candidate).trim();
+      if (str) return str;
+    }
+  }
+
+  const nestedSources = [source.chassis, source.Chassis, source.vehicle, source.Vehicle];
+  for (const nested of nestedSources) {
+    const vin = extractVin(nested);
+    if (vin) return vin;
+  }
+
+  return null;
+};
 
 function parseWholesale(val: unknown): number | null {
   if (val == null) return null;
@@ -487,7 +534,7 @@ export default function DealerYard() {
         );
       const wholesaleDisplay =
         wholesalePoValue == null ? "-" : currencyFormatter.format(wholesalePoValue);
-      const vinRaw = rec?.vinnumber ?? rec?.VinNumber ?? rec?.vinNumber ?? null;
+      const vinRaw = extractVin(rec);
       return {
         chassis,
         vinnumber: vinRaw,
@@ -841,7 +888,7 @@ export default function DealerYard() {
                   </TableHeader>
                   <TableBody>
                     {onTheRoadInRange.map((row) => {
-                      const vin = toStr(row.vinnumber ?? row.VinNumber ?? row.vinNumber);
+                      const vin = extractVin(row);
                       return (
                         <TableRow key={row.chassis}>
                           <TableCell className="font-medium">{row.chassis}</TableCell>
@@ -1157,6 +1204,7 @@ export default function DealerYard() {
                     <TableRow>
                       <TableHead className="font-semibold">Chassis</TableHead>
                       <TableHead className="font-semibold">Received At</TableHead>
+                      <TableHead className="font-semibold">VIN Number</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
                       {showPriceColumn && <TableHead className="font-semibold">AUD Price (excl. GST)</TableHead>}
                       <TableHead className="font-semibold">Customer</TableHead>
@@ -1169,6 +1217,7 @@ export default function DealerYard() {
                     {yardListDisplay.map((row) => (
                       <TableRow key={row.chassis}>
                         <TableCell className="font-medium">{row.chassis}</TableCell>
+                        <TableCell>{row.vinnumber || "-"}</TableCell>
                         <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
                         {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
