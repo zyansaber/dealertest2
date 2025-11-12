@@ -13,6 +13,7 @@ type RegistrationData = {
   dealerName?: string | null;
   dealerSlug?: string | null;
   handoverAt: string; // ISO
+  vinnumber?: string | null;
 };
 
 type Props = {
@@ -119,6 +120,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       dealerName: "",
       dealerSlug: "",
       handoverAt: new Date().toISOString(),
+      vinnumber: "",
     };
   }, [initial]);
 
@@ -216,6 +218,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
         dealerName: data.dealerName || null,
         dealerSlug,
         handoverAt: data.handoverAt,
+        vinnumber: data.vinnumber || null,
         customer: {
           firstName: trimmedFirstName,
           lastName: trimmedLastName,
@@ -283,6 +286,10 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
               <div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">Chassis</div>
                 <div className="text-sm font-semibold text-slate-900">{data.chassis}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">VIN Number</div>
+                <div className="text-sm font-semibold text-slate-900">{data.vinnumber || "-"}</div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">Model</div>
