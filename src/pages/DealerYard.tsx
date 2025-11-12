@@ -638,6 +638,7 @@ export default function DealerYard() {
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const showPriceColumn = PRICE_ENABLED_DEALERS.has(dealerSlug);
+  const yardActionsEnabled = !PRICE_ENABLED_DEALERS.has(dealerSlug);
 
   const handleReceive = async (chassis: string, rec: PGIRec) => {
     try {
@@ -833,9 +834,13 @@ export default function DealerYard() {
                           })()}
                         </TableCell>
                         <TableCell>
-                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
-                            Receive
-                          </Button>
+                          {yardActionsEnabled ? (
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
+                              Receive
+                            </Button>
+                          ) : (
+                            <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1150,22 +1155,26 @@ export default function DealerYard() {
                         </TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            className="bg-purple-600 hover:bg-purple-700"
-                            onClick={() => {
-                                                            setHandoverData({
-                                chassis: row.chassis,
-                                model: row.model,
-                                dealerName: dealerDisplayName,
-                                dealerSlug,
-                                handoverAt: new Date().toISOString(),
-                              });
-                              setHandoverOpen(true);
-                            }}
-                          >
-                            Handover
-                          </Button>
+                          {yardActionsEnabled ? (
+                            <Button
+                              size="sm"
+                              className="bg-purple-600 hover:bg-purple-700"
+                              onClick={() => {
+                                setHandoverData({
+                                  chassis: row.chassis,
+                                  model: row.model,
+                                  dealerName: dealerDisplayName,
+                                  dealerSlug,
+                                  handoverAt: new Date().toISOString(),
+                                });
+                                setHandoverOpen(true);
+                              }}
+                            >
+                              Handover
+                            </Button>
+                          ) : (
+                            <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
