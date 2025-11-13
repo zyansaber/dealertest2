@@ -17,6 +17,7 @@ import PasswordLogin from "./pages/PasswordLogin";
 import ProtectedMainRoute from "./components/ProtectedMainRoute";
 import ProtectedDealerRoute from "./components/ProtectedDealerRoute";
 import ProtectedDealerGroupRoute from "./components/ProtectedDealerGroupRoute";
+import FinanceReport from "./pages/FinanceReport";
 
 // Dealer Group pages
 import DealerGroupPortal from "./pages/DealerGroupPortal";
@@ -78,6 +79,12 @@ const App = () => (
             </ProtectedDealerRoute>
           } />
 
+          <Route path="/dealer/:dealerSlug/finance-report" element={
+            <ProtectedDealerRoute>
+              <FinanceReport />
+            </ProtectedDealerRoute>
+          } />
+          
           {/* Dealer Group 路由 - 使用 /dealergroup/ 前缀 */}
           {/* 不带选中dealer的路由（会自动重定向到第一个dealer） */}
           <Route path="/dealergroup/:dealerSlug/dashboard" element={
