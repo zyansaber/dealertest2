@@ -9,6 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
 import { subscribeToYardNewVanInvoices } from "@/lib/firebase";
 import type { YardNewVanInvoice } from "@/types";
 import {
@@ -17,7 +23,8 @@ import {
   prettifyDealerName,
 } from "@/lib/dealerUtils";
 import { AlertTriangle } from "lucide-react";
-import { format, isValid, parse, parseISO, startOfMonth, subMonths } from "date-fns";
+import { format, isValid, parse, parseISO, startOfMonth, startOfYear, subMonths } from "date-fns";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -48,6 +55,18 @@ const parseInvoiceDate = (value?: string): Date | null => {
 const formatPercent = (value: number) => {
   if (!Number.isFinite(value)) return "-";
   return `${(value * 100).toFixed(1)}%`;
+};
+
+type QuickRangePreset = "LAST_3_MONTHS" | "THIS_MONTH" | "THIS_YEAR";
+type MonthlyTrendDatum = {
+  key: string;
+  label: string;
+  revenue: number;
+  units: number;
+  avgDiscountRate: number;
+  revenueIndex: number;
+  unitsIndex: number;
+  discountIndex: number;
 };
 
 const FinanceReport = () => {
@@ -286,8 +305,48 @@ const FinanceReport = () => {
     }));
   };
 
-  const handleResetFilters = () => setDateRange(defaultDateRange());
+  const handleQuickRange = (preset: QuickRangePreset) => {
+    const today = new Date();
 
+    if (preset === "THIS_MONTH") {
+      setDateRange({
+        start: format(startOfMonth(today), "yyyy-MM-dd"),
+        end: format(today, "yyyy-MM-dd"),
+      });
+      return;
+    }
+
+    if (preset === "THIS_YEAR") {
+      setDateRange({
+        start: format(startOfYear(today), "yyyy-MM-dd"),
+        end: format(today, "yyyy-MM-dd"),
+      });
+      return;
+    }
+
+    setDateRange(defaultDateRange());
+  };
+
+  const monthlyTrendData = useMemo<MonthlyTrendDatum[]>(() => {
+    if (!monthlySummary.length) return [];
+
+    const chronological = [...monthlySummary].reverse();
+    const revenueMax = chronological.reduce((max, month) => Math.max(max, month.revenue), 0) || 1;
+    const unitsMax = chronological.reduce((max, month) => Math.max(max, month.count), 0) || 1;
+    const discountMax = chronological.reduce((max, month) => Math.max(max, month.avgDiscountRate), 0) || 0.01;
+
+    return chronological.map((month) => ({
+      key: month.key,
+      label: month.label,
+      revenue: month.revenue,
+      units: month.count,
+      avgDiscountRate: month.avgDiscountRate,
+      revenueIndex: (month.revenue / revenueMax) * 100,
+      unitsIndex: (month.count / unitsMax) * 100,
+      discountIndex: (month.avgDiscountRate / discountMax) * 100,
+    }));
+  }, [monthlySummary]);
+  
   const content = (
     <div className="space-y-6">
       <Card>
@@ -314,12 +373,100 @@ const FinanceReport = () => {
                 onChange={(event) => handleDateChange("end", event.target.value)}
               />
             </div>
-            <div className="flex items-end">
-              <Button variant="outline" onClick={handleResetFilters} className="w-full">
-                Reset to Last 3 Months
-              </Button>
+            <div className="space-y-2">
+              <Label>Quick Ranges</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
+                  Last 3 Months
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_MONTH")}>
+                  This Month
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_YEAR")}>
+                  This Year
+                </Button>
+              </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance Trend</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Indexed comparison of revenue, discount rate, and invoice units over time
+          </p>
+        </CardHeader>
+        <CardContent>
+          {monthlyTrendData.length === 0 ? (
+            <p className="text-muted-foreground">Need invoices across multiple months to show a trend.</p>
+          ) : (
+            <ChartContainer
+              config={{
+                revenueIndex: { label: "Revenue", color: "hsl(var(--chart-1))" },
+                discountIndex: { label: "Avg Discount %", color: "hsl(var(--chart-2))" },
+                unitsIndex: { label: "Invoice Units", color: "hsl(var(--chart-3))" },
+              }}
+              className="h-[360px]"
+            >
+              <LineChart data={monthlyTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
+                <YAxis domain={[0, 100]} tickFormatter={(value) => `${Math.round(value)}%`} tickLine={false} axisLine={false} />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      formatter={(_, name, __, ___, payload) => {
+                        if (!payload) return null;
+                        const trendPoint = payload as MonthlyTrendDatum;
+
+                        if (name === "revenueIndex") {
+                          return (
+                            <div className="flex flex-1 justify-between">
+                              <span>Revenue</span>
+                              <span className="font-medium">{currency.format(trendPoint.revenue)}</span>
+                            </div>
+                          );
+                        }
+
+                        if (name === "unitsIndex") {
+                          return (
+                            <div className="flex flex-1 justify-between">
+                              <span>Invoice Units</span>
+                              <span className="font-medium">{trendPoint.units}</span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="flex flex-1 justify-between">
+                            <span>Avg Discount %</span>
+                            <span className="font-medium">{formatPercent(trendPoint.avgDiscountRate)}</span>
+                          </div>
+                        );
+                      }}
+                    />
+                  }
+                />
+                <ChartLegend />
+                <Line type="monotone" dataKey="revenueIndex" stroke="var(--color-revenueIndex)" strokeWidth={2} dot={false} />
+                <Line
+                  type="monotone"
+                  dataKey="discountIndex"
+                  stroke="var(--color-discountIndex)"
+                  strokeDasharray="4 4"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line type="monotone" dataKey="unitsIndex" stroke="var(--color-unitsIndex)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ChartContainer>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Each line is scaled to its own peak month (100) so the month-to-month direction and interactions remain easy to
+            compare despite different units.
+          </p>
         </CardContent>
       </Card>
 
@@ -348,6 +495,7 @@ const FinanceReport = () => {
             <p className="text-sm text-slate-500 mt-1">
               Incl. surcharges and adjustments
             </p>
+
           </CardContent>
         </Card>
         <Card>
@@ -599,46 +747,6 @@ const FinanceReport = () => {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Key Deals</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Spotlight on the largest invoice and strongest margin performer
-          </p>
-        </CardHeader>
-        <CardContent className="grid gap-6 md:grid-cols-2">
-          <div className="space-y-2">
-            <h4 className="text-sm font-semibold uppercase text-slate-500">Largest invoice</h4>
-            {analytics.highestSale ? (
-              <div>
-                <p className="text-lg font-semibold">{currency.format(analytics.highestSale.finalSalePrice)}</p>
-                <p className="text-sm text-muted-foreground">{analytics.highestSale.customer || "Unnamed customer"}</p>
-                <p className="text-sm text-muted-foreground">{analytics.highestSale.model || analytics.highestSale.chassisNumber}</p>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No invoices available.</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <h4 className="text-sm font-semibold uppercase text-slate-500">Best margin %</h4>
-            {analytics.strongestMarginInvoice ? (
-              <div>
-                <p className="text-lg font-semibold">
-                  {formatPercent(analytics.strongestMarginRate)} margin on {analytics.strongestMarginInvoice.model || analytics.strongestMarginInvoice.chassisNumber}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Sale {currency.format(analytics.strongestMarginInvoice.finalSalePrice)} | Cost {currency.format(
-                    analytics.strongestMarginInvoice.purchasePrice
-                  )}
-                </p>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No invoices available.</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
