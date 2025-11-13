@@ -10,7 +10,7 @@ import {
   remove,
   DataSnapshot,
 } from "firebase/database";
-import type { ScheduleItem, SpecPlan, DateTrack } from "@/types";
+import type { ScheduleItem, SpecPlan, DateTrack, YardNewVanInvoice } from "@/types";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBcczqGj5X1_w9aCX1lOK4-kgz49Oi03Bg",
@@ -210,6 +210,56 @@ export const sortOrders = (orders: ScheduleItem[]): ScheduleItem[] => {
     return safeString(a.Rank2).localeCompare(safeString(b.Rank2));
   });
 };
+
+/** -------------------- yard new van invoice -------------------- */
+const toNumber = (value: any) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
+export const subscribeToYardNewVanInvoices = (
+  dealerSlug: string,
+  callback: (data: YardNewVanInvoice[]) => void
+) => {
+  if (!dealerSlug) {
+    callback([]);
+    return () => {};
+  }
+
+  const invoicesRef = ref(database, `yardnewvaninvoice/${dealerSlug}`);
+
+  const handler = (snapshot: DataSnapshot) => {
+    const value = snapshot.val();
+    if (!value) {
+      callback([]);
+      return;
+    }
+
+    const invoices: YardNewVanInvoice[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const source = payload?._source ?? payload ?? {};
+
+      return {
+        id: key,
+        chassisNumber: source.chassis ?? source.Chassis ?? source.chassisNumber ?? "",
+        invoiceDate: source.invoiceDate ?? source.InvoiceDate ?? "",
+        purchasePrice: toNumber(source.poFinalInvoiceValue ?? source.POFinalInvoiceValue),
+        finalSalePrice: toNumber(source.grSONetValue ?? source.GRSONetValue),
+        discountAmount: toNumber(source.totalSurchargeSO ?? source.TotalSurchargeSO),
+        customer: source.customer ?? source.billToParty ?? "",
+        model: source.model ?? "",
+        grSONumber: source.grSONumber ?? "",
+        locationName: source.locationName ?? dealerSlug,
+        raw: source,
+      };
+    });
+
+    callback(invoices);
+  };
+
+  onValue(invoicesRef, handler);
+  return () => off(invoicesRef, "value", handler);
+};
+
 
 export const formatDateDDMMYYYY = (dateStr: string | null): string => {
   if (!dateStr || dateStr.trim() === "") return "Not set";
