@@ -272,7 +272,11 @@ export const subscribeToYardNewVanInvoices = (
     }
 
     const invoices: YardNewVanInvoice[] = Object.entries(value).map(([key, payload]: [string, any]) => {
-      const source = payload?._source ?? payload ?? {};
+      const rawSource = payload?._source;
+      const source =
+        rawSource && typeof rawSource === "object" && !Array.isArray(rawSource)
+          ? rawSource
+          : payload ?? {};
 
       return {
         id: key,
