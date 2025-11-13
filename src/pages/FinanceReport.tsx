@@ -337,7 +337,6 @@ const FinanceReport = () => {
   };
 
   const monthlyTrendData = useMemo<MonthlyTrendDatum[]>(() => {
-  const monthlyTrendData = useMemo<MonthlyTrendDatum[]>(() => {
     const months = Array.from({ length: 12 }).map((_, index) => {
       const monthDate = subMonths(startOfMonth(new Date()), 11 - index);
       return {
