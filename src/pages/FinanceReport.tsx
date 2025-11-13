@@ -24,7 +24,20 @@ import {
 } from "@/lib/dealerUtils";
 import { AlertTriangle } from "lucide-react";
 import { format, isValid, parse, parseISO, startOfMonth, startOfYear, subMonths } from "date-fns";
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+
+const currency = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+  maximumFractionDigits: 0,
+});
+
+const compactCurrency = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -52,6 +65,12 @@ const parseInvoiceDate = (value?: string): Date | null => {
   return isValid(nativeCandidate) ? nativeCandidate : null;
 };
 
+const formatCompactMoney = (value: number) => {
+  if (!Number.isFinite(value)) return "$0";
+  return compactCurrency.format(value);
+};
+
+
 const formatPercent = (value: number) => {
   if (!Number.isFinite(value)) return "-";
   return `${(value * 100).toFixed(1)}%`;
@@ -64,9 +83,6 @@ type MonthlyTrendDatum = {
   revenue: number;
   units: number;
   avgDiscountRate: number;
-  revenueIndex: number;
-  unitsIndex: number;
-  discountIndex: number;
 };
 
 const FinanceReport = () => {
@@ -331,9 +347,6 @@ const FinanceReport = () => {
     if (!monthlySummary.length) return [];
 
     const chronological = [...monthlySummary].reverse();
-    const revenueMax = chronological.reduce((max, month) => Math.max(max, month.revenue), 0) || 1;
-    const unitsMax = chronological.reduce((max, month) => Math.max(max, month.count), 0) || 1;
-    const discountMax = chronological.reduce((max, month) => Math.max(max, month.avgDiscountRate), 0) || 0.01;
 
     return chronological.map((month) => ({
       key: month.key,
@@ -341,9 +354,6 @@ const FinanceReport = () => {
       revenue: month.revenue,
       units: month.count,
       avgDiscountRate: month.avgDiscountRate,
-      revenueIndex: (month.revenue / revenueMax) * 100,
-      unitsIndex: (month.count / unitsMax) * 100,
-      discountIndex: (month.avgDiscountRate / discountMax) * 100,
     }));
   }, [monthlySummary]);
   
@@ -361,15 +371,6 @@ const FinanceReport = () => {
                 id="start-date"
                 type="date"
                 value={dateRange.start}
-                onChange={(event) => handleDateChange("start", event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="end-date">End Date</Label>
-              <Input
-                id="end-date"
-                type="date"
-                value={dateRange.end}
                 onChange={(event) => handleDateChange("end", event.target.value)}
               />
             </div>
@@ -395,7 +396,7 @@ const FinanceReport = () => {
         <CardHeader>
           <CardTitle>Performance Trend</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Indexed comparison of revenue, discount rate, and invoice units over time
+            Track actual revenue, unit volume, and discount rate across months
           </p>
         </CardHeader>
         <CardContent>
@@ -404,37 +405,56 @@ const FinanceReport = () => {
           ) : (
             <ChartContainer
               config={{
-                revenueIndex: { label: "Revenue", color: "hsl(var(--chart-1))" },
-                discountIndex: { label: "Avg Discount %", color: "hsl(var(--chart-2))" },
-                unitsIndex: { label: "Invoice Units", color: "hsl(var(--chart-3))" },
+                revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
+                avgDiscountRate: { label: "Avg Discount %", color: "hsl(var(--chart-2))" },
+                units: { label: "Invoice Units", color: "hsl(var(--chart-3))" },
               }}
               className="h-[360px]"
             >
-              <LineChart data={monthlyTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+              <ComposedChart data={monthlyTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
-                <YAxis domain={[0, 100]} tickFormatter={(value) => `${Math.round(value)}%`} tickLine={false} axisLine={false} />
+                <YAxis
+                  yAxisId="revenue"
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => formatCompactMoney(value as number)}
+                />
+                <YAxis
+                  yAxisId="discount"
+                  orientation="right"
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => `${Math.round((value as number) * 100)}%`}
+                />
+                <YAxis yAxisId="units" hide domain={[0, "auto"]} />
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
-                      formatter={(_, name, __, ___, payload) => {
-                        if (!payload) return null;
-                        const trendPoint = payload as MonthlyTrendDatum;
+                      indicator="line"
+                      formatter={(value, name, item, __, payload) => {
+                        if (!payload || typeof value !== "number") return null;
 
-                        if (name === "revenueIndex") {
+                        if (item?.dataKey === "revenue") {
                           return (
                             <div className="flex flex-1 justify-between">
                               <span>Revenue</span>
-                              <span className="font-medium">{currency.format(trendPoint.revenue)}</span>
+                              <span className="font-medium">{currency.format(value)}</span>
                             </div>
                           );
                         }
 
-                        if (name === "unitsIndex") {
+                        if (item?.dataKey === "units") {
                           return (
                             <div className="flex flex-1 justify-between">
                               <span>Invoice Units</span>
-                              <span className="font-medium">{trendPoint.units}</span>
+                              <span className="font-medium">{value}</span>
                             </div>
                           );
                         }
@@ -442,7 +462,7 @@ const FinanceReport = () => {
                         return (
                           <div className="flex flex-1 justify-between">
                             <span>Avg Discount %</span>
-                            <span className="font-medium">{formatPercent(trendPoint.avgDiscountRate)}</span>
+                            <span className="font-medium">{formatPercent(value)}</span>
                           </div>
                         );
                       }}
@@ -450,22 +470,31 @@ const FinanceReport = () => {
                   }
                 />
                 <ChartLegend />
-                <Line type="monotone" dataKey="revenueIndex" stroke="var(--color-revenueIndex)" strokeWidth={2} dot={false} />
+                <Bar dataKey="units" yAxisId="units" fill="var(--color-units)" radius={[4, 4, 0, 0]} barSize={22} />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  yAxisId="revenue"
+                  stroke="var(--color-revenue)"
+                  strokeWidth={2}
+                  fill="url(#revenueGradient)"
+                  activeDot={{ r: 4 }}
+                />
                 <Line
                   type="monotone"
-                  dataKey="discountIndex"
-                  stroke="var(--color-discountIndex)"
-                  strokeDasharray="4 4"
+                  dataKey="avgDiscountRate"
+                  yAxisId="discount"
+                  stroke="var(--color-avgDiscountRate)"
                   strokeWidth={2}
                   dot={false}
+                  strokeDasharray="6 4"
                 />
-                <Line type="monotone" dataKey="unitsIndex" stroke="var(--color-unitsIndex)" strokeWidth={2} dot={false} />
-              </LineChart>
+              </ComposedChart>
             </ChartContainer>
           )}
           <p className="text-xs text-muted-foreground mt-3">
-            Each line is scaled to its own peak month (100) so the month-to-month direction and interactions remain easy to
-            compare despite different units.
+            Revenue (area), invoice units (bars), and discount rate (line) now use their true values so you can compare scale
+            and direction at a glance.
           </p>
         </CardContent>
       </Card>
