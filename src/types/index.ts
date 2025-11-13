@@ -77,5 +77,20 @@ export interface SubscriptionData {
   subscribedAt: string;
 }
 
+export interface YardNewVanInvoice {
+  id: string;
+  chassisNumber: string;
+  invoiceDate: string;
+  purchasePrice: number;
+  finalSalePrice: number;
+  discountAmount: number;
+  customer?: string;
+  model?: string;
+  grSONumber?: string;
+  locationName?: string;
+  raw?: Record<string, any>;
+}
+
+
 // Export dealer types
 export * from './dealer';
