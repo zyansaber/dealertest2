@@ -337,18 +337,44 @@ const FinanceReport = () => {
   };
 
   const monthlyTrendData = useMemo<MonthlyTrendDatum[]>(() => {
-    if (!monthlySummary.length) return [];
+  const monthlyTrendData = useMemo<MonthlyTrendDatum[]>(() => {
+    const months = Array.from({ length: 12 }).map((_, index) => {
+      const monthDate = subMonths(startOfMonth(new Date()), 11 - index);
+      return {
+        key: format(monthDate, "yyyy-MM"),
+        label: format(monthDate, "MMM yyyy"),
+      };
+    });
 
-    const chronological = [...monthlySummary].reverse();
+    const monthBuckets = new Map(
+      months.map((month) => [month.key, { revenue: 0, discount: 0, units: 0 }])
+    );
 
-    return chronological.map((month) => ({
-      key: month.key,
-      label: month.label,
-      revenue: month.revenue,
-      units: month.count,
-      avgDiscountRate: month.avgDiscountRate,
-    }));
-  }, [monthlySummary]);
+    invoices.forEach((invoice) => {
+      const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
+      if (!invoiceDate) return;
+      const key = format(invoiceDate, "yyyy-MM");
+      const bucket = monthBuckets.get(key);
+      if (!bucket) return;
+
+      bucket.revenue += invoice.finalSalePrice;
+      bucket.discount += invoice.discountAmount;
+      bucket.units += 1;
+    });
+
+    return months.map((month) => {
+      const bucket = monthBuckets.get(month.key)!;
+      return {
+        key: month.key,
+        label: month.label,
+        revenue: bucket.revenue,
+        units: bucket.units,
+        avgDiscountRate: bucket.revenue ? bucket.discount / bucket.revenue : 0,
+      };
+    });
+  }, [invoices]);
+
+  const hasTrendData = useMemo(() => monthlyTrendData.some((month) => month.units > 0), [monthlyTrendData]);
   
   const content = (
     <div className="space-y-6">
@@ -372,6 +398,7 @@ const FinanceReport = () => {
               <Input
                 id="end-date"
                 type="date"
+                value={dateRange.end}
                 onChange={(event) => handleDateChange("end", event.target.value)}
               />
             </div>
@@ -401,18 +428,19 @@ const FinanceReport = () => {
           </p>
         </CardHeader>
         <CardContent>
-          {monthlyTrendData.length === 0 ? (
+          {!hasTrendData ? (
             <p className="text-muted-foreground">Need invoices across multiple months to show a trend.</p>
           ) : (
-            <ChartContainer
-              config={{
-                revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
-                avgDiscountRate: { label: "Avg Discount %", color: "hsl(var(--chart-2))" },
-                units: { label: "Invoice Units", color: "hsl(var(--chart-3))" },
-              }}
-              className="h-[360px]"
-            >
-              <ComposedChart data={monthlyTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+            <div className="w-full overflow-x-auto">
+              <ChartContainer
+                config={{
+                  revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
+                  avgDiscountRate: { label: "Avg Discount %", color: "hsl(var(--chart-2))" },
+                  units: { label: "Invoice Units", color: "hsl(var(--chart-3))" },
+                }}
+                className="h-[360px] min-w-[960px]"
+              >
+                <ComposedChart data={monthlyTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
                 <defs>
                   <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
@@ -491,7 +519,8 @@ const FinanceReport = () => {
                   strokeDasharray="6 4"
                 />
               </ComposedChart>
-            </ChartContainer>
+              </ChartContainer>
+            </div>
           )}
           <p className="text-xs text-muted-foreground mt-3">
             Revenue (area), invoice units (bars), and discount rate (line) now use their true values so you can compare scale
