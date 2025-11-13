@@ -39,12 +39,6 @@ const compactCurrency = new Intl.NumberFormat("en-AU", {
   maximumFractionDigits: 1,
 });
 
-const currency = new Intl.NumberFormat("en-AU", {
-  style: "currency",
-  currency: "AUD",
-  maximumFractionDigits: 0,
-});
-
 const defaultDateRange = () => {
   const today = new Date();
   return {
@@ -65,15 +59,14 @@ const parseInvoiceDate = (value?: string): Date | null => {
   return isValid(nativeCandidate) ? nativeCandidate : null;
 };
 
-const formatCompactMoney = (value: number) => {
-  if (!Number.isFinite(value)) return "$0";
-  return compactCurrency.format(value);
-};
-
-
 const formatPercent = (value: number) => {
   if (!Number.isFinite(value)) return "-";
   return `${(value * 100).toFixed(1)}%`;
+};
+
+const formatCompactMoney = (value: number) => {
+  if (!Number.isFinite(value)) return "$0";
+  return compactCurrency.format(value);
 };
 
 type QuickRangePreset = "LAST_3_MONTHS" | "THIS_MONTH" | "THIS_YEAR";
@@ -371,6 +364,14 @@ const FinanceReport = () => {
                 id="start-date"
                 type="date"
                 value={dateRange.start}
+                onChange={(event) => handleDateChange("start", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date">End Date</Label>
+              <Input
+                id="end-date"
+                type="date"
                 onChange={(event) => handleDateChange("end", event.target.value)}
               />
             </div>
