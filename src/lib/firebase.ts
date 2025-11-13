@@ -217,6 +217,42 @@ const toNumber = (value: any) => {
   return Number.isFinite(num) ? num : 0;
 };
 
+const normalizeDateInput = (value: any): string => {
+  if (value == null || value === "") return "";
+  if (typeof value === "number") {
+    const millis = value < 1e12 ? value * 1000 : value;
+    return new Date(millis).toISOString();
+  }
+  if (typeof value === "object") {
+    if (value.seconds) {
+      return new Date(value.seconds * 1000).toISOString();
+    }
+    if (value._seconds) {
+      return new Date(value._seconds * 1000).toISOString();
+    }
+  }
+  return String(value);
+};
+
+const pickInvoiceDate = (source: Record<string, any>): string => {
+  const candidates = [
+    source.invoiceDate,
+    source.InvoiceDate,
+    source.invoice_date,
+    source.handoverAt,
+    source.HandoverAt,
+    source.grDate,
+    source.GRDate,
+    source.pgiDateGRSO,
+    source.PGIDateGRSO,
+    source.createdAt,
+    source.CreatedAt,
+  ];
+
+  const chosen = candidates.find((value) => value != null && value !== "");
+  return normalizeDateInput(chosen);
+};
+
 export const subscribeToYardNewVanInvoices = (
   dealerSlug: string,
   callback: (data: YardNewVanInvoice[]) => void
@@ -241,10 +277,15 @@ export const subscribeToYardNewVanInvoices = (
       return {
         id: key,
         chassisNumber: source.chassis ?? source.Chassis ?? source.chassisNumber ?? "",
-        invoiceDate: source.invoiceDate ?? source.InvoiceDate ?? "",
+        invoiceDate: pickInvoiceDate(source),
         purchasePrice: toNumber(source.poFinalInvoiceValue ?? source.POFinalInvoiceValue),
         finalSalePrice: toNumber(source.grSONetValue ?? source.GRSONetValue),
-        discountAmount: toNumber(source.totalSurchargeSO ?? source.TotalSurchargeSO),
+        discountAmount: toNumber(
+          source.totalSurchargeSO ??
+            source.TotalSurchargeSO ??
+            source.zg00Amount ??
+            source.ZG00Amount
+        ),
         customer: source.customer ?? source.billToParty ?? "",
         model: source.model ?? "",
         grSONumber: source.grSONumber ?? "",
@@ -259,7 +300,6 @@ export const subscribeToYardNewVanInvoices = (
   onValue(invoicesRef, handler);
   return () => off(invoicesRef, "value", handler);
 };
-
 
 export const formatDateDDMMYYYY = (dateStr: string | null): string => {
   if (!dateStr || dateStr.trim() === "") return "Not set";
