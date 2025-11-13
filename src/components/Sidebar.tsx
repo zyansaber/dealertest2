@@ -1,10 +1,11 @@
 import { useMemo } from "react";
-import { Package, BarChart3, Factory, FileX, LayoutDashboard, Truck } from "lucide-react";
+import { Package, BarChart3, Factory, FileX, LayoutDashboard, Truck, DollarSign } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import type { ScheduleItem } from "@/types";
+import { isFinanceReportEnabled, normalizeDealerSlug } from "@/lib/dealerUtils";
 
 interface SidebarProps {
   orders: ScheduleItem[];
@@ -59,9 +60,12 @@ export default function Sidebar({
     return selectedDealer || "Dealer Portal";
   }, [selectedDealer, hideOtherDealers, currentDealerName]);
 
+  const normalizedDealerSlug = normalizeDealerSlug(dealerSlug);
+
   // 获取当前页面类型（dashboard, dealerorders, inventorystock, unsigned, yard）
   const getCurrentPage = () => {
     const path = location.pathname;
+    if (path.includes('/finance-report')) return 'finance-report';
     if (path.includes('/inventorystock')) return 'inventorystock';
     if (path.includes('/unsigned')) return 'unsigned';
     if (path.includes('/dealerorders')) return 'dealerorders';
@@ -101,6 +105,16 @@ export default function Sidebar({
     { path: `${basePath}/unsigned`, label: "Unsigned & Empty Slots", icon: FileX, end: true },
   ];
 
+  if (!isGroup && isFinanceReportEnabled(normalizedDealerSlug)) {
+    navigationItems.push({
+      path: `${basePath}/finance-report`,
+      label: "Finance Report",
+      icon: DollarSign,
+      end: true,
+    });
+  }
+
+  
   return (
     <aside className="w-80 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
       {/* Header */}
