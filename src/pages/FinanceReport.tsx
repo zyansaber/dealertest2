@@ -368,7 +368,7 @@ const FinanceReport = () => {
         label: month.label,
         revenue: bucket.revenue,
         units: bucket.units,
-        avgDiscountRate: bucket.revenue ? bucket.discount / bucket.revenue : 0,
+        avgDiscountRate: bucket.revenue ? -(bucket.discount / bucket.revenue) : 0,
       };
     });
   }, [invoices]);
@@ -434,7 +434,7 @@ const FinanceReport = () => {
               <ChartContainer
                 config={{
                   revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
-                  avgDiscountRate: { label: "Avg Discount %", color: "hsl(var(--chart-2))" },
+                  avgDiscountRate: { label: "Avg Discount %", color: "#ef4444" },
                   units: { label: "Invoice Units", color: "hsl(var(--chart-3))" },
                 }}
                 className="h-[360px] min-w-[960px]"
@@ -459,7 +459,8 @@ const FinanceReport = () => {
                   orientation="right"
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(value) => `${Math.round((value as number) * 100)}%`}
+                  domain={[(dataMin: number) => Math.min(dataMin, -0.01), 0]}
+                  tickFormatter={(value) => formatPercent(value as number)}
                 />
                 <YAxis yAxisId="units" hide domain={[0, "auto"]} />
                 <ChartTooltip
@@ -514,8 +515,8 @@ const FinanceReport = () => {
                   yAxisId="discount"
                   stroke="var(--color-avgDiscountRate)"
                   strokeWidth={2}
-                  dot={false}
-                  strokeDasharray="6 4"
+                  dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
+                  activeDot={{ r: 5, strokeWidth: 2 }}
                 />
               </ComposedChart>
               </ChartContainer>
