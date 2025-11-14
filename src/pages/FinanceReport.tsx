@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   ChartContainer,
   ChartLegend,
+  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
@@ -498,7 +499,15 @@ const FinanceReport = () => {
                     />
                   }
                 />
-                <ChartLegend />
+                <ChartLegend
+                  verticalAlign="top"
+                  align="left"
+                  content={
+                    <ChartLegendContent
+                      className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5"
+                    />
+                  }
+                />
                 <Bar dataKey="units" yAxisId="units" fill="var(--color-units)" radius={[4, 4, 0, 0]} barSize={22} />
                 <Area
                   type="monotone"
