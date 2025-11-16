@@ -10,7 +10,7 @@ import {
   remove,
   DataSnapshot,
 } from "firebase/database";
-import type { ScheduleItem, SpecPlan, DateTrack, YardNewVanInvoice } from "@/types";
+import type { SecondHandSale, ScheduleItem, SpecPlan, DateTrack, YardNewVanInvoice } from "@/types";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBcczqGj5X1_w9aCX1lOK4-kgz49Oi03Bg",
@@ -303,6 +303,50 @@ export const subscribeToYardNewVanInvoices = (
 
   onValue(invoicesRef, handler);
   return () => off(invoicesRef, "value", handler);
+};
+
+export const subscribeToSecondHandSales = (
+  warehouseSlug: string,
+  callback: (data: SecondHandSale[]) => void
+) => {
+  if (!warehouseSlug) {
+    callback([]);
+    return () => {};
+  }
+
+  const salesRef = ref(database, `secondhandsale/${warehouseSlug}`);
+
+  const handler = (snapshot: DataSnapshot) => {
+    const value = snapshot.val();
+    if (!value) {
+      callback([]);
+      return;
+    }
+
+    const sales: SecondHandSale[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const source = payload ?? {};
+
+      return {
+        id: key,
+        chassis: source.chassis ?? "",
+        finalInvoicePrice: toNumber(source.final_so_invoice_price),
+        invoiceDate: normalizeDateInput(source.invoice_date),
+        item: source.item ?? "",
+        material: source.material ?? "",
+        pgiDate: normalizeDateInput(source.pgi_date),
+        poLineNetValue: toNumber(source.po_line_net_value),
+        so: source.so ?? "",
+        updatedAt: normalizeDateInput(source.updated_at),
+        warehouse: source.warehouse ?? "",
+        warehouseSlug: source.warehouse_slug ?? warehouseSlug,
+      };
+    });
+
+    callback(sales);
+  };
+
+  onValue(salesRef, handler);
+  return () => off(salesRef, "value", handler);
 };
 
 export const formatDateDDMMYYYY = (dateStr: string | null): string => {
