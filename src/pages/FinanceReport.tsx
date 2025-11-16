@@ -16,8 +16,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { subscribeToYardNewVanInvoices } from "@/lib/firebase";
-import type { YardNewVanInvoice } from "@/types";
+import { subscribeToSecondHandSales, subscribeToYardNewVanInvoices } from "@/lib/firebase";
+import type { SecondHandSale, YardNewVanInvoice } from "@/types";
 import {
   isFinanceReportEnabled,
   normalizeDealerSlug,
@@ -79,6 +79,14 @@ type MonthlyTrendDatum = {
   avgDiscountRate: number;
 };
 
+type SecondHandTrendDatum = {
+  key: string;
+  label: string;
+  revenue: number;
+  poCount: number;
+  pgiCount: number;
+};
+
 const FinanceReport = () => {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
@@ -86,8 +94,10 @@ const FinanceReport = () => {
   const financeEnabled = isFinanceReportEnabled(dealerSlug);
 
   const [invoices, setInvoices] = useState<YardNewVanInvoice[]>([]);
+  const [secondHandSales, setSecondHandSales] = useState<SecondHandSale[]>([]);
   const [dateRange, setDateRange] = useState(defaultDateRange);
   const [loading, setLoading] = useState(true);
+  const [secondHandLoading, setSecondHandLoading] = useState(true);
 
   useEffect(() => {
     if (!dealerSlug || !financeEnabled) {
@@ -104,6 +114,22 @@ const FinanceReport = () => {
 
     return unsub;
   }, [dealerSlug, financeEnabled]);
+
+  useEffect(() => {
+    if (!dealerSlug) {
+      setSecondHandSales([]);
+      setSecondHandLoading(false);
+      return;
+    }
+
+    setSecondHandLoading(true);
+    const unsub = subscribeToSecondHandSales(dealerSlug, (data) => {
+      setSecondHandSales(data);
+      setSecondHandLoading(false);
+    });
+
+    return unsub;
+  }, [dealerSlug]);
 
   const filteredInvoices = useMemo(() => {
     const startDate = dateRange.start ? new Date(dateRange.start) : null;
@@ -128,6 +154,29 @@ const FinanceReport = () => {
       });
   }, [invoices, dateRange]);
 
+  const filteredSecondHandSales = useMemo(() => {
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+    const endDate = dateRange.end ? new Date(dateRange.end) : null;
+
+    return secondHandSales
+      .filter((sale) => {
+        const invoiceDate = parseInvoiceDate(sale.invoiceDate);
+        if (!invoiceDate) return false;
+        if (startDate && invoiceDate < startDate) return false;
+        if (endDate) {
+          const endOfDay = new Date(endDate);
+          endOfDay.setHours(23, 59, 59, 999);
+          if (invoiceDate > endOfDay) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = parseInvoiceDate(a.invoiceDate)?.getTime() ?? 0;
+        const dateB = parseInvoiceDate(b.invoiceDate)?.getTime() ?? 0;
+        return dateB - dateA;
+      });
+  }, [secondHandSales, dateRange]);
+
   const summary = useMemo(() => {
     const totalRevenue = filteredInvoices.reduce((sum, invoice) => sum + invoice.finalSalePrice, 0);
     const totalDiscount = filteredInvoices.reduce((sum, invoice) => sum + invoice.discountAmount, 0);
@@ -149,6 +198,36 @@ const FinanceReport = () => {
       grossMarginRate,
     };
   }, [filteredInvoices]);
+
+  const secondHandSummary = useMemo(() => {
+    const totalRevenue = filteredSecondHandSales.reduce((sum, sale) => sum + sale.finalInvoicePrice, 0);
+    const totalCost = filteredSecondHandSales.reduce((sum, sale) => sum + sale.poLineNetValue, 0);
+    const totalUnits = filteredSecondHandSales.length;
+    const grossMargin = totalRevenue - totalCost;
+    const lossUnits = filteredSecondHandSales.filter((sale) => sale.finalInvoicePrice - sale.poLineNetValue < 0).length;
+
+    let timeToInvoiceSum = 0;
+    let timeToInvoiceCount = 0;
+    filteredSecondHandSales.forEach((sale) => {
+      const invoiceDate = parseInvoiceDate(sale.invoiceDate);
+      const pgiDate = parseInvoiceDate(sale.pgiDate);
+      if (invoiceDate && pgiDate) {
+        const diffDays = Math.round((invoiceDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24));
+        timeToInvoiceSum += diffDays;
+        timeToInvoiceCount += 1;
+      }
+    });
+
+    return {
+      totalRevenue,
+      totalCost,
+      grossMargin,
+      totalUnits,
+      lossUnits,
+      averageMarginRate: totalRevenue ? grossMargin / totalRevenue : 0,
+      averageDaysToInvoice: timeToInvoiceCount ? timeToInvoiceSum / timeToInvoiceCount : null,
+    };
+  }, [filteredSecondHandSales]);
 
   const analytics = useMemo(() => {
     if (!filteredInvoices.length) {
@@ -374,8 +453,54 @@ const FinanceReport = () => {
     });
   }, [invoices]);
 
+  const secondHandTrendData = useMemo<SecondHandTrendDatum[]>(() => {
+    const months = Array.from({ length: 12 }).map((_, index) => {
+      const monthDate = subMonths(startOfMonth(new Date()), 11 - index);
+      return {
+        key: format(monthDate, "yyyy-MM"),
+        label: format(monthDate, "MMM yyyy"),
+      };
+    });
+
+    const monthBuckets = new Map(
+      months.map((month) => [month.key, { revenue: 0, poCount: 0, pgiCount: 0 }])
+    );
+
+    secondHandSales.forEach((sale) => {
+      const invoiceDate = parseInvoiceDate(sale.invoiceDate);
+      const pgiDate = parseInvoiceDate(sale.pgiDate);
+
+      if (invoiceDate) {
+        const key = format(invoiceDate, "yyyy-MM");
+        const bucket = monthBuckets.get(key);
+        if (bucket) {
+          bucket.revenue += sale.finalInvoicePrice;
+          bucket.poCount += 1;
+        }
+      }
+
+      if (pgiDate) {
+        const key = format(pgiDate, "yyyy-MM");
+        const bucket = monthBuckets.get(key);
+        if (bucket) {
+          bucket.pgiCount += 1;
+        }
+      }
+    });
+
+    return months.map((month) => {
+      const bucket = monthBuckets.get(month.key)!;
+      return { key: month.key, label: month.label, ...bucket };
+    });
+  }, [secondHandSales]);
+
   const hasTrendData = useMemo(() => monthlyTrendData.some((month) => month.units > 0), [monthlyTrendData]);
-  
+  const hasSecondHandTrend = useMemo(
+    () =>
+      secondHandTrendData.some((month) => month.poCount > 0 || month.pgiCount > 0 || month.revenue > 0),
+    [secondHandTrendData]
+  );
+
   const content = (
     <div className="space-y-6">
       <Card>
@@ -435,8 +560,8 @@ const FinanceReport = () => {
               <ChartContainer
                 config={{
                   revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
-                  avgDiscountRate: { label: "Avg Discount %", color: "#ef4444" },
-                  units: { label: "Invoice Units", color: "hsl(var(--chart-3))" },
+                  avgDiscountRate: { label: "Monthly discount rate", color: "#ef4444" },
+                  units: { label: "Invoice units", color: "hsl(var(--chart-3))" },
                 }}
                 className="h-[360px] min-w-[960px]"
               >
@@ -491,7 +616,7 @@ const FinanceReport = () => {
 
                         return (
                           <div className="flex flex-1 justify-between">
-                            <span>Avg Discount %</span>
+                            <span>Monthly discount rate</span>
                             <span className="font-medium">{formatPercent(value)}</span>
                           </div>
                         );
@@ -867,6 +992,292 @@ const FinanceReport = () => {
     </div>
   );
 
+  const secondHandContent = (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Date Filters</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="sh-start-date">Start Date</Label>
+              <Input
+                id="sh-start-date"
+                type="date"
+                value={dateRange.start}
+                onChange={(event) => handleDateChange("start", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sh-end-date">End Date</Label>
+              <Input
+                id="sh-end-date"
+                type="date"
+                value={dateRange.end}
+                onChange={(event) => handleDateChange("end", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Quick Ranges</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
+                  Last 3 Months
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_MONTH")}>
+                  This Month
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_YEAR")}>
+                  This Year
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Second Hand Trend</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Rolling 12 months of revenue, PO lines, and PGIs for pre-owned stock
+          </p>
+        </CardHeader>
+        <CardContent>
+          {!hasSecondHandTrend ? (
+            <p className="text-muted-foreground">Need PO or PGI activity across multiple months to show a trend.</p>
+          ) : (
+            <div className="w-full overflow-x-auto">
+              <ChartContainer
+                config={{
+                  revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
+                  poCount: { label: "PO lines", color: "hsl(var(--chart-3))" },
+                  pgiCount: { label: "PGI completed", color: "#ef4444" },
+                }}
+                className="h-[360px] min-w-[960px]"
+              >
+                <ComposedChart data={secondHandTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="shRevenueGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
+                  <YAxis
+                    yAxisId="revenue"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => formatCompactMoney(value as number)}
+                  />
+                  <YAxis yAxisId="count" orientation="right" tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="line"
+                        formatter={(value, name, item) => {
+                          if (typeof value !== "number") return null;
+
+                          if (item?.dataKey === "revenue") {
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>Revenue</span>
+                                <span className="font-medium">{currency.format(value)}</span>
+                              </div>
+                            );
+                          }
+
+                          if (item?.dataKey === "poCount") {
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>PO lines</span>
+                                <span className="font-medium">{value}</span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-1 justify-between">
+                              <span>PGI completed</span>
+                              <span className="font-medium">{value}</span>
+                            </div>
+                          );
+                        }}
+                      />
+                    }
+                  />
+                  <ChartLegend
+                    verticalAlign="top"
+                    align="left"
+                    content={
+                      <ChartLegendContent
+                        className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5"
+                      />
+                    }
+                  />
+                  <Bar dataKey="poCount" yAxisId="count" fill="var(--color-poCount)" radius={[4, 4, 0, 0]} barSize={22} />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    yAxisId="revenue"
+                    stroke="var(--color-revenue)"
+                    strokeWidth={2}
+                    fill="url(#shRevenueGradient)"
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="pgiCount"
+                    yAxisId="count"
+                    stroke="var(--color-pgiCount)"
+                    strokeWidth={2}
+                    dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
+                    activeDot={{ r: 5, strokeWidth: 2 }}
+                  />
+                </ComposedChart>
+              </ChartContainer>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Revenue (area) uses the invoice date; PO lines (bars) and PGIs (line) help spot throughput vs billing pace.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Total Revenue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.totalRevenue)}</div>
+            <p className="text-sm text-slate-500 mt-1">Across {filteredSecondHandSales.length} invoices</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total PO Cost</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.totalCost)}</div>
+            <p className="text-sm text-slate-500 mt-1">PO line net value</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Gross Margin</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.grossMargin)}</div>
+            <p className="text-sm text-slate-500 mt-1">Sale minus PO cost</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Loss-making Deals</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">
+              {secondHandSummary.lossUnits} ({secondHandSummary.totalUnits
+                ? Math.round((secondHandSummary.lossUnits / secondHandSummary.totalUnits) * 100)
+                : 0}
+              %)
+            </div>
+            <p className="text-sm text-slate-500 mt-1">Units with negative margin</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Units Sold</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">{secondHandSummary.totalUnits}</div>
+            <p className="text-sm text-slate-500 mt-1">Filtered invoice count</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Average Margin %</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">{formatPercent(secondHandSummary.averageMarginRate)}</div>
+            <p className="text-sm text-slate-500 mt-1">Margin over sale price</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Average Days from PGI to Invoice</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">{
+              secondHandSummary.averageDaysToInvoice == null
+                ? "-"
+                : `${secondHandSummary.averageDaysToInvoice.toFixed(1)} days`
+            }</div>
+            <p className="text-sm text-slate-500 mt-1">Speed from PGI to billing</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Invoice Detail</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {filteredSecondHandSales.length === 0 ? (
+            <p className="text-muted-foreground">No matching invoices.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Chassis</TableHead>
+                  <TableHead>SO</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">PO Value</TableHead>
+                  <TableHead className="text-right">Sale (ex GST)</TableHead>
+                  <TableHead className="text-right">Margin</TableHead>
+                  <TableHead className="text-right">Margin %</TableHead>
+                  <TableHead className="text-right">PGI → Invoice</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredSecondHandSales.map((sale) => {
+                  const invoiceDate = parseInvoiceDate(sale.invoiceDate);
+                  const pgiDate = parseInvoiceDate(sale.pgiDate);
+                  const margin = sale.finalInvoicePrice - sale.poLineNetValue;
+                  const marginRate = sale.finalInvoicePrice ? margin / sale.finalInvoicePrice : 0;
+                  const daysToInvoice = invoiceDate && pgiDate
+                    ? Math.round((invoiceDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24))
+                    : null;
+                  return (
+                    <TableRow key={sale.id}>
+                      <TableCell>{invoiceDate ? format(invoiceDate, "dd MMM yyyy") : "-"}</TableCell>
+                      <TableCell className="font-mono text-xs">{sale.chassis || "-"}</TableCell>
+                      <TableCell>{sale.so || "-"}</TableCell>
+                      <TableCell>{sale.item || sale.material || "-"}</TableCell>
+                      <TableCell className="text-right">{currency.format(sale.poLineNetValue)}</TableCell>
+                      <TableCell className="text-right">{currency.format(sale.finalInvoicePrice)}</TableCell>
+                      <TableCell className="text-right">{currency.format(margin)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(marginRate)}</TableCell>
+                      <TableCell className="text-right">
+                        {daysToInvoice == null ? "-" : `${daysToInvoice} days`}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
@@ -882,7 +1293,7 @@ const FinanceReport = () => {
           <h1 className="text-2xl font-semibold text-slate-900">
             Finance Report — {dealerDisplayName}
           </h1>
-          <p className="text-muted-foreground">Performance snapshots for new van sales</p>
+          <p className="text-muted-foreground">Performance snapshots for new and second hand van sales</p>
         </header>
 
         <Tabs defaultValue="new-vans" className="space-y-6">
@@ -891,7 +1302,7 @@ const FinanceReport = () => {
             <TabsTrigger value="parts" disabled>
               Parts Sales
             </TabsTrigger>
-            <TabsTrigger value="second-hand" disabled>
+            <TabsTrigger value="second-hand">
               Second Hand Van Sales
             </TabsTrigger>
           </TabsList>
@@ -926,11 +1337,21 @@ const FinanceReport = () => {
           </TabsContent>
 
           <TabsContent value="second-hand">
-            <Card>
-              <CardContent className="p-10 text-center text-muted-foreground">
-                Second hand sales analytics is under construction.
-              </CardContent>
-            </Card>
+            {secondHandLoading ? (
+              <Card>
+                <CardContent className="p-10 text-center text-muted-foreground">
+                  Loading second hand sales...
+                </CardContent>
+              </Card>
+            ) : filteredSecondHandSales.length === 0 && !secondHandSales.length ? (
+              <Card>
+                <CardContent className="p-10 text-center text-muted-foreground">
+                  No second hand sales found for this dealer.
+                </CardContent>
+              </Card>
+            ) : (
+              secondHandContent
+            )}
           </TabsContent>
         </Tabs>
       </main>
