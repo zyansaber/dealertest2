@@ -91,6 +91,20 @@ export interface YardNewVanInvoice {
   raw?: Record<string, any>;
 }
 
+export interface SecondHandSale {
+  id: string;
+  chassis: string;
+  finalInvoicePrice: number;
+  invoiceDate: string;
+  item: string;
+  material: string;
+  pgiDate: string;
+  poLineNetValue: number;
+  so: string;
+  updatedAt: string;
+  warehouse: string;
+  warehouseSlug: string;
+}
 
 // Export dealer types
 export * from './dealer';
