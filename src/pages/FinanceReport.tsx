@@ -1148,8 +1148,8 @@ const FinanceReport = () => {
 
               <ChartContainer
                 config={{
-                  grCount: { label: "GR receipts", color: "hsl(var(--chart-1))" },
-                  pgiCount: { label: "PGI completed", color: "hsl(var(--chart-2))" },
+                  grCount: { label: "GR receipts", color: "#3b82f6" },   // Tailwind blue-500
+                  pgiCount: { label: "PGI completed", color: "#22c55e" }, // Tailwind green-500
                 }}
                 className="h-[360px] min-w-[560px]"
               >
