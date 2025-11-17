@@ -1275,8 +1275,8 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
+                      <TableHead className="font-semibold">Report invalid stock</TableHead>
                       <TableHead className="font-semibold">Handover</TableHead>
-                      <TableHead className="font-semibold">Report</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
