@@ -1,6 +1,6 @@
 // src/pages/DealerYard.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -327,6 +327,7 @@ export default function DealerYard() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
+  const location = useLocation();
   const [pgi, setPgi] = useState<Record<string, PGIRec>>({});
   const [yard, setYard] = useState<Record<string, YardRec>>({});
   const [handover, setHandover] = useState<Record<string, HandoverRec>>({});
@@ -359,6 +360,8 @@ export default function DealerYard() {
   // Manual add chassis
   const [manualChassis, setManualChassis] = useState("");
   const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
+  const [pendingAiReceive, setPendingAiReceive] = useState<string | null>(null);
+  const [handledAiState, setHandledAiState] = useState(false);
 
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
@@ -730,6 +733,38 @@ export default function DealerYard() {
       setManualStatus({ type: "err", msg: "添加失败，请重试。" });
     }
   };
+
+  useEffect(() => {
+    if (handledAiState) return;
+    const state = (location.state || {}) as any;
+    const chassis = state?.aiPrefillChassis ? String(state.aiPrefillChassis).toUpperCase() : null;
+    if (!chassis) return;
+
+    setManualChassis(chassis);
+    if (state.aiAction === "receive") {
+      setManualStatus({ type: "ok", msg: `已预填 ${chassis}，正在添加...` });
+      setPendingAiReceive(chassis);
+    }
+    if (state.aiAction === "handover") {
+      setHandoverData({
+        chassis,
+        model: null,
+        vinnumber: null,
+        dealerName: dealerDisplayName,
+        dealerSlug,
+        handoverAt: new Date().toISOString(),
+      });
+      setHandoverOpen(true);
+    }
+    setHandledAiState(true);
+  }, [location.state, handledAiState, dealerDisplayName, dealerSlug]);
+
+  useEffect(() => {
+    if (!pendingAiReceive) return;
+    if (manualChassis.trim().toUpperCase() !== pendingAiReceive) return;
+    handleAddManual();
+    setPendingAiReceive(null);
+  }, [pendingAiReceive, manualChassis, handleAddManual]);
 
   // Stock Analysis data by category (Stock-only units)
   type AnalysisRow = { name: string; value: number };
