@@ -61,15 +61,15 @@ const quickActions: QuickAction[] = [
   {
     id: "track",
     title: "Tracking Orders",
-    description: "Instantly surface the latest production and delivery status.",
-    cta: "Show order status",
+    description: "Enter a chassis to see its live status.",
+    cta: "Status lookup",
     icon: Radar,
     target: "orders",
   },
   {
     id: "receive",
     title: "Receive a Van",
-    description: "Jump straight to the yard receiving flow.",
+    description: "Prefill the yard receive flow.",
     cta: "Open receiving",
     icon: Truck,
     target: "yard",
@@ -77,7 +77,7 @@ const quickActions: QuickAction[] = [
   {
     id: "handover",
     title: "Handover a Van",
-    description: "Jump to handover with the chassis pre-filled.",
+    description: "Open handover with chassis ready.",
     cta: "Open handover form",
     icon: ClipboardCheck,
     target: "yard",
@@ -85,7 +85,7 @@ const quickActions: QuickAction[] = [
   {
     id: "factory",
     title: "Need a Factory Order",
-    description: "Start a factory request with the correct dealer context applied.",
+    description: "Kick off a factory request.",
     cta: "Create request",
     icon: Factory,
     target: "inventory",
@@ -93,7 +93,7 @@ const quickActions: QuickAction[] = [
   {
     id: "unsigned",
     title: "Unsigned / Red Slots",
-    description: "See slots missing signatures and priority red slots instantly.",
+    description: "Highlight unsigned and red slots.",
     cta: "Review slots",
     icon: MenuSquare,
     target: "unsigned",
@@ -101,7 +101,7 @@ const quickActions: QuickAction[] = [
   {
     id: "road",
     title: "Vans on the Road (PGI ≤ 3 days)",
-    description: "Who is rolling out soon? Get a three-day PGI radar.",
+    description: "3-day PGI radar for vans on road.",
     cta: "Show road view",
     icon: Route,
     target: "yard",
@@ -109,7 +109,7 @@ const quickActions: QuickAction[] = [
   {
     id: "revenue",
     title: "Check Revenue",
-    description: "Open the finance dashboard without leaving the page.",
+    description: "Jump to revenue tiles.",
     cta: "Open revenue",
     icon: LineChart,
     target: "finance",
@@ -120,49 +120,49 @@ const commandShortcuts: CommandShortcut[] = [
   {
     id: "dashboard",
     title: "Dealer dashboard",
-    description: "Revenue, pipeline, and health for this dealer",
+    description: "Dealer overview",
     icon: LineChart,
     target: "dashboard",
   },
   {
     id: "orders",
     title: "Dealer orders",
-    description: "Order board with search, filters, and PGI insights",
+    description: "Orders board",
     icon: Radar,
     target: "orders",
   },
   {
     id: "inventory",
     title: "Inventory stock",
-    description: "Allocation, stock, and factory requests",
+    description: "Stock & factory",
     icon: Factory,
     target: "inventory",
   },
   {
     id: "unsigned",
     title: "Unsigned slots",
-    description: "Unsigned plans with red slot highlight",
+    description: "Unsigned plans",
     icon: MenuSquare,
     target: "unsigned",
   },
   {
     id: "yard",
     title: "Yard & PGI",
-    description: "Receive vans, PGI, and dispatch",
+    description: "Receive / PGI",
     icon: Truck,
     target: "yard",
   },
   {
     id: "finance",
     title: "Finance report",
-    description: "PowerBI revenue tiles and KPI trends",
+    description: "Revenue tiles",
     icon: LineChart,
     target: "finance",
   },
   {
     id: "group-dashboard",
     title: "Dealer group dashboard",
-    description: "Roll-up metrics and dealer switching",
+    description: "Group overview",
     icon: Sparkles,
     target: "dashboard",
     groupOnly: true,
@@ -170,7 +170,7 @@ const commandShortcuts: CommandShortcut[] = [
   {
     id: "group-inventory",
     title: "Group inventory",
-    description: "Group-level stock and reallocation",
+    description: "Group stock",
     icon: Factory,
     target: "inventory",
     groupOnly: true,
@@ -178,7 +178,7 @@ const commandShortcuts: CommandShortcut[] = [
   {
     id: "group-unsigned",
     title: "Group unsigned",
-    description: "Unsigned slots across dealers",
+    description: "Group unsigned",
     icon: MenuSquare,
     target: "unsigned",
     groupOnly: true,
@@ -186,7 +186,7 @@ const commandShortcuts: CommandShortcut[] = [
   {
     id: "group-yard",
     title: "Group yard",
-    description: "Group-level receive and PGI",
+    description: "Group yard",
     icon: Truck,
     target: "yard",
     groupOnly: true,
@@ -647,41 +647,37 @@ export default function AIFloatingAssistant() {
             </div>
 
             {selectedAction?.id === "track" && (
-              <div className="mt-4 space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-slate-700 mb-1">Search by chassis / customer</p>
-                  <Input
-                    value={orderSearch}
-                    onChange={(e) => setOrderSearch(e.target.value)}
-                    placeholder="Type chassis, customer, or model"
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                  {!orderSearch && <p className="text-xs text-slate-500">Start typing to see live statuses.</p>}
-                  {orderSearch && loadingOrders && (
-                    <p className="text-xs text-slate-500 flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Thinking…
+            <div className="mt-4 space-y-3">
+              <Input
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                placeholder="车架 / 客户 / 车型"
+                className="text-sm"
+              />
+              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                {orderSearch && loadingOrders && (
+                  <p className="text-xs text-slate-500 flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" /> AI fetching status…
+                  </p>
+                )}
+                {orderSearch && !loadingOrders && trackedOrders.length === 0 && (
+                  <p className="text-xs text-slate-500">No match yet.</p>
+                )}
+                {trackedOrders.map((order) => (
+                  <div
+                    key={order.Chassis}
+                    className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700"
+                  >
+                    <p className="font-semibold text-slate-900">{order.Chassis}</p>
+                    <p className="text-slate-600">{order.Customer}</p>
+                    <p className="text-slate-500">Model: {order.Model}</p>
+                    <p className="text-slate-800 flex items-center gap-1">
+                      <Sparkles className="h-3 w-3 text-emerald-500" /> {friendlyStatus(order)}
                     </p>
-                  )}
-                  {orderSearch && !loadingOrders && trackedOrders.length === 0 && (
-                    <p className="text-xs text-slate-500">No matching orders found.</p>
-                  )}
-                  {trackedOrders.map((order) => (
-                    <div
-                      key={order.Chassis}
-                      className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700"
-                    >
-                      <p className="font-semibold text-slate-900">{order.Chassis}</p>
-                      <p className="text-slate-600">{order.Customer}</p>
-                      <p className="text-slate-500">Model: {order.Model}</p>
-                      <p className="text-slate-800 flex items-center gap-1">
-                        <Sparkles className="h-3 w-3 text-emerald-500" /> {friendlyStatus(order)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
+            </div>
             )}
 
             {selectedAction?.id === "unsigned" && (
@@ -716,13 +712,12 @@ export default function AIFloatingAssistant() {
             <div className="mt-4 space-y-2">
               <div className="flex items-center gap-2 text-xs text-slate-600">
                 <Search className="h-3 w-3" />
-                <span>Command palette</span>
-                <Badge variant="secondary" className="rounded-full">All pages</Badge>
+                <span>Quick jump</span>
               </div>
               <Input
                 value={commandSearch}
                 onChange={(e) => setCommandSearch(e.target.value)}
-                placeholder="Search actions (dashboard, yard, finance, unsigned…)"
+                placeholder="搜索：dashboard / yard / finance…"
                 className="text-sm"
               />
               <div className="max-h-32 space-y-2 overflow-y-auto pr-1 text-xs">
