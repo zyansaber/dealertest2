@@ -38,25 +38,6 @@ interface QuickAction {
   target: "orders" | "yard" | "inventory" | "unsigned" | "dashboard" | "finance";
 }
 
-interface CommandShortcut {
-  id:
-    | "dashboard"
-    | "orders"
-    | "inventory"
-    | "unsigned"
-    | "yard"
-    | "finance"
-    | "group-dashboard"
-    | "group-inventory"
-    | "group-unsigned"
-    | "group-yard";
-  title: string;
-  description: string;
-  icon: ElementType;
-  target: QuickAction["target"];
-  groupOnly?: boolean;
-}
-
 const quickActions: QuickAction[] = [
   {
     id: "track",
@@ -116,83 +97,6 @@ const quickActions: QuickAction[] = [
   },
 ];
 
-const commandShortcuts: CommandShortcut[] = [
-  {
-    id: "dashboard",
-    title: "Dealer dashboard",
-    description: "Dealer overview",
-    icon: LineChart,
-    target: "dashboard",
-  },
-  {
-    id: "orders",
-    title: "Dealer orders",
-    description: "Orders board",
-    icon: Radar,
-    target: "orders",
-  },
-  {
-    id: "inventory",
-    title: "Inventory stock",
-    description: "Stock & factory",
-    icon: Factory,
-    target: "inventory",
-  },
-  {
-    id: "unsigned",
-    title: "Unsigned slots",
-    description: "Unsigned plans",
-    icon: MenuSquare,
-    target: "unsigned",
-  },
-  {
-    id: "yard",
-    title: "Yard & PGI",
-    description: "Receive / PGI",
-    icon: Truck,
-    target: "yard",
-  },
-  {
-    id: "finance",
-    title: "Finance report",
-    description: "Revenue tiles",
-    icon: LineChart,
-    target: "finance",
-  },
-  {
-    id: "group-dashboard",
-    title: "Dealer group dashboard",
-    description: "Group overview",
-    icon: Sparkles,
-    target: "dashboard",
-    groupOnly: true,
-  },
-  {
-    id: "group-inventory",
-    title: "Group inventory",
-    description: "Group stock",
-    icon: Factory,
-    target: "inventory",
-    groupOnly: true,
-  },
-  {
-    id: "group-unsigned",
-    title: "Group unsigned",
-    description: "Group unsigned",
-    icon: MenuSquare,
-    target: "unsigned",
-    groupOnly: true,
-  },
-  {
-    id: "group-yard",
-    title: "Group yard",
-    description: "Group yard",
-    icon: Truck,
-    target: "yard",
-    groupOnly: true,
-  },
-];
-
 function parseDate(value?: string): Date | null {
   if (!value) return null;
   const clean = value.trim();
@@ -245,7 +149,6 @@ export default function AIFloatingAssistant() {
   const [orders, setOrders] = useState<ScheduleItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [orderSearch, setOrderSearch] = useState("");
-  const [commandSearch, setCommandSearch] = useState("");
   const [chassisInput, setChassisInput] = useState("");
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
 
@@ -357,21 +260,6 @@ export default function AIFloatingAssistant() {
       .slice(0, 3);
   }, [scopedOrders, orderSearch]);
 
-  const filteredShortcuts = useMemo(() => {
-    const term = commandSearch.trim().toLowerCase();
-    return commandShortcuts
-      .filter((shortcut) =>
-        context.kind === "dealergroup" ? true : shortcut.groupOnly ? false : true
-      )
-      .filter((shortcut) =>
-        term
-          ? shortcut.title.toLowerCase().includes(term) ||
-            shortcut.description.toLowerCase().includes(term)
-          : true
-      )
-      .slice(0, 6);
-  }, [commandSearch, context.kind]);
-
   const chassisMatch = useMemo(() => {
     const term = chassisInput.trim().toLowerCase();
     if (!term) return null;
@@ -459,7 +347,7 @@ export default function AIFloatingAssistant() {
     return suggestions.slice(0, 2);
   }, [smartSummary]);
 
-  const handleNavigate = (action: QuickAction | CommandShortcut) => {
+  const handleNavigate = (action: QuickAction) => {
     const path = buildPath(action.target);
     navigate(path);
     setOpen(false);
@@ -474,14 +362,14 @@ export default function AIFloatingAssistant() {
   const handleReceiveNow = () => {
     const chassis = chassisInput.trim().toUpperCase();
     if (!chassis) return;
-    setPrefillNotice(`已为 ${chassis} 预填入场流程，正在打开 Yard...`);
+    setPrefillNotice(`Prefilling ${chassis} and opening the yard receive flow...`);
     goToYardWithState({ aiPrefillChassis: chassis, aiAction: "receive" });
   };
 
   const handleHandoverNow = () => {
     const chassis = chassisInput.trim().toUpperCase();
     if (!chassis) return;
-    setPrefillNotice(`正在为 ${chassis} 打开 handover 表单...`);
+    setPrefillNotice(`Opening handover for ${chassis}...`);
     goToYardWithState({ aiPrefillChassis: chassis, aiAction: "handover" });
   };
 
@@ -526,10 +414,6 @@ export default function AIFloatingAssistant() {
                   <p className="font-semibold text-sm">{action.title}</p>
                 </div>
                 <p className="text-xs text-slate-500 leading-relaxed">{action.description}</p>
-                <span className="inline-flex w-fit items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-600">
-                  <Sparkles className="h-3 w-3 text-amber-500" />
-                  <span>AI shortcut</span>
-                </span>
               </button>
             ))}
           </div>
@@ -539,7 +423,7 @@ export default function AIFloatingAssistant() {
               <div className="flex items-center justify-between text-xs text-slate-700">
                 <span className="flex items-center gap-1 font-semibold">
                   <Search className="h-3 w-3" />
-                  直接输入车架号
+                  Enter a chassis
                 </span>
                 {selectedAction && (
                   <Badge variant="outline" className="rounded-full text-[11px]">
@@ -550,7 +434,7 @@ export default function AIFloatingAssistant() {
               <Input
                 value={chassisInput}
                 onChange={(e) => setChassisInput(e.target.value)}
-                placeholder="例如：6K9..."
+                placeholder="e.g. 6K9..."
                 className="text-sm"
               />
               {prefillNotice && <p className="text-[11px] text-emerald-700">{prefillNotice}</p>}
@@ -568,7 +452,7 @@ export default function AIFloatingAssistant() {
                       </p>
                     </div>
                   ) : (
-                    <p className="text-slate-500">输入车架号即可返回最新状态。</p>
+                    <p className="text-slate-500">Enter a chassis to view the latest status.</p>
                   )}
                 </div>
               )}
@@ -577,7 +461,7 @@ export default function AIFloatingAssistant() {
                 <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
                   <div>
                     <p className="font-semibold text-slate-900">Receive & add to yard</p>
-                    <p className="text-slate-500">预填车架号并打开入场流程。</p>
+                    <p className="text-slate-500">Prefill the VIN and open the receive flow.</p>
                   </div>
                   <Button size="sm" onClick={handleReceiveNow} disabled={!chassisInput.trim()}>
                     Receive now
@@ -588,8 +472,8 @@ export default function AIFloatingAssistant() {
               {selectedAction?.id === "handover" && (
                 <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
                   <div>
-                    <p className="font-semibold text-slate-900">直接打开 Handover</p>
-                    <p className="text-slate-500">跳到交付表单并自动带入车架号。</p>
+                    <p className="font-semibold text-slate-900">Open handover directly</p>
+                    <p className="text-slate-500">Jump to the handover form with the VIN prefilled.</p>
                   </div>
                   <Button size="sm" onClick={handleHandoverNow} disabled={!chassisInput.trim()}>
                     Open form
@@ -647,37 +531,37 @@ export default function AIFloatingAssistant() {
             </div>
 
             {selectedAction?.id === "track" && (
-            <div className="mt-4 space-y-3">
-              <Input
-                value={orderSearch}
-                onChange={(e) => setOrderSearch(e.target.value)}
-                placeholder="车架 / 客户 / 车型"
-                className="text-sm"
-              />
-              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                {orderSearch && loadingOrders && (
-                  <p className="text-xs text-slate-500 flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" /> AI fetching status…
-                  </p>
-                )}
-                {orderSearch && !loadingOrders && trackedOrders.length === 0 && (
-                  <p className="text-xs text-slate-500">No match yet.</p>
-                )}
-                {trackedOrders.map((order) => (
-                  <div
-                    key={order.Chassis}
-                    className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700"
-                  >
-                    <p className="font-semibold text-slate-900">{order.Chassis}</p>
-                    <p className="text-slate-600">{order.Customer}</p>
-                    <p className="text-slate-500">Model: {order.Model}</p>
-                    <p className="text-slate-800 flex items-center gap-1">
-                      <Sparkles className="h-3 w-3 text-emerald-500" /> {friendlyStatus(order)}
+              <div className="mt-4 space-y-3">
+                <Input
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  placeholder="Chassis / Customer / Model"
+                  className="text-sm"
+                />
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {orderSearch && loadingOrders && (
+                    <p className="text-xs text-slate-500 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> AI fetching status…
                     </p>
-                  </div>
-                ))}
+                  )}
+                  {orderSearch && !loadingOrders && trackedOrders.length === 0 && (
+                    <p className="text-xs text-slate-500">No match yet.</p>
+                  )}
+                  {trackedOrders.map((order) => (
+                    <div
+                      key={order.Chassis}
+                      className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700"
+                    >
+                      <p className="font-semibold text-slate-900">{order.Chassis}</p>
+                      <p className="text-slate-600">{order.Customer}</p>
+                      <p className="text-slate-500">Model: {order.Model}</p>
+                      <p className="text-slate-800 flex items-center gap-1">
+                        <Sparkles className="h-3 w-3 text-emerald-500" /> {friendlyStatus(order)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
             )}
 
             {selectedAction?.id === "unsigned" && (
@@ -708,41 +592,6 @@ export default function AIFloatingAssistant() {
                 </p>
               </div>
             )}
-
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-                <Search className="h-3 w-3" />
-                <span>Quick jump</span>
-              </div>
-              <Input
-                value={commandSearch}
-                onChange={(e) => setCommandSearch(e.target.value)}
-                placeholder="搜索：dashboard / yard / finance…"
-                className="text-sm"
-              />
-              <div className="max-h-32 space-y-2 overflow-y-auto pr-1 text-xs">
-                {filteredShortcuts.map((shortcut) => (
-                  <button
-                    key={shortcut.id}
-                    type="button"
-                    onClick={() => handleNavigate(shortcut)}
-                    className="flex w-full items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-slate-300"
-                  >
-                    <shortcut.icon className="mt-[2px] h-4 w-4 text-slate-600" />
-                    <div className="flex-1">
-                      <p className="font-semibold text-slate-900">{shortcut.title}</p>
-                      <p className="text-[11px] text-slate-600">{shortcut.description}</p>
-                    </div>
-                    {context.kind === "dealergroup" && shortcut.groupOnly && (
-                      <Badge className="mt-[2px]" variant="outline">Group</Badge>
-                    )}
-                  </button>
-                ))}
-                {!filteredShortcuts.length && (
-                  <p className="text-[11px] text-slate-500">No commands match that search.</p>
-                )}
-              </div>
-            </div>
 
             <Button
               className="mt-4 w-full bg-slate-900 text-white hover:bg-slate-800"
