@@ -317,7 +317,7 @@ const FinanceReport = () => {
   }, [filteredInvoices, invoices, dateRange]);
 
   const retailSalesByMonth = useMemo(() => {
-    const buckets = new Map<string, { label: string; count: number }>();
+    const buckets = new Map<string, { label: string; retailSales: number }>();
 
     retailNewSales.forEach((sale) => {
       const createdDate = parseInvoiceDate(sale.createdOn);
@@ -327,7 +327,7 @@ const FinanceReport = () => {
       const existing = buckets.get(key);
       buckets.set(key, {
         label: existing?.label ?? format(createdDate, "MMM yy"),
-        count: (existing?.count ?? 0) + 1,
+        retailSales: (existing?.retailSales ?? 0) + 1,
       });
     });
 
@@ -338,7 +338,7 @@ const FinanceReport = () => {
   }, [retailNewSales]);
 
   const invoiceCountByMonth = useMemo(() => {
-    const buckets = new Map<string, { label: string; count: number }>();
+    const buckets = new Map<string, { label: string; invoiceCount: number }>();
 
     filteredInvoices.forEach((invoice) => {
       const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
@@ -348,7 +348,7 @@ const FinanceReport = () => {
       const existing = buckets.get(key);
       buckets.set(key, {
         label: existing?.label ?? format(invoiceDate, "MMM yy"),
-        count: (existing?.count ?? 0) + 1,
+        invoiceCount: (existing?.invoiceCount ?? 0) + 1,
       });
     });
 
@@ -362,7 +362,7 @@ const FinanceReport = () => {
     () =>
       newSalesSummary.modelBreakdown.slice(0, 8).map((model) => ({
         label: model.model,
-        count: model.count,
+        modelCount: model.count,
       })),
     [newSalesSummary.modelBreakdown]
   );
@@ -769,7 +769,7 @@ const FinanceReport = () => {
               ) : (
                 <ChartContainer
                   config={{
-                    count: { label: "Retail Sales", color: "hsl(var(--chart-1))" },
+                    retailSales: { label: "Retail Sales", color: "hsl(var(--chart-1))" },
                   }}
                   className="h-72"
                 >
@@ -778,7 +778,7 @@ const FinanceReport = () => {
                     <XAxis dataKey="label" tickLine={false} axisLine={false} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
                     <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]} barSize={28} />
+                    <Bar dataKey="retailSales" fill="var(--color-retailSales)" radius={[6, 6, 0, 0]} barSize={28} />
                   </BarChart>
                 </ChartContainer>
               )}
@@ -796,7 +796,7 @@ const FinanceReport = () => {
               ) : (
                 <ChartContainer
                   config={{
-                    count: { label: "Invoice Number", color: "hsl(var(--chart-2))" },
+                    invoiceCount: { label: "Invoice Number", color: "hsl(var(--chart-2))" },
                   }}
                   className="h-72"
                 >
@@ -805,7 +805,34 @@ const FinanceReport = () => {
                     <XAxis dataKey="label" tickLine={false} axisLine={false} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
                     <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]} barSize={28} />
+                    <Bar dataKey="invoiceCount" fill="var(--color-invoiceCount)" radius={[6, 6, 0, 0]} barSize={28} />
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Retail Model Volume</CardTitle>
+              <p className="text-sm text-muted-foreground">Top models ranked by unit count</p>
+            </CardHeader>
+            <CardContent>
+              {retailModelBarData.length === 0 ? (
+                <p className="text-muted-foreground">No retail model data available for this range.</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    modelCount: { label: "Units", color: "hsl(var(--chart-3))" },
+                  }}
+                  className="h-72"
+                >
+                  <BarChart data={retailModelBarData} margin={{ left: 12, right: 12, bottom: 12 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-25} textAnchor="end" height={60} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="modelCount" fill="var(--color-modelCount)" radius={[6, 6, 0, 0]} barSize={28} />
                   </BarChart>
                 </ChartContainer>
               )}
@@ -843,32 +870,6 @@ const FinanceReport = () => {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Retail Model Volume</CardTitle>
-              <p className="text-sm text-muted-foreground">Top models ranked by unit count</p>
-            </CardHeader>
-            <CardContent>
-              {retailModelBarData.length === 0 ? (
-                <p className="text-muted-foreground">No retail model data available for this range.</p>
-              ) : (
-                <ChartContainer
-                  config={{
-                    count: { label: "Units", color: "hsl(var(--chart-3))" },
-                  }}
-                  className="h-72"
-                >
-                  <BarChart data={retailModelBarData} margin={{ left: 12, right: 12, bottom: 12 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-25} textAnchor="end" height={60} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]} barSize={28} />
-                  </BarChart>
-                </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
 
