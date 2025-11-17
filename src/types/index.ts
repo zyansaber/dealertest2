@@ -81,6 +81,7 @@ export interface YardNewVanInvoice {
   id: string;
   chassisNumber: string;
   invoiceDate: string;
+  createdOn?: string;
   purchasePrice: number;
   finalSalePrice: number;
   discountAmount: number;
