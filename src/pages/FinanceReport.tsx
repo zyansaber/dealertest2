@@ -333,46 +333,64 @@ const FinanceReport = () => {
   }, [filteredInvoices, invoices, dateRange]);
 
   const retailSalesByMonth = useMemo(() => {
-    const buckets = new Map<string, { label: string; retailSales: number }>();
+    const createdDates = retailNewSales
+      .map((sale) => parseInvoiceDate(sale.createdOn))
+      .filter(Boolean) as Date[];
+
+    if (!createdDates.length) return [];
+
+    const explicitStart = dateRange.start ? startOfMonth(new Date(dateRange.start)) : null;
+    const explicitEnd = dateRange.end ? startOfMonth(new Date(dateRange.end)) : null;
+
+    const startMonth = explicitStart ?? startOfMonth(createdDates.reduce((min, date) => (date < min ? date : min)));
+    const endMonth = explicitEnd ?? startOfMonth(createdDates.reduce((max, date) => (date > max ? date : max)));
+
+    const months = buildMonthSequence(startMonth, endMonth);
+    const buckets = new Map(months.map((month) => [month.key, { label: month.label, retailSales: 0 }]));
 
     retailNewSales.forEach((sale) => {
       const createdDate = parseInvoiceDate(sale.createdOn);
       if (!createdDate) return;
 
       const key = format(createdDate, "yyyy-MM");
-      const existing = buckets.get(key);
-      buckets.set(key, {
-        label: existing?.label ?? format(createdDate, "MMM yy"),
-        retailSales: (existing?.retailSales ?? 0) + 1,
-      });
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+
+      bucket.retailSales += 1;
     });
 
-    return Array.from(buckets.entries())
-      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .map(([, value]) => value)
-      .slice(-6);
-  }, [retailNewSales]);
+    return months.map((month) => buckets.get(month.key)!);
+  }, [dateRange.end, dateRange.start, retailNewSales]);
 
   const invoiceCountByMonth = useMemo(() => {
-    const buckets = new Map<string, { label: string; invoiceCount: number }>();
+    const invoiceDates = filteredInvoices
+      .map((invoice) => getInvoiceDate(invoice))
+      .filter(Boolean) as Date[];
+
+    if (!invoiceDates.length) return [];
+
+    const explicitStart = dateRange.start ? startOfMonth(new Date(dateRange.start)) : null;
+    const explicitEnd = dateRange.end ? startOfMonth(new Date(dateRange.end)) : null;
+
+    const startMonth = explicitStart ?? startOfMonth(invoiceDates.reduce((min, date) => (date < min ? date : min)));
+    const endMonth = explicitEnd ?? startOfMonth(invoiceDates.reduce((max, date) => (date > max ? date : max)));
+
+    const months = buildMonthSequence(startMonth, endMonth);
+    const buckets = new Map(months.map((month) => [month.key, { label: month.label, invoiceCount: 0 }]));
 
     filteredInvoices.forEach((invoice) => {
       const invoiceDate = getInvoiceDate(invoice);
       if (!invoiceDate) return;
 
       const key = format(invoiceDate, "yyyy-MM");
-      const existing = buckets.get(key);
-      buckets.set(key, {
-        label: existing?.label ?? format(invoiceDate, "MMM yy"),
-        invoiceCount: (existing?.invoiceCount ?? 0) + 1,
-      });
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+
+      bucket.invoiceCount += 1;
     });
 
-    return Array.from(buckets.entries())
-      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .map(([, value]) => value)
-      .slice(-6);
-  }, [filteredInvoices]);
+    return months.map((month) => buckets.get(month.key)!);
+  }, [dateRange.end, dateRange.start, filteredInvoices]);
 
   const retailModelBarData = useMemo(
     () =>
