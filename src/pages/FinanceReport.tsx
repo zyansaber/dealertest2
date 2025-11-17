@@ -16,15 +16,15 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { subscribeToSecondHandSales, subscribeToYardNewVanInvoices } from "@/lib/firebase";
-import type { SecondHandSale, YardNewVanInvoice } from "@/types";
+import { subscribeToNewSales, subscribeToSecondHandSales, subscribeToYardNewVanInvoices } from "@/lib/firebase";
+import type { NewSaleRecord, SecondHandSale, YardNewVanInvoice } from "@/types";
 import {
   isFinanceReportEnabled,
   normalizeDealerSlug,
   prettifyDealerName,
 } from "@/lib/dealerUtils";
 import { AlertTriangle } from "lucide-react";
-import { format, isValid, parse, parseISO, startOfMonth, startOfYear, subMonths } from "date-fns";
+import { format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
 const currency = new Intl.NumberFormat("en-AU", {
@@ -70,7 +70,7 @@ const formatCompactMoney = (value: number) => {
   return compactCurrency.format(value);
 };
 
-type QuickRangePreset = "LAST_3_MONTHS" | "THIS_MONTH" | "THIS_YEAR";
+type QuickRangePreset = "THIS_WEEK" | "LAST_3_MONTHS" | "THIS_MONTH" | "THIS_YEAR";
 type MonthlyTrendDatum = {
   key: string;
   label: string;
@@ -96,9 +96,11 @@ const FinanceReport = () => {
 
   const [invoices, setInvoices] = useState<YardNewVanInvoice[]>([]);
   const [secondHandSales, setSecondHandSales] = useState<SecondHandSale[]>([]);
+  const [newSales, setNewSales] = useState<NewSaleRecord[]>([]);
   const [dateRange, setDateRange] = useState(defaultDateRange);
   const [loading, setLoading] = useState(true);
   const [secondHandLoading, setSecondHandLoading] = useState(true);
+  const [newSalesLoading, setNewSalesLoading] = useState(true);
 
   useEffect(() => {
     if (!dealerSlug || !financeEnabled) {
@@ -132,7 +134,23 @@ const FinanceReport = () => {
     return unsub;
   }, [dealerSlug]);
 
-  const filteredInvoices = useMemo(() => {
+  useEffect(() => {
+    if (!dealerSlug) {
+      setNewSales([]);
+      setNewSalesLoading(false);
+      return;
+    }
+
+    setNewSalesLoading(true);
+    const unsub = subscribeToNewSales(dealerSlug, (data) => {
+      setNewSales(data);
+      setNewSalesLoading(false);
+    });
+
+    return unsub;
+  }, [dealerSlug]);
+
+ const filteredInvoices = useMemo(() => {
     const startDate = dateRange.start ? new Date(dateRange.start) : null;
     const endDate = dateRange.end ? new Date(dateRange.end) : null;
 
@@ -177,6 +195,34 @@ const FinanceReport = () => {
         return dateB - dateA;
       });
   }, [secondHandSales, dateRange]);
+
+ const filteredNewSales = useMemo(() => {
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+    const endDate = dateRange.end ? new Date(dateRange.end) : null;
+
+    return newSales
+      .filter((sale) => {
+        const createdOn = parseInvoiceDate(sale.createdOn);
+        if (!createdOn) return false;
+        if (startDate && createdOn < startDate) return false;
+        if (endDate) {
+          const endOfDay = new Date(endDate);
+          endOfDay.setHours(23, 59, 59, 999);
+          if (createdOn > endOfDay) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = parseInvoiceDate(a.createdOn)?.getTime() ?? 0;
+        const dateB = parseInvoiceDate(b.createdOn)?.getTime() ?? 0;
+        return dateB - dateA;
+      });
+  }, [newSales, dateRange]);
+
+  const retailNewSales = useMemo(
+    () => filteredNewSales.filter((sale) => (sale.billToNameFinal ?? "").toLowerCase() !== "stock"),
+    [filteredNewSales]
+  );
 
   const summary = useMemo(() => {
     const totalRevenue = filteredInvoices.reduce((sum, invoice) => sum + invoice.finalSalePrice, 0);
@@ -230,7 +276,72 @@ const FinanceReport = () => {
     };
   }, [filteredSecondHandSales]);
 
+    const newSalesSummary = useMemo(() => {
+    const modelCounts = new Map<string, number>();
+    retailNewSales.forEach((sale) => {
+      const key = sale.materialDesc0010?.trim() || "Unspecified";
+      modelCounts.set(key, (modelCounts.get(key) ?? 0) + 1);
+    });
+
+    const modelBreakdown = Array.from(modelCounts.entries())
+      .map(([model, count]) => ({ model, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      retailCount: retailNewSales.length,
+      uniqueModels: modelCounts.size,
+      modelBreakdown,
+    };
+  }, [retailNewSales]);
+
+  const yardDateStats = useMemo(() => {
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+    const endDate = dateRange.end ? new Date(dateRange.end) : null;
+
+    const pgiDateCount = invoices.filter((invoice) => {
+      const pgiDate = parseInvoiceDate(invoice.pgiDate);
+      if (!pgiDate) return false;
+      if (startDate && pgiDate < startDate) return false;
+      if (endDate) {
+        const endOfDay = new Date(endDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        if (pgiDate > endOfDay) return false;
+      }
+      return true;
+    }).length;
+
+    return {
+      invoiceDateCount: filteredInvoices.length,
+      pgiDateCount,
+    };
+  }, [filteredInvoices, invoices, dateRange]);
+
   const analytics = useMemo(() => {
+    if (!filteredInvoices.length) {
+      return {
+        averageMarginRate: 0,
+        averagePurchase: 0,
+        highestSale: null as YardNewVanInvoice | null,
+        strongestMarginInvoice: null as YardNewVanInvoice | null,
+        strongestMarginRate: 0,
+        modelMix: [] as Array<{
+          model: string;
+          units: number;
+          revenue: number;
+          margin: number;
+          avgSale: number;
+          marginRate: number;
+        }>,
+        discountBreakdown: [] as Array<{
+          label: string;
+          units: number;
+          revenue: number;
+          share: number;
+        }>,
+      };
+    }
+
+const analytics = useMemo(() => {
     if (!filteredInvoices.length) {
       return {
         averageMarginRate: 0,
@@ -398,6 +509,14 @@ const FinanceReport = () => {
   const handleQuickRange = (preset: QuickRangePreset) => {
     const today = new Date();
 
+    if (preset === "THIS_WEEK") {
+      setDateRange({
+        start: format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+        end: format(today, "yyyy-MM-dd"),
+      });
+      return;
+    }
+
     if (preset === "THIS_MONTH") {
       setDateRange({
         start: format(startOfMonth(today), "yyyy-MM-dd"),
@@ -521,6 +640,168 @@ const FinanceReport = () => {
     [secondHandTrendData]
   );
 
+  const basicPerformanceContent = (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Date Filters</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="basic-start-date">Start Date</Label>
+              <Input
+                id="basic-start-date"
+                type="date"
+                value={dateRange.start}
+                onChange={(event) => handleDateChange("start", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="basic-end-date">End Date</Label>
+              <Input
+                id="basic-end-date"
+                type="date"
+                value={dateRange.end}
+                onChange={(event) => handleDateChange("end", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Quick Ranges</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_WEEK")}>
+                  This Week
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
+                  Last 3 Months
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_MONTH")}>
+                  This Month
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_YEAR")}>
+                  This Year
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Retail Sales</CardTitle>
+            <p className="text-sm text-muted-foreground">billToNameFinal ≠ stock</p>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold text-slate-900">{newSalesSummary.retailCount}</div>
+            <p className="text-sm text-muted-foreground mt-1">Filtered by created date</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Model Variety</CardTitle>
+            <p className="text-sm text-muted-foreground">Unique material descriptions</p>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold text-slate-900">{newSalesSummary.uniqueModels}</div>
+            <p className="text-sm text-muted-foreground mt-1">Across retail sales</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Invoice Dates</CardTitle>
+            <p className="text-sm text-muted-foreground">yardnewvaninvoice invoiceDate</p>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold text-slate-900">{yardDateStats.invoiceDateCount}</div>
+            <p className="text-sm text-muted-foreground mt-1">Within selected range</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>PGI Dates</CardTitle>
+            <p className="text-sm text-muted-foreground">yardnewvaninvoice pgiDate</p>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-semibold text-slate-900">{yardDateStats.pgiDateCount}</div>
+            <p className="text-sm text-muted-foreground mt-1">Throughput marker</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Retail Model Mix</CardTitle>
+          <p className="text-sm text-muted-foreground">Breakdown of non-stock sales by type</p>
+        </CardHeader>
+        <CardContent>
+          {newSalesSummary.modelBreakdown.length === 0 ? (
+            <p className="text-muted-foreground">No retail sales recorded in this range.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Model</TableHead>
+                  <TableHead className="text-right">Units</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {newSalesSummary.modelBreakdown.map((model) => (
+                  <TableRow key={model.model}>
+                    <TableCell className="font-medium">{model.model}</TableCell>
+                    <TableCell className="text-right">{model.count}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Retail Sales Detail</CardTitle>
+          <p className="text-sm text-muted-foreground">Created date, sales office, and customer category</p>
+        </CardHeader>
+        <CardContent>
+          {retailNewSales.length === 0 ? (
+            <p className="text-muted-foreground">No non-stock sales for this window.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Sales Office</TableHead>
+                  <TableHead>Material</TableHead>
+                  <TableHead>billToNameFinal</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {retailNewSales.slice(0, 30).map((sale) => {
+                  const createdDate = parseInvoiceDate(sale.createdOn);
+                  return (
+                    <TableRow key={sale.id}>
+                      <TableCell className="font-medium">
+                        {createdDate ? format(createdDate, "dd MMM yyyy") : "-"}
+                      </TableCell>
+                      <TableCell>{sale.salesOfficeName || "-"}</TableCell>
+                      <TableCell>{sale.materialDesc0010 || "Unspecified"}</TableCell>
+                      <TableCell>{sale.billToNameFinal || "-"}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Showing up to 30 recent retail sales. Use the date filters to focus on this week, month, last three months, this year, or a custom range.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   const content = (
     <div className="space-y-6">
       <Card>
@@ -550,6 +831,9 @@ const FinanceReport = () => {
             <div className="space-y-2">
               <Label>Quick Ranges</Label>
               <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_WEEK")}>
+                  This Week
+                </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
                   Last 3 Months
                 </Button>
@@ -1041,6 +1325,9 @@ const FinanceReport = () => {
             <div className="space-y-2">
               <Label>Quick Ranges</Label>
               <div className="flex flex-wrap gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_WEEK")}>
+                  This Week
+                </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
                   Last 3 Months
                 </Button>
@@ -1390,6 +1677,7 @@ const FinanceReport = () => {
 
         <Tabs defaultValue="new-vans" className="space-y-6">
           <TabsList>
+            <TabsTrigger value="basic">Basic performance data</TabsTrigger>
             <TabsTrigger value="new-vans">New Van Sales</TabsTrigger>
             <TabsTrigger value="parts" disabled>
               Parts Sales
@@ -1398,6 +1686,18 @@ const FinanceReport = () => {
               Second Hand Van Sales
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="basic">
+            {newSalesLoading ? (
+              <Card>
+                <CardContent className="p-10 text-center text-muted-foreground">
+                  Loading basic performance data...
+                </CardContent>
+              </Card>
+            ) : (
+              basicPerformanceContent
+            )}
+          </TabsContent>
 
           <TabsContent value="new-vans">
             {loading ? (
