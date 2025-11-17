@@ -24,7 +24,7 @@ import {
   prettifyDealerName,
 } from "@/lib/dealerUtils";
 import { AlertTriangle } from "lucide-react";
-import { format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
+import { addMonths, format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
 import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
 const currency = new Intl.NumberFormat("en-AU", {
