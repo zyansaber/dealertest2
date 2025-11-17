@@ -26,7 +26,7 @@ interface QuickAction {
   id:
     | "track"
     | "receive"
-    | "pgi"
+    | "handover"
     | "factory"
     | "unsigned"
     | "road"
@@ -75,10 +75,10 @@ const quickActions: QuickAction[] = [
     target: "yard",
   },
   {
-    id: "pgi",
-    title: "PGI a Van",
-    description: "Mark a vehicle as PGI without hunting for the right screen.",
-    cta: "Open PGI tools",
+    id: "handover",
+    title: "Handover a Van",
+    description: "Jump to handover with the chassis pre-filled.",
+    cta: "Open handover form",
     icon: ClipboardCheck,
     target: "yard",
   },
@@ -224,6 +224,19 @@ const friendlyStatus = (order: ScheduleItem): string => {
   return "Status pending";
 };
 
+function normalizeDealerSlug(raw?: string): string {
+  const slug = (raw || "").toLowerCase();
+  const m = slug.match(/^(.*?)-([a-z0-9]{6})$/);
+  return m ? m[1] : slug;
+}
+
+function slugifyDealerName(name?: string): string {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export default function AIFloatingAssistant() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -233,6 +246,8 @@ export default function AIFloatingAssistant() {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [orderSearch, setOrderSearch] = useState("");
   const [commandSearch, setCommandSearch] = useState("");
+  const [chassisInput, setChassisInput] = useState("");
+  const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = subscribeToSchedule((data) => {
@@ -256,6 +271,20 @@ export default function AIFloatingAssistant() {
     }
     return { kind: "main" as const };
   }, [location.pathname]);
+
+  const activeDealerSlug = useMemo(() => {
+    if (context.kind === "dealer") return normalizeDealerSlug(context.dealerSlug);
+    if (context.kind === "dealergroup") {
+      if (context.selectedDealerSlug) return normalizeDealerSlug(context.selectedDealerSlug);
+      return normalizeDealerSlug(context.dealerSlug);
+    }
+    return null;
+  }, [context]);
+
+  const scopedOrders = useMemo(() => {
+    if (!activeDealerSlug) return orders;
+    return orders.filter((o) => slugifyDealerName(o.Dealer) === activeDealerSlug);
+  }, [orders, activeDealerSlug]);
 
   const buildPath = (target: QuickAction["target"]): string => {
     if (context.kind === "dealer" && context.dealerSlug) {
@@ -319,14 +348,14 @@ export default function AIFloatingAssistant() {
   const trackedOrders = useMemo(() => {
     if (!orderSearch.trim()) return [];
     const term = orderSearch.toLowerCase();
-    return orders
+    return scopedOrders
       .filter((order) =>
         order.Chassis.toLowerCase().includes(term) ||
         order.Customer.toLowerCase().includes(term) ||
         order.Model.toLowerCase().includes(term)
       )
       .slice(0, 3);
-  }, [orders, orderSearch]);
+  }, [scopedOrders, orderSearch]);
 
   const filteredShortcuts = useMemo(() => {
     const term = commandSearch.trim().toLowerCase();
@@ -343,33 +372,39 @@ export default function AIFloatingAssistant() {
       .slice(0, 6);
   }, [commandSearch, context.kind]);
 
+  const chassisMatch = useMemo(() => {
+    const term = chassisInput.trim().toLowerCase();
+    if (!term) return null;
+    return scopedOrders.find((order) => order.Chassis.toLowerCase().includes(term));
+  }, [chassisInput, scopedOrders]);
+
   const unsignedCount = useMemo(
-    () => orders.filter((o) => !(o as any)["Signed Plans Received"]?.trim?.()).length,
-    [orders]
+    () => scopedOrders.filter((o) => !(o as any)["Signed Plans Received"]?.trim?.()).length,
+    [scopedOrders]
   );
 
   const redSlots = useMemo(() => {
-    return orders.filter((o) => {
+    return scopedOrders.filter((o) => {
       const days = daysFromToday(parseDate(o["Forecast Production Date"]));
       const missingSignature = !(o as any)["Signed Plans Received"]?.trim?.();
       return missingSignature && days !== null && days <= 14;
     }).length;
-  }, [orders]);
+  }, [scopedOrders]);
 
   const pgiInThreeDays = useMemo(() => {
-    return orders.filter((o) => {
+    return scopedOrders.filter((o) => {
       const days = daysFromToday(parseDate(o["Request Delivery Date"] || o["Forecast Production Date"]));
       const production = o["Regent Production"]?.toLowerCase?.();
       const isPGI = production?.includes("pgi") || production?.includes("dispatch");
       return days !== null && days <= 3 && (!production || isPGI);
     }).length;
-  }, [orders]);
+  }, [scopedOrders]);
 
   const smartSummary = useMemo(() => {
-    const total = orders.length;
-    const pending = orders.filter((o) => !o["Regent Production"] || o["Regent Production"].toLowerCase() === "pending").length;
-    const withDates = orders.filter((o) => parseDate(o["Forecast Production Date"]) !== null).length;
-    const nextUnsigned = orders
+    const total = scopedOrders.length;
+    const pending = scopedOrders.filter((o) => !o["Regent Production"] || o["Regent Production"].toLowerCase() === "pending").length;
+    const withDates = scopedOrders.filter((o) => parseDate(o["Forecast Production Date"]) !== null).length;
+    const nextUnsigned = scopedOrders
       .filter((o) => !(o as any)["Signed Plans Received"]?.trim?.())
       .map((o) => ({
         chassis: o.Chassis,
@@ -377,7 +412,7 @@ export default function AIFloatingAssistant() {
         etaDays: daysFromToday(parseDate(o["Forecast Production Date"])) ?? 9999,
       }))
       .sort((a, b) => a.etaDays - b.etaDays)[0];
-    const nextPGI = orders
+    const nextPGI = scopedOrders
       .map((o) => ({
         chassis: o.Chassis,
         deliveryDays: daysFromToday(parseDate(o["Request Delivery Date"] || o["Forecast Production Date"])) ?? 9999,
@@ -392,7 +427,7 @@ export default function AIFloatingAssistant() {
       nextUnsigned,
       nextPGI,
     };
-  }, [orders]);
+  }, [scopedOrders]);
 
   const suggestedActions = useMemo(() => {
     const suggestions = [] as Array<{ label: string; detail: string; action: QuickAction }>;
@@ -429,6 +464,30 @@ export default function AIFloatingAssistant() {
     navigate(path);
     setOpen(false);
   };
+
+  const goToYardWithState = (state: Record<string, any>) => {
+    const path = buildPath("yard");
+    navigate(path, { state });
+    setOpen(false);
+  };
+
+  const handleReceiveNow = () => {
+    const chassis = chassisInput.trim().toUpperCase();
+    if (!chassis) return;
+    setPrefillNotice(`已为 ${chassis} 预填入场流程，正在打开 Yard...`);
+    goToYardWithState({ aiPrefillChassis: chassis, aiAction: "receive" });
+  };
+
+  const handleHandoverNow = () => {
+    const chassis = chassisInput.trim().toUpperCase();
+    if (!chassis) return;
+    setPrefillNotice(`正在为 ${chassis} 打开 handover 表单...`);
+    goToYardWithState({ aiPrefillChassis: chassis, aiAction: "handover" });
+  };
+
+  useEffect(() => {
+    setPrefillNotice(null);
+  }, [selectedAction]);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-3">
@@ -467,11 +526,77 @@ export default function AIFloatingAssistant() {
                   <p className="font-semibold text-sm">{action.title}</p>
                 </div>
                 <p className="text-xs text-slate-500 leading-relaxed">{action.description}</p>
-                <p className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-amber-500" /> AI ready
-                </p>
+                <span className="inline-flex w-fit items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-600">
+                  <Sparkles className="h-3 w-3 text-amber-500" />
+                  <span>AI shortcut</span>
+                </span>
               </button>
             ))}
+          </div>
+
+          <div className="px-4 pb-2">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-700">
+                <span className="flex items-center gap-1 font-semibold">
+                  <Search className="h-3 w-3" />
+                  直接输入车架号
+                </span>
+                {selectedAction && (
+                  <Badge variant="outline" className="rounded-full text-[11px]">
+                    {selectedAction.title}
+                  </Badge>
+                )}
+              </div>
+              <Input
+                value={chassisInput}
+                onChange={(e) => setChassisInput(e.target.value)}
+                placeholder="例如：6K9..."
+                className="text-sm"
+              />
+              {prefillNotice && <p className="text-[11px] text-emerald-700">{prefillNotice}</p>}
+
+              {selectedAction?.id === "track" && (
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                  {chassisMatch ? (
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-slate-900">{chassisMatch.Chassis}</p>
+                      <p className="text-slate-600">{chassisMatch.Customer}</p>
+                      <p className="text-slate-500">Model: {chassisMatch.Model}</p>
+                      <p className="font-semibold text-emerald-700 flex items-center gap-1">
+                        <Sparkles className="h-3 w-3 text-emerald-500" />
+                        {friendlyStatus(chassisMatch)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-slate-500">输入车架号即可返回最新状态。</p>
+                  )}
+                </div>
+              )}
+
+              {selectedAction?.id === "receive" && (
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                  <div>
+                    <p className="font-semibold text-slate-900">Receive & add to yard</p>
+                    <p className="text-slate-500">预填车架号并打开入场流程。</p>
+                  </div>
+                  <Button size="sm" onClick={handleReceiveNow} disabled={!chassisInput.trim()}>
+                    Receive now
+                  </Button>
+                </div>
+              )}
+
+              {selectedAction?.id === "handover" && (
+                <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                  <div>
+                    <p className="font-semibold text-slate-900">直接打开 Handover</p>
+                    <p className="text-slate-500">跳到交付表单并自动带入车架号。</p>
+                  </div>
+                  <Button size="sm" onClick={handleHandoverNow} disabled={!chassisInput.trim()}>
+                    Open form
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="border-t border-slate-100 bg-slate-50/70 p-4">
