@@ -10,7 +10,14 @@ import {
   remove,
   DataSnapshot,
 } from "firebase/database";
-import type { SecondHandSale, ScheduleItem, SpecPlan, DateTrack, YardNewVanInvoice } from "@/types";
+import type {
+  SecondHandSale,
+  ScheduleItem,
+  SpecPlan,
+  DateTrack,
+  YardNewVanInvoice,
+  NewSaleRecord,
+} from "@/types";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBcczqGj5X1_w9aCX1lOK4-kgz49Oi03Bg",
@@ -282,6 +289,7 @@ export const subscribeToYardNewVanInvoices = (
         id: key,
         chassisNumber: source.chassis ?? source.Chassis ?? source.chassisNumber ?? "",
         invoiceDate: pickInvoiceDate(source),
+        pgiDate: normalizeDateInput(source.pgiDateGRSO ?? source.PGIDateGRSO ?? source.pgiDate),
         purchasePrice: toNumber(source.poFinalInvoiceValue ?? source.POFinalInvoiceValue),
         finalSalePrice: toNumber(source.grSONetValue ?? source.GRSONetValue),
         discountAmount: toNumber(
@@ -344,6 +352,40 @@ export const subscribeToSecondHandSales = (
     });
 
     callback(sales);
+  };
+
+  onValue(salesRef, handler);
+  return () => off(salesRef, "value", handler);
+};
+
+/** -------------------- new sales -------------------- */
+export const subscribeToNewSales = (
+  salesOfficeSlug: string,
+  callback: (data: NewSaleRecord[]) => void
+) => {
+  if (!salesOfficeSlug) {
+    callback([]);
+    return () => {};
+  }
+
+  const salesRef = ref(database, `newsales/${salesOfficeSlug}`);
+
+  const handler = (snapshot: DataSnapshot) => {
+    const value = snapshot.val();
+    if (!value) {
+      callback([]);
+      return;
+    }
+
+    const records: NewSaleRecord[] = Object.entries(value).map(([key, payload]: [string, any]) => ({
+      id: key,
+      createdOn: normalizeDateInput(payload.createdOn),
+      salesOfficeName: payload.salesOfficeName ?? salesOfficeSlug,
+      materialDesc0010: payload.materialDesc0010 ?? payload.materialDesc ?? payload.modelDesc ?? "",
+      billToNameFinal: payload.billToNameFinal ?? payload.customerName ?? payload.customer,
+    }));
+
+    callback(records);
   };
 
   onValue(salesRef, handler);
