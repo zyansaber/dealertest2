@@ -366,7 +366,7 @@ const FinanceReport = () => {
       })),
     [newSalesSummary.modelBreakdown]
   );
-  
+
   const analytics = useMemo(() => {
     if (!filteredInvoices.length) {
       return {
@@ -563,19 +563,31 @@ const FinanceReport = () => {
   };
 
   const monthlyTrendData = useMemo<MonthlyTrendDatum[]>(() => {
-    const months = Array.from({ length: 12 }).map((_, index) => {
-      const monthDate = subMonths(startOfMonth(new Date()), 11 - index);
-      return {
-        key: format(monthDate, "yyyy-MM"),
-        label: format(monthDate, "MMM yyyy"),
-      };
-    });
+    const invoiceDates = filteredInvoices
+      .map((invoice) => parseInvoiceDate(invoice.invoiceDate))
+      .filter(Boolean) as Date[];
+
+    if (!invoiceDates.length) return [];
+
+    const explicitStart = dateRange.start ? startOfMonth(new Date(dateRange.start)) : null;
+    const explicitEnd = dateRange.end ? startOfMonth(new Date(dateRange.end)) : null;
+
+    const startMonth = explicitStart ?? startOfMonth(invoiceDates.reduce((min, date) => (date < min ? date : min)));
+    const endMonth = explicitEnd ?? startOfMonth(invoiceDates.reduce((max, date) => (date > max ? date : max)));
+
+    const months: { key: string; label: string }[] = [];
+    for (let cursor = startMonth; cursor <= endMonth; cursor = addMonths(cursor, 1)) {
+      months.push({
+        key: format(cursor, "yyyy-MM"),
+        label: format(cursor, "MMM yyyy"),
+      });
+    }
 
     const monthBuckets = new Map(
       months.map((month) => [month.key, { revenue: 0, discount: 0, units: 0 }])
     );
 
-    invoices.forEach((invoice) => {
+    filteredInvoices.forEach((invoice) => {
       const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
       if (!invoiceDate) return;
       const key = format(invoiceDate, "yyyy-MM");
@@ -597,22 +609,32 @@ const FinanceReport = () => {
         avgDiscountRate: bucket.revenue ? -(bucket.discount / bucket.revenue) : 0,
       };
     });
-  }, [invoices]);
+  }, [dateRange.end, dateRange.start, filteredInvoices]);
 
   const secondHandTrendData = useMemo<SecondHandTrendDatum[]>(() => {
-    const months = Array.from({ length: 12 }).map((_, index) => {
-      const monthDate = subMonths(startOfMonth(new Date()), 11 - index);
-      return {
-        key: format(monthDate, "yyyy-MM"),
-        label: format(monthDate, "MMM yyyy"),
-      };
-    });
+    const trackedDates = filteredSecondHandSales
+      .map((sale) => [parseInvoiceDate(sale.invoiceDate), parseInvoiceDate(sale.pgiDate), parseInvoiceDate(sale.grDate)])
+      .flat()
+      .filter(Boolean) as Date[];
+
+    if (!trackedDates.length) return [];
+
+    const explicitStart = dateRange.start ? startOfMonth(new Date(dateRange.start)) : null;
+    const explicitEnd = dateRange.end ? startOfMonth(new Date(dateRange.end)) : null;
+
+    const startMonth = explicitStart ?? startOfMonth(trackedDates.reduce((min, date) => (date < min ? date : min)));
+    const endMonth = explicitEnd ?? startOfMonth(trackedDates.reduce((max, date) => (date > max ? date : max)));
+
+    const months: { key: string; label: string }[] = [];
+    for (let cursor = startMonth; cursor <= endMonth; cursor = addMonths(cursor, 1)) {
+      months.push({ key: format(cursor, "yyyy-MM"), label: format(cursor, "MMM yyyy") });
+    }
 
     const monthBuckets = new Map(
       months.map((month) => [month.key, { revenue: 0, pgiCount: 0, grCount: 0, marginSum: 0 }])
     );
 
-    secondHandSales.forEach((sale) => {
+    filteredSecondHandSales.forEach((sale) => {
       const invoiceDate = parseInvoiceDate(sale.invoiceDate);
       const pgiDate = parseInvoiceDate(sale.pgiDate);
       const grDate = parseInvoiceDate(sale.grDate);
@@ -634,7 +656,7 @@ const FinanceReport = () => {
           bucket.pgiCount += 1;
         }
       }
-      
+
       if (grDate) {
         const key = format(grDate, "yyyy-MM");
         const bucket = monthBuckets.get(key);
@@ -655,7 +677,7 @@ const FinanceReport = () => {
         avgMarginRate: bucket.revenue ? bucket.marginSum / bucket.revenue : 0,
       };
     });
-  }, [secondHandSales]);
+  }, [dateRange.end, dateRange.start, filteredSecondHandSales]);
 
   const hasTrendData = useMemo(() => monthlyTrendData.some((month) => month.units > 0), [monthlyTrendData]);
   const hasSecondHandTrend = useMemo(
@@ -769,7 +791,7 @@ const FinanceReport = () => {
               ) : (
                 <ChartContainer
                   config={{
-                    retailSales: { label: "Retail Sales", color: "hsl(var(--chart-1))" },
+                    retailSales: { label: "Retail Sales", color: "#2563eb" },
                   }}
                   className="h-72"
                 >
@@ -796,7 +818,7 @@ const FinanceReport = () => {
               ) : (
                 <ChartContainer
                   config={{
-                    invoiceCount: { label: "Invoice Number", color: "hsl(var(--chart-2))" },
+                    invoiceCount: { label: "Invoice Number", color: "#16a34a" },
                   }}
                   className="h-72"
                 >
@@ -823,7 +845,7 @@ const FinanceReport = () => {
               ) : (
                 <ChartContainer
                   config={{
-                    modelCount: { label: "Units", color: "hsl(var(--chart-3))" },
+                    modelCount: { label: "Units", color: "#f97316" },
                   }}
                   className="h-72"
                 >
