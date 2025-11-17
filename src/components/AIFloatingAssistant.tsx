@@ -10,11 +10,13 @@ import {
   MenuSquare,
   Radar,
   Route,
+  Search,
   Sparkles,
   Truck,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { subscribeToSchedule } from "@/lib/firebase";
@@ -34,6 +36,25 @@ interface QuickAction {
   cta: string;
   icon: ElementType;
   target: "orders" | "yard" | "inventory" | "unsigned" | "dashboard" | "finance";
+}
+
+interface CommandShortcut {
+  id:
+    | "dashboard"
+    | "orders"
+    | "inventory"
+    | "unsigned"
+    | "yard"
+    | "finance"
+    | "group-dashboard"
+    | "group-inventory"
+    | "group-unsigned"
+    | "group-yard";
+  title: string;
+  description: string;
+  icon: ElementType;
+  target: QuickAction["target"];
+  groupOnly?: boolean;
 }
 
 const quickActions: QuickAction[] = [
@@ -95,6 +116,83 @@ const quickActions: QuickAction[] = [
   },
 ];
 
+const commandShortcuts: CommandShortcut[] = [
+  {
+    id: "dashboard",
+    title: "Dealer dashboard",
+    description: "Revenue, pipeline, and health for this dealer",
+    icon: LineChart,
+    target: "dashboard",
+  },
+  {
+    id: "orders",
+    title: "Dealer orders",
+    description: "Order board with search, filters, and PGI insights",
+    icon: Radar,
+    target: "orders",
+  },
+  {
+    id: "inventory",
+    title: "Inventory stock",
+    description: "Allocation, stock, and factory requests",
+    icon: Factory,
+    target: "inventory",
+  },
+  {
+    id: "unsigned",
+    title: "Unsigned slots",
+    description: "Unsigned plans with red slot highlight",
+    icon: MenuSquare,
+    target: "unsigned",
+  },
+  {
+    id: "yard",
+    title: "Yard & PGI",
+    description: "Receive vans, PGI, and dispatch",
+    icon: Truck,
+    target: "yard",
+  },
+  {
+    id: "finance",
+    title: "Finance report",
+    description: "PowerBI revenue tiles and KPI trends",
+    icon: LineChart,
+    target: "finance",
+  },
+  {
+    id: "group-dashboard",
+    title: "Dealer group dashboard",
+    description: "Roll-up metrics and dealer switching",
+    icon: Sparkles,
+    target: "dashboard",
+    groupOnly: true,
+  },
+  {
+    id: "group-inventory",
+    title: "Group inventory",
+    description: "Group-level stock and reallocation",
+    icon: Factory,
+    target: "inventory",
+    groupOnly: true,
+  },
+  {
+    id: "group-unsigned",
+    title: "Group unsigned",
+    description: "Unsigned slots across dealers",
+    icon: MenuSquare,
+    target: "unsigned",
+    groupOnly: true,
+  },
+  {
+    id: "group-yard",
+    title: "Group yard",
+    description: "Group-level receive and PGI",
+    icon: Truck,
+    target: "yard",
+    groupOnly: true,
+  },
+];
+
 function parseDate(value?: string): Date | null {
   if (!value) return null;
   const clean = value.trim();
@@ -133,7 +231,8 @@ export default function AIFloatingAssistant() {
   const [selectedAction, setSelectedAction] = useState<QuickAction | null>(quickActions[0]);
   const [orders, setOrders] = useState<ScheduleItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [commandSearch, setCommandSearch] = useState("");
 
   useEffect(() => {
     const unsub = subscribeToSchedule((data) => {
@@ -218,8 +317,8 @@ export default function AIFloatingAssistant() {
   };
 
   const trackedOrders = useMemo(() => {
-    if (!searchTerm.trim()) return [];
-    const term = searchTerm.toLowerCase();
+    if (!orderSearch.trim()) return [];
+    const term = orderSearch.toLowerCase();
     return orders
       .filter((order) =>
         order.Chassis.toLowerCase().includes(term) ||
@@ -227,7 +326,22 @@ export default function AIFloatingAssistant() {
         order.Model.toLowerCase().includes(term)
       )
       .slice(0, 3);
-  }, [orders, searchTerm]);
+  }, [orders, orderSearch]);
+
+  const filteredShortcuts = useMemo(() => {
+    const term = commandSearch.trim().toLowerCase();
+    return commandShortcuts
+      .filter((shortcut) =>
+        context.kind === "dealergroup" ? true : shortcut.groupOnly ? false : true
+      )
+      .filter((shortcut) =>
+        term
+          ? shortcut.title.toLowerCase().includes(term) ||
+            shortcut.description.toLowerCase().includes(term)
+          : true
+      )
+      .slice(0, 6);
+  }, [commandSearch, context.kind]);
 
   const unsignedCount = useMemo(
     () => orders.filter((o) => !(o as any)["Signed Plans Received"]?.trim?.()).length,
@@ -255,15 +369,62 @@ export default function AIFloatingAssistant() {
     const total = orders.length;
     const pending = orders.filter((o) => !o["Regent Production"] || o["Regent Production"].toLowerCase() === "pending").length;
     const withDates = orders.filter((o) => parseDate(o["Forecast Production Date"]) !== null).length;
+    const nextUnsigned = orders
+      .filter((o) => !(o as any)["Signed Plans Received"]?.trim?.())
+      .map((o) => ({
+        chassis: o.Chassis,
+        customer: o.Customer,
+        etaDays: daysFromToday(parseDate(o["Forecast Production Date"])) ?? 9999,
+      }))
+      .sort((a, b) => a.etaDays - b.etaDays)[0];
+    const nextPGI = orders
+      .map((o) => ({
+        chassis: o.Chassis,
+        deliveryDays: daysFromToday(parseDate(o["Request Delivery Date"] || o["Forecast Production Date"])) ?? 9999,
+        status: o["Regent Production"] ?? "",
+      }))
+      .sort((a, b) => a.deliveryDays - b.deliveryDays)[0];
 
     return {
       total,
       pending,
       withDates,
+      nextUnsigned,
+      nextPGI,
     };
   }, [orders]);
 
-  const handleNavigate = (action: QuickAction) => {
+  const suggestedActions = useMemo(() => {
+    const suggestions = [] as Array<{ label: string; detail: string; action: QuickAction }>;
+
+    if (smartSummary.nextUnsigned && smartSummary.nextUnsigned.etaDays < 30) {
+      suggestions.push({
+        label: "Unsigned slot risk",
+        detail: `${smartSummary.nextUnsigned.customer || "Customer"} – ${smartSummary.nextUnsigned.chassis} due in ${smartSummary.nextUnsigned.etaDays}d`,
+        action: quickActions.find((a) => a.id === "unsigned")!,
+      });
+    }
+
+    if (smartSummary.nextPGI && smartSummary.nextPGI.deliveryDays < 5) {
+      suggestions.push({
+        label: "Upcoming PGI",
+        detail: `${smartSummary.nextPGI.chassis} expected in ${smartSummary.nextPGI.deliveryDays}d (${smartSummary.nextPGI.status || ""})`,
+        action: quickActions.find((a) => a.id === "road")!,
+      });
+    }
+
+    if (!suggestions.length) {
+      suggestions.push({
+        label: "Jump back to dashboard",
+        detail: "Open the most relevant dashboard for this context",
+        action: quickActions.find((a) => a.id === "track")!,
+      });
+    }
+
+    return suggestions.slice(0, 2);
+  }, [smartSummary]);
+
+  const handleNavigate = (action: QuickAction | CommandShortcut) => {
     const path = buildPath(action.target);
     navigate(path);
     setOpen(false);
@@ -277,6 +438,7 @@ export default function AIFloatingAssistant() {
             <div>
               <p className="text-[10px] uppercase tracking-[0.2em] text-slate-300">AI Copilot</p>
               <p className="text-base font-semibold">Everything, one click away</p>
+              <p className="text-[11px] text-slate-200">Understands {context.kind === "dealergroup" ? "dealer group" : "dealer"} pages and jumps to the right view.</p>
             </div>
             <Button
               variant="ghost"
@@ -342,25 +504,42 @@ export default function AIFloatingAssistant() {
               </div>
             </div>
 
+            <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-700 sm:grid-cols-2">
+              {suggestedActions.map((suggestion) => (
+                <button
+                  key={suggestion.label}
+                  type="button"
+                  onClick={() => suggestion.action && handleNavigate(suggestion.action)}
+                  className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition hover:-translate-y-[1px] hover:border-slate-300"
+                >
+                  <div className="flex items-center gap-2 text-slate-900">
+                    <Sparkles className="h-3 w-3 text-amber-500" />
+                    <span className="font-semibold">{suggestion.label}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">{suggestion.detail}</p>
+                </button>
+              ))}
+            </div>
+
             {selectedAction?.id === "track" && (
               <div className="mt-4 space-y-3">
                 <div>
                   <p className="text-xs font-semibold text-slate-700 mb-1">Search by chassis / customer</p>
                   <Input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    value={orderSearch}
+                    onChange={(e) => setOrderSearch(e.target.value)}
                     placeholder="Type chassis, customer, or model"
                     className="text-sm"
                   />
                 </div>
                 <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                  {!searchTerm && <p className="text-xs text-slate-500">Start typing to see live statuses.</p>}
-                  {searchTerm && loadingOrders && (
+                  {!orderSearch && <p className="text-xs text-slate-500">Start typing to see live statuses.</p>}
+                  {orderSearch && loadingOrders && (
                     <p className="text-xs text-slate-500 flex items-center gap-1">
                       <Loader2 className="h-3 w-3 animate-spin" /> Thinking…
                     </p>
                   )}
-                  {searchTerm && !loadingOrders && trackedOrders.length === 0 && (
+                  {orderSearch && !loadingOrders && trackedOrders.length === 0 && (
                     <p className="text-xs text-slate-500">No matching orders found.</p>
                   )}
                   {trackedOrders.map((order) => (
@@ -408,6 +587,42 @@ export default function AIFloatingAssistant() {
                 </p>
               </div>
             )}
+
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <Search className="h-3 w-3" />
+                <span>Command palette</span>
+                <Badge variant="secondary" className="rounded-full">All pages</Badge>
+              </div>
+              <Input
+                value={commandSearch}
+                onChange={(e) => setCommandSearch(e.target.value)}
+                placeholder="Search actions (dashboard, yard, finance, unsigned…)"
+                className="text-sm"
+              />
+              <div className="max-h-32 space-y-2 overflow-y-auto pr-1 text-xs">
+                {filteredShortcuts.map((shortcut) => (
+                  <button
+                    key={shortcut.id}
+                    type="button"
+                    onClick={() => handleNavigate(shortcut)}
+                    className="flex w-full items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-slate-300"
+                  >
+                    <shortcut.icon className="mt-[2px] h-4 w-4 text-slate-600" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-slate-900">{shortcut.title}</p>
+                      <p className="text-[11px] text-slate-600">{shortcut.description}</p>
+                    </div>
+                    {context.kind === "dealergroup" && shortcut.groupOnly && (
+                      <Badge className="mt-[2px]" variant="outline">Group</Badge>
+                    )}
+                  </button>
+                ))}
+                {!filteredShortcuts.length && (
+                  <p className="text-[11px] text-slate-500">No commands match that search.</p>
+                )}
+              </div>
+            </div>
 
             <Button
               className="mt-4 w-full bg-slate-900 text-white hover:bg-slate-800"
