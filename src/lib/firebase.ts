@@ -288,6 +288,7 @@ export const subscribeToYardNewVanInvoices = (
       return {
         id: key,
         chassisNumber: source.chassis ?? source.Chassis ?? source.chassisNumber ?? "",
+        createdOn: normalizeDateInput(source.createdOn ?? source.createdAt ?? source.CreatedAt),
         invoiceDate: pickInvoiceDate(source),
         pgiDate: normalizeDateInput(source.pgiDateGRSO ?? source.PGIDateGRSO ?? source.pgiDate),
         purchasePrice: toNumber(source.poFinalInvoiceValue ?? source.POFinalInvoiceValue),
