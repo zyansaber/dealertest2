@@ -83,8 +83,8 @@ type SecondHandTrendDatum = {
   key: string;
   label: string;
   revenue: number;
-  poCount: number;
   pgiCount: number;
+  grCount: number;
   avgMarginRate: number;
 };
 
@@ -464,12 +464,13 @@ const FinanceReport = () => {
     });
 
     const monthBuckets = new Map(
-      months.map((month) => [month.key, { revenue: 0, poCount: 0, pgiCount: 0, marginSum: 0 }])
+      months.map((month) => [month.key, { revenue: 0, pgiCount: 0, grCount: 0, marginSum: 0 }])
     );
 
     secondHandSales.forEach((sale) => {
       const invoiceDate = parseInvoiceDate(sale.invoiceDate);
       const pgiDate = parseInvoiceDate(sale.pgiDate);
+      const grDate = parseInvoiceDate(sale.grDate);
       const margin = sale.finalInvoicePrice - sale.poLineNetValue;
 
       if (invoiceDate) {
@@ -477,7 +478,6 @@ const FinanceReport = () => {
         const bucket = monthBuckets.get(key);
         if (bucket) {
           bucket.revenue += sale.finalInvoicePrice;
-          bucket.poCount += 1;
           bucket.marginSum += margin;
         }
       }
@@ -489,6 +489,14 @@ const FinanceReport = () => {
           bucket.pgiCount += 1;
         }
       }
+      
+      if (grDate) {
+        const key = format(grDate, "yyyy-MM");
+        const bucket = monthBuckets.get(key);
+        if (bucket) {
+          bucket.grCount += 1;
+        }
+      }
     });
 
     return months.map((month) => {
@@ -497,8 +505,8 @@ const FinanceReport = () => {
         key: month.key,
         label: month.label,
         revenue: bucket.revenue,
-        poCount: bucket.poCount,
         pgiCount: bucket.pgiCount,
+        grCount: bucket.grCount,
         avgMarginRate: bucket.revenue ? bucket.marginSum / bucket.revenue : 0,
       };
     });
@@ -507,7 +515,9 @@ const FinanceReport = () => {
   const hasTrendData = useMemo(() => monthlyTrendData.some((month) => month.units > 0), [monthlyTrendData]);
   const hasSecondHandTrend = useMemo(
     () =>
-      secondHandTrendData.some((month) => month.poCount > 0 || month.pgiCount > 0 || month.revenue > 0),
+      secondHandTrendData.some(
+        (month) => month.pgiCount > 0 || month.grCount > 0 || month.revenue > 0
+      ),
     [secondHandTrendData]
   );
 
@@ -1050,30 +1060,23 @@ const FinanceReport = () => {
         <CardHeader>
           <CardTitle>Second Hand Trend</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Rolling 12 months of revenue, PO lines, PGIs, and margin health for pre-owned stock
+            Rolling 12 months of revenue and margin health for pre-owned stock, plus throughput of PGI
+            completions and GR receipts
           </p>
         </CardHeader>
         <CardContent>
           {!hasSecondHandTrend ? (
-            <p className="text-muted-foreground">Need PO or PGI activity across multiple months to show a trend.</p>
+            <p className="text-muted-foreground">Need PGI, GR, or invoice activity across multiple months to show a trend.</p>
           ) : (
-            <div className="w-full overflow-x-auto">
+            <div className="grid gap-6 lg:grid-cols-2">
               <ChartContainer
                 config={{
                   revenue: { label: "Revenue", color: "#2563eb" },
-                  poCount: { label: "PO lines", color: "hsl(var(--chart-3))" },
-                  pgiCount: { label: "PGI completed", color: "hsl(var(--chart-2))" },
                   avgMarginRate: { label: "Average margin", color: "#ef4444" },
                 }}
-                className="h-[360px] min-w-[960px]"
+                className="h-[360px] min-w-[560px]"
               >
                 <ComposedChart data={secondHandTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="shRevenueGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
                   <YAxis
@@ -1082,7 +1085,6 @@ const FinanceReport = () => {
                     axisLine={false}
                     tickFormatter={(value) => formatCompactMoney(value as number)}
                   />
-                  <YAxis yAxisId="count" orientation="right" tickLine={false} axisLine={false} allowDecimals={false} />
                   <YAxis
                     yAxisId="margin"
                     orientation="right"
@@ -1106,24 +1108,6 @@ const FinanceReport = () => {
                             );
                           }
 
-                          if (item?.dataKey === "poCount") {
-                            return (
-                              <div className="flex flex-1 justify-between">
-                                <span>PO lines</span>
-                                <span className="font-medium">{value}</span>
-                              </div>
-                            );
-                          }
-
-                          if (item?.dataKey === "pgiCount") {
-                            return (
-                              <div className="flex flex-1 justify-between">
-                                <span>PGI completed</span>
-                                <span className="font-medium">{value}</span>
-                              </div>
-                            );
-                          }
-
                           return (
                             <div className="flex flex-1 justify-between">
                               <span>Average margin</span>
@@ -1143,16 +1127,12 @@ const FinanceReport = () => {
                       />
                     }
                   />
-                  <Bar dataKey="poCount" yAxisId="count" fill="var(--color-poCount)" radius={[4, 4, 0, 0]} barSize={18} />
-                  <Bar dataKey="pgiCount" yAxisId="count" fill="var(--color-pgiCount)" radius={[4, 4, 0, 0]} barSize={18} />
-                  <Line
-                    type="monotone"
+                  <Bar
                     dataKey="revenue"
                     yAxisId="revenue"
-                    stroke="var(--color-revenue)"
-                    strokeWidth={2.5}
-                    dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
-                    activeDot={{ r: 5, strokeWidth: 2 }}
+                    fill="var(--color-revenue)"
+                    radius={[4, 4, 0, 0]}
+                    barSize={28}
                   />
                   <Line
                     type="monotone"
@@ -1165,10 +1145,61 @@ const FinanceReport = () => {
                   />
                 </ComposedChart>
               </ChartContainer>
+
+              <ChartContainer
+                config={{
+                  grCount: { label: "GR receipts", color: "hsl(var(--chart-1))" },
+                  pgiCount: { label: "PGI completed", color: "hsl(var(--chart-2))" },
+                }}
+                className="h-[360px] min-w-[560px]"
+              >
+                <ComposedChart data={secondHandTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="dot"
+                        formatter={(value, name) => {
+                          if (typeof value !== "number") return null;
+
+                          if (name === "grCount") {
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>GR receipts</span>
+                                <span className="font-medium">{value}</span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-1 justify-between">
+                              <span>PGI completed</span>
+                              <span className="font-medium">{value}</span>
+                            </div>
+                          );
+                        }}
+                      />
+                    }
+                  />
+                  <ChartLegend
+                    verticalAlign="top"
+                    align="left"
+                    content={
+                      <ChartLegendContent
+                        className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5"
+                      />
+                    }
+                  />
+                  <Bar dataKey="grCount" fill="var(--color-grCount)" radius={[4, 4, 0, 0]} barSize={24} />
+                  <Bar dataKey="pgiCount" fill="var(--color-pgiCount)" radius={[4, 4, 0, 0]} barSize={24} />
+                </ComposedChart>
+              </ChartContainer>
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-3">
-            Revenue uses invoice date; PO (bars) and PGI (bars) show throughput, with the red line tracking monthly margin rate.
+            Revenue uses invoice date; the red line tracks monthly margin rate. PGI and GR bars show throughput volume.
           </p>
         </CardContent>
       </Card>
@@ -1181,6 +1212,15 @@ const FinanceReport = () => {
           <CardContent>
             <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.totalRevenue)}</div>
             <p className="text-sm text-slate-500 mt-1">Across {filteredSecondHandSales.length} invoices</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total PO Cost</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.totalCost)}</div>
+            <p className="text-sm text-slate-500 mt-1">PO line net value</p>
           </CardContent>
         </Card>
         <Card>
