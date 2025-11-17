@@ -341,31 +341,6 @@ const FinanceReport = () => {
       };
     }
 
-const analytics = useMemo(() => {
-    if (!filteredInvoices.length) {
-      return {
-        averageMarginRate: 0,
-        averagePurchase: 0,
-        highestSale: null as YardNewVanInvoice | null,
-        strongestMarginInvoice: null as YardNewVanInvoice | null,
-        strongestMarginRate: 0,
-        modelMix: [] as Array<{
-          model: string;
-          units: number;
-          revenue: number;
-          margin: number;
-          avgSale: number;
-          marginRate: number;
-        }>,
-        discountBreakdown: [] as Array<{
-          label: string;
-          units: number;
-          revenue: number;
-          share: number;
-        }>,
-      };
-    }
-
     const discountSegments = [
       { label: "Minimal (<$5k)", min: 0, max: 4999 },
       { label: "$5k – $10k", min: 5000, max: 9999 },
