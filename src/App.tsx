@@ -26,6 +26,7 @@ import DealerGroupInventoryStock from "./pages/DealerGroupInventoryStock";
 import DealerGroupUnsigned from "./pages/DealerGroupUnsigned";
 import DealerYard from "./pages/DealerYard";
 import DealerGroupYard from "./pages/DealerGroupYard";
+import AIFloatingAssistant from "./components/AIFloatingAssistant";
 
 const queryClient = new QueryClient();
 
@@ -146,6 +147,7 @@ const App = () => (
           {/* 兜底 404，放最后 */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        <AIFloatingAssistant />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
