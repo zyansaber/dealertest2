@@ -167,7 +167,7 @@ const FinanceReport = () => {
   }, [dealerSlug]);
 
   const filteredInvoices = useMemo(() => {
-    const startDate = dateRange.start ? new Da
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
     const endDate = dateRange.end ? new Date(dateRange.end) : null;
 
     return invoices
