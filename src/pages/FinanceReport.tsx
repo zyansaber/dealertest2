@@ -1204,92 +1204,115 @@ const FinanceReport = () => {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Total Revenue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.totalRevenue)}</div>
-            <p className="text-sm text-slate-500 mt-1">Across {filteredSecondHandSales.length} invoices</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total PO Cost</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.totalCost)}</div>
-            <p className="text-sm text-slate-500 mt-1">PO line net value</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total PO Cost</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.totalCost)}</div>
-            <p className="text-sm text-slate-500 mt-1">PO line net value</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Gross Margin</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">{currency.format(secondHandSummary.grossMargin)}</div>
-            <p className="text-sm text-slate-500 mt-1">Sale minus PO cost</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Loss-making Deals</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">
-              {secondHandSummary.lossUnits} ({secondHandSummary.totalUnits
-                ? Math.round((secondHandSummary.lossUnits / secondHandSummary.totalUnits) * 100)
-                : 0}
-              %)
-            </div>
-            <p className="text-sm text-slate-500 mt-1">Units with negative margin</p>
-          </CardContent>
-        </Card>
+<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+  {/* 1. Total Revenue */}
+  <Card>
+    <CardHeader>
+      <CardTitle>Total Revenue</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-semibold text-slate-900">
+        {currency.format(secondHandSummary.totalRevenue)}
       </div>
+      <p className="text-sm text-slate-500 mt-1">
+        Across {filteredSecondHandSales.length} invoices
+      </p>
+    </CardContent>
+  </Card>
 
-      <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Units Sold</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">{secondHandSummary.totalUnits}</div>
-            <p className="text-sm text-slate-500 mt-1">Filtered invoice count</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Average Margin %</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">{formatPercent(secondHandSummary.averageMarginRate)}</div>
-            <p className="text-sm text-slate-500 mt-1">Margin over sale price</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Average Days from PGI to GR</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-slate-900">{
-              secondHandSummary.averageDaysPGIToGR == null
-                ? "-"
-                : `${secondHandSummary.averageDaysPGIToGR.toFixed(1)} days`
-            }</div>
-            <p className="text-sm text-slate-500 mt-1">Speed from PGI to GR</p>
-          </CardContent>
-        </Card>
+  {/* 2. Total PO Cost */}
+  <Card>
+    <CardHeader>
+      <CardTitle>Total PO Cost</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-semibold text-slate-900">
+        {currency.format(secondHandSummary.totalCost)}
       </div>
+      <p className="text-sm text-slate-500 mt-1">PO line net value</p>
+    </CardContent>
+  </Card>
+
+  {/* 3. Units Sold  ← 提前放这里 */}
+  <Card>
+    <CardHeader>
+      <CardTitle>Units Sold</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-semibold text-slate-900">
+        {secondHandSummary.totalUnits}
+      </div>
+      <p className="text-sm text-slate-500 mt-1">Filtered invoice count</p>
+    </CardContent>
+  </Card>
+
+  {/* 4. Loss-making Deals  ← 紧跟在 Units Sold 后面，这样一行并排 */}
+  <Card>
+    <CardHeader>
+      <CardTitle>Loss-making Deals</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-semibold text-slate-900">
+        {secondHandSummary.lossUnits} (
+        {secondHandSummary.totalUnits
+          ? Math.round(
+              (secondHandSummary.lossUnits / secondHandSummary.totalUnits) *
+                100
+            )
+          : 0}
+        %)
+      </div>
+      <p className="text-sm text-slate-500 mt-1">
+        Units with negative margin
+      </p>
+    </CardContent>
+  </Card>
+
+  {/* 5. Gross Margin */}
+  <Card>
+    <CardHeader>
+      <CardTitle>Gross Margin</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-semibold text-slate-900">
+        {currency.format(secondHandSummary.grossMargin)}
+      </div>
+      <p className="text-sm text-slate-500 mt-1">Sale minus PO cost</p>
+    </CardContent>
+  </Card>
+
+  {/* 6. Average Margin % */}
+  <Card>
+    <CardHeader>
+      <CardTitle>Average Margin %</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-semibold text-slate-900">
+        {formatPercent(secondHandSummary.averageMarginRate)}
+      </div>
+      <p className="text-sm text-slate-500 mt-1">
+        Margin over sale price
+      </p>
+    </CardContent>
+  </Card>
+
+  {/* 7. Average Days from PGI to GR */}
+  <Card>
+    <CardHeader>
+      <CardTitle>Average Days from PGI to GR</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-semibold text-slate-900">
+        {secondHandSummary.averageDaysPGIToGR == null
+          ? "-"
+          : `${secondHandSummary.averageDaysPGIToGR.toFixed(1)} days`}
+      </div>
+      <p className="text-sm text-slate-500 mt-1">
+        Speed from PGI to GR
+      </p>
+    </CardContent>
+  </Card>
+</div>
 
       <Card>
         <CardHeader>
