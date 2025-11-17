@@ -567,6 +567,14 @@ const FinanceReport = () => {
       return;
     }
 
+    if (preset === "LAST_3_MONTHS") {
+      setDateRange({
+        start: format(startOfMonth(subMonths(today, 2)), "yyyy-MM-dd"),
+        end: format(today, "yyyy-MM-dd"),
+      });
+      return;
+    }
+    
     if (preset === "THIS_YEAR") {
       setDateRange({
         start: format(startOfYear(today), "yyyy-MM-dd"),
