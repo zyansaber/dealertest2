@@ -25,7 +25,7 @@ import {
 } from "@/lib/dealerUtils";
 import { AlertTriangle } from "lucide-react";
 import { format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
-import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -316,6 +316,57 @@ const FinanceReport = () => {
     };
   }, [filteredInvoices, invoices, dateRange]);
 
+  const retailSalesByMonth = useMemo(() => {
+    const buckets = new Map<string, { label: string; count: number }>();
+
+    retailNewSales.forEach((sale) => {
+      const createdDate = parseInvoiceDate(sale.createdOn);
+      if (!createdDate) return;
+
+      const key = format(createdDate, "yyyy-MM");
+      const existing = buckets.get(key);
+      buckets.set(key, {
+        label: existing?.label ?? format(createdDate, "MMM yy"),
+        count: (existing?.count ?? 0) + 1,
+      });
+    });
+
+    return Array.from(buckets.entries())
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([, value]) => value)
+      .slice(-6);
+  }, [retailNewSales]);
+
+  const invoiceCountByMonth = useMemo(() => {
+    const buckets = new Map<string, { label: string; count: number }>();
+
+    filteredInvoices.forEach((invoice) => {
+      const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
+      if (!invoiceDate) return;
+
+      const key = format(invoiceDate, "yyyy-MM");
+      const existing = buckets.get(key);
+      buckets.set(key, {
+        label: existing?.label ?? format(invoiceDate, "MMM yy"),
+        count: (existing?.count ?? 0) + 1,
+      });
+    });
+
+    return Array.from(buckets.entries())
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([, value]) => value)
+      .slice(-6);
+  }, [filteredInvoices]);
+
+  const retailModelBarData = useMemo(
+    () =>
+      newSalesSummary.modelBreakdown.slice(0, 8).map((model) => ({
+        label: model.model,
+        count: model.count,
+      })),
+    [newSalesSummary.modelBreakdown]
+  );
+  
   const analytics = useMemo(() => {
     if (!filteredInvoices.length) {
       return {
@@ -647,11 +698,11 @@ const FinanceReport = () => {
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_WEEK")}>
                   This Week
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
-                  Last 3 Months
-                </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_MONTH")}>
                   This Month
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
+                  Last 3 Months
                 </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_YEAR")}>
                   This Year
@@ -685,7 +736,7 @@ const FinanceReport = () => {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Invoice Dates</CardTitle>
+            <CardTitle>Invoice Number</CardTitle>
             <p className="text-sm text-muted-foreground">yardnewvaninvoice invoiceDate</p>
           </CardHeader>
           <CardContent>
@@ -695,7 +746,7 @@ const FinanceReport = () => {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>PGI Dates</CardTitle>
+            <CardTitle>PGI Number</CardTitle>
             <p className="text-sm text-muted-foreground">yardnewvaninvoice pgiDate</p>
           </CardHeader>
           <CardContent>
@@ -705,34 +756,121 @@ const FinanceReport = () => {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Retail Model Mix</CardTitle>
-          <p className="text-sm text-muted-foreground">Breakdown of non-stock sales by type</p>
-        </CardHeader>
-        <CardContent>
-          {newSalesSummary.modelBreakdown.length === 0 ? (
-            <p className="text-muted-foreground">No retail sales recorded in this range.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Model</TableHead>
-                  <TableHead className="text-right">Units</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {newSalesSummary.modelBreakdown.map((model) => (
-                  <TableRow key={model.model}>
-                    <TableCell className="font-medium">{model.model}</TableCell>
-                    <TableCell className="text-right">{model.count}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Retail Sales</CardTitle>
+              <p className="text-sm text-muted-foreground">Non-stock sales grouped by month</p>
+            </CardHeader>
+            <CardContent>
+              {retailSalesByMonth.length === 0 ? (
+                <p className="text-muted-foreground">No retail sales recorded in this range.</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    count: { label: "Retail Sales", color: "hsl(var(--chart-1))" },
+                  }}
+                  className="h-72"
+                >
+                  <BarChart data={retailSalesByMonth} margin={{ left: 12, right: 12, bottom: 12 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]} barSize={28} />
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Invoice Number</CardTitle>
+              <p className="text-sm text-muted-foreground">yardnewvaninvoice invoiceDate grouped by month</p>
+            </CardHeader>
+            <CardContent>
+              {invoiceCountByMonth.length === 0 ? (
+                <p className="text-muted-foreground">No invoices recorded in this range.</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    count: { label: "Invoice Number", color: "hsl(var(--chart-2))" },
+                  }}
+                  className="h-72"
+                >
+                  <BarChart data={invoiceCountByMonth} margin={{ left: 12, right: 12, bottom: 12 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]} barSize={28} />
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Retail Model Mix</CardTitle>
+              <p className="text-sm text-muted-foreground">Breakdown of non-stock sales by type</p>
+            </CardHeader>
+            <CardContent>
+              {newSalesSummary.modelBreakdown.length === 0 ? (
+                <p className="text-muted-foreground">No retail sales recorded in this range.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Model</TableHead>
+                      <TableHead className="text-right">Units</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {newSalesSummary.modelBreakdown.map((model) => (
+                      <TableRow key={model.model}>
+                        <TableCell className="font-medium">{model.model}</TableCell>
+                        <TableCell className="text-right">{model.count}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Retail Model Volume</CardTitle>
+              <p className="text-sm text-muted-foreground">Top models ranked by unit count</p>
+            </CardHeader>
+            <CardContent>
+              {retailModelBarData.length === 0 ? (
+                <p className="text-muted-foreground">No retail model data available for this range.</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    count: { label: "Units", color: "hsl(var(--chart-3))" },
+                  }}
+                  className="h-72"
+                >
+                  <BarChart data={retailModelBarData} margin={{ left: 12, right: 12, bottom: 12 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-25} textAnchor="end" height={60} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]} barSize={28} />
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       <Card>
         <CardHeader>
@@ -809,11 +947,11 @@ const FinanceReport = () => {
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_WEEK")}>
                   This Week
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
-                  Last 3 Months
-                </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_MONTH")}>
                   This Month
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
+                  Last 3 Months
                 </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_YEAR")}>
                   This Year
@@ -1303,11 +1441,11 @@ const FinanceReport = () => {
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_WEEK")}>
                   This Week
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
-                  Last 3 Months
-                </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_MONTH")}>
                   This Month
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("LAST_3_MONTHS")}>
+                  Last 3 Months
                 </Button>
                 <Button variant="outline" className="flex-1" onClick={() => handleQuickRange("THIS_YEAR")}>
                   This Year
@@ -1650,7 +1788,7 @@ const FinanceReport = () => {
           <p className="text-muted-foreground">Performance snapshots for new and second hand van sales</p>
         </header>
 
-        <Tabs defaultValue="new-vans" className="space-y-6">
+        <Tabs defaultValue="basic" className="space-y-6">
           <TabsList>
             <TabsTrigger value="basic">Basic performance data</TabsTrigger>
             <TabsTrigger value="new-vans">New Van Sales</TabsTrigger>
