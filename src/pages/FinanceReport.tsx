@@ -85,6 +85,7 @@ type SecondHandTrendDatum = {
   revenue: number;
   poCount: number;
   pgiCount: number;
+  avgMarginRate: number;
 };
 
 const FinanceReport = () => {
@@ -206,15 +207,15 @@ const FinanceReport = () => {
     const grossMargin = totalRevenue - totalCost;
     const lossUnits = filteredSecondHandSales.filter((sale) => sale.finalInvoicePrice - sale.poLineNetValue < 0).length;
 
-    let timeToInvoiceSum = 0;
-    let timeToInvoiceCount = 0;
+    let timeFromPGIToGRSum = 0;
+    let timeFromPGIToGRCount = 0;
     filteredSecondHandSales.forEach((sale) => {
-      const invoiceDate = parseInvoiceDate(sale.invoiceDate);
       const pgiDate = parseInvoiceDate(sale.pgiDate);
-      if (invoiceDate && pgiDate) {
-        const diffDays = Math.round((invoiceDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24));
-        timeToInvoiceSum += diffDays;
-        timeToInvoiceCount += 1;
+      const grDate = parseInvoiceDate(sale.grDate);
+      if (grDate && pgiDate) {
+        const diffDays = Math.round((grDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24));
+        timeFromPGIToGRSum += diffDays;
+        timeFromPGIToGRCount += 1;
       }
     });
 
@@ -225,7 +226,7 @@ const FinanceReport = () => {
       totalUnits,
       lossUnits,
       averageMarginRate: totalRevenue ? grossMargin / totalRevenue : 0,
-      averageDaysToInvoice: timeToInvoiceCount ? timeToInvoiceSum / timeToInvoiceCount : null,
+      averageDaysPGIToGR: timeFromPGIToGRCount ? timeFromPGIToGRSum / timeFromPGIToGRCount : null,
     };
   }, [filteredSecondHandSales]);
 
@@ -463,12 +464,13 @@ const FinanceReport = () => {
     });
 
     const monthBuckets = new Map(
-      months.map((month) => [month.key, { revenue: 0, poCount: 0, pgiCount: 0 }])
+      months.map((month) => [month.key, { revenue: 0, poCount: 0, pgiCount: 0, marginSum: 0 }])
     );
 
     secondHandSales.forEach((sale) => {
       const invoiceDate = parseInvoiceDate(sale.invoiceDate);
       const pgiDate = parseInvoiceDate(sale.pgiDate);
+      const margin = sale.finalInvoicePrice - sale.poLineNetValue;
 
       if (invoiceDate) {
         const key = format(invoiceDate, "yyyy-MM");
@@ -476,6 +478,7 @@ const FinanceReport = () => {
         if (bucket) {
           bucket.revenue += sale.finalInvoicePrice;
           bucket.poCount += 1;
+          bucket.marginSum += margin;
         }
       }
 
@@ -490,7 +493,14 @@ const FinanceReport = () => {
 
     return months.map((month) => {
       const bucket = monthBuckets.get(month.key)!;
-      return { key: month.key, label: month.label, ...bucket };
+      return {
+        key: month.key,
+        label: month.label,
+        revenue: bucket.revenue,
+        poCount: bucket.poCount,
+        pgiCount: bucket.pgiCount,
+        avgMarginRate: bucket.revenue ? bucket.marginSum / bucket.revenue : 0,
+      };
     });
   }, [secondHandSales]);
 
@@ -1040,7 +1050,7 @@ const FinanceReport = () => {
         <CardHeader>
           <CardTitle>Second Hand Trend</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Rolling 12 months of revenue, PO lines, and PGIs for pre-owned stock
+            Rolling 12 months of revenue, PO lines, PGIs, and margin health for pre-owned stock
           </p>
         </CardHeader>
         <CardContent>
@@ -1050,9 +1060,10 @@ const FinanceReport = () => {
             <div className="w-full overflow-x-auto">
               <ChartContainer
                 config={{
-                  revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
+                  revenue: { label: "Revenue", color: "#2563eb" },
                   poCount: { label: "PO lines", color: "hsl(var(--chart-3))" },
-                  pgiCount: { label: "PGI completed", color: "#ef4444" },
+                  pgiCount: { label: "PGI completed", color: "hsl(var(--chart-2))" },
+                  avgMarginRate: { label: "Average margin", color: "#ef4444" },
                 }}
                 className="h-[360px] min-w-[960px]"
               >
@@ -1072,6 +1083,13 @@ const FinanceReport = () => {
                     tickFormatter={(value) => formatCompactMoney(value as number)}
                   />
                   <YAxis yAxisId="count" orientation="right" tickLine={false} axisLine={false} allowDecimals={false} />
+                  <YAxis
+                    yAxisId="margin"
+                    orientation="right"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => formatPercent(value as number)}
+                  />
                   <ChartTooltip
                     content={
                       <ChartTooltipContent
@@ -1097,10 +1115,19 @@ const FinanceReport = () => {
                             );
                           }
 
+                          if (item?.dataKey === "pgiCount") {
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>PGI completed</span>
+                                <span className="font-medium">{value}</span>
+                              </div>
+                            );
+                          }
+
                           return (
                             <div className="flex flex-1 justify-between">
-                              <span>PGI completed</span>
-                              <span className="font-medium">{value}</span>
+                              <span>Average margin</span>
+                              <span className="font-medium">{formatPercent(value)}</span>
                             </div>
                           );
                         }}
@@ -1116,22 +1143,23 @@ const FinanceReport = () => {
                       />
                     }
                   />
-                  <Bar dataKey="poCount" yAxisId="count" fill="var(--color-poCount)" radius={[4, 4, 0, 0]} barSize={22} />
-                  <Area
+                  <Bar dataKey="poCount" yAxisId="count" fill="var(--color-poCount)" radius={[4, 4, 0, 0]} barSize={18} />
+                  <Bar dataKey="pgiCount" yAxisId="count" fill="var(--color-pgiCount)" radius={[4, 4, 0, 0]} barSize={18} />
+                  <Line
                     type="monotone"
                     dataKey="revenue"
                     yAxisId="revenue"
                     stroke="var(--color-revenue)"
-                    strokeWidth={2}
-                    fill="url(#shRevenueGradient)"
-                    activeDot={{ r: 4 }}
+                    strokeWidth={2.5}
+                    dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
+                    activeDot={{ r: 5, strokeWidth: 2 }}
                   />
                   <Line
                     type="monotone"
-                    dataKey="pgiCount"
-                    yAxisId="count"
-                    stroke="var(--color-pgiCount)"
-                    strokeWidth={2}
+                    dataKey="avgMarginRate"
+                    yAxisId="margin"
+                    stroke="var(--color-avgMarginRate)"
+                    strokeWidth={2.5}
                     dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
                     activeDot={{ r: 5, strokeWidth: 2 }}
                   />
@@ -1140,7 +1168,7 @@ const FinanceReport = () => {
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-3">
-            Revenue (area) uses the invoice date; PO lines (bars) and PGIs (line) help spot throughput vs billing pace.
+            Revenue uses invoice date; PO (bars) and PGI (bars) show throughput, with the red line tracking monthly margin rate.
           </p>
         </CardContent>
       </Card>
@@ -1210,15 +1238,15 @@ const FinanceReport = () => {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Average Days from PGI to Invoice</CardTitle>
+            <CardTitle>Average Days from PGI to GR</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold text-slate-900">{
-              secondHandSummary.averageDaysToInvoice == null
+              secondHandSummary.averageDaysPGIToGR == null
                 ? "-"
-                : `${secondHandSummary.averageDaysToInvoice.toFixed(1)} days`
+                : `${secondHandSummary.averageDaysPGIToGR.toFixed(1)} days`
             }</div>
-            <p className="text-sm text-slate-500 mt-1">Speed from PGI to billing</p>
+            <p className="text-sm text-slate-500 mt-1">Speed from PGI to GR</p>
           </CardContent>
         </Card>
       </div>
@@ -1242,17 +1270,18 @@ const FinanceReport = () => {
                   <TableHead className="text-right">Sale (ex GST)</TableHead>
                   <TableHead className="text-right">Margin</TableHead>
                   <TableHead className="text-right">Margin %</TableHead>
-                  <TableHead className="text-right">PGI → Invoice</TableHead>
+                  <TableHead className="text-right">PGI → GR</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredSecondHandSales.map((sale) => {
                   const invoiceDate = parseInvoiceDate(sale.invoiceDate);
                   const pgiDate = parseInvoiceDate(sale.pgiDate);
+                  const grDate = parseInvoiceDate(sale.grDate);
                   const margin = sale.finalInvoicePrice - sale.poLineNetValue;
                   const marginRate = sale.finalInvoicePrice ? margin / sale.finalInvoicePrice : 0;
-                  const daysToInvoice = invoiceDate && pgiDate
-                    ? Math.round((invoiceDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24))
+                  const daysToGR = grDate && pgiDate
+                    ? Math.round((grDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24))
                     : null;
                   return (
                     <TableRow key={sale.id}>
@@ -1265,7 +1294,7 @@ const FinanceReport = () => {
                       <TableCell className="text-right">{currency.format(margin)}</TableCell>
                       <TableCell className="text-right">{formatPercent(marginRate)}</TableCell>
                       <TableCell className="text-right">
-                        {daysToInvoice == null ? "-" : `${daysToInvoice} days`}
+                        {daysToGR == null ? "-" : `${daysToGR} days`}
                       </TableCell>
                     </TableRow>
                   );
