@@ -60,6 +60,22 @@ const parseInvoiceDate = (value?: string): Date | null => {
   return isValid(nativeCandidate) ? nativeCandidate : null;
 };
 
+const getInvoiceDate = (invoice: YardNewVanInvoice) =>
+  parseInvoiceDate(invoice.createdOn ?? invoice.invoiceDate);
+
+const buildMonthSequence = (startMonth: Date, endMonth: Date) => {
+  const months: { key: string; label: string }[] = [];
+  const cursor = new Date(startMonth.getFullYear(), startMonth.getMonth(), 1);
+  const finalMonth = new Date(endMonth.getFullYear(), endMonth.getMonth(), 1);
+
+  while (cursor <= finalMonth) {
+    months.push({ key: format(cursor, "yyyy-MM"), label: format(cursor, "MMM yyyy") });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return months;
+};
+
 const formatPercent = (value: number) => {
   if (!Number.isFinite(value)) return "-";
   return `${(value * 100).toFixed(1)}%`;
@@ -150,13 +166,13 @@ const FinanceReport = () => {
     return unsub;
   }, [dealerSlug]);
 
- const filteredInvoices = useMemo(() => {
-    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+  const filteredInvoices = useMemo(() => {
+    const startDate = dateRange.start ? new Da
     const endDate = dateRange.end ? new Date(dateRange.end) : null;
 
     return invoices
       .filter((invoice) => {
-        const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
+        const invoiceDate = getInvoiceDate(invoice);
         if (!invoiceDate) return false;
         if (startDate && invoiceDate < startDate) return false;
         if (endDate) {
@@ -167,8 +183,8 @@ const FinanceReport = () => {
         return true;
       })
       .sort((a, b) => {
-        const dateA = parseInvoiceDate(a.invoiceDate)?.getTime() ?? 0;
-        const dateB = parseInvoiceDate(b.invoiceDate)?.getTime() ?? 0;
+        const dateA = getInvoiceDate(a)?.getTime() ?? 0;
+        const dateB = getInvoiceDate(b)?.getTime() ?? 0;
         return dateB - dateA;
       });
   }, [invoices, dateRange]);
@@ -341,7 +357,7 @@ const FinanceReport = () => {
     const buckets = new Map<string, { label: string; invoiceCount: number }>();
 
     filteredInvoices.forEach((invoice) => {
-      const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
+      const invoiceDate = getInvoiceDate(invoice);
       if (!invoiceDate) return;
 
       const key = format(invoiceDate, "yyyy-MM");
@@ -475,7 +491,7 @@ const FinanceReport = () => {
     >();
 
     filteredInvoices.forEach((invoice) => {
-      const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
+      const invoiceDate = getInvoiceDate(invoice);
       if (!invoiceDate) return;
       const key = format(invoiceDate, "yyyy-MM");
       const existing = monthlyMap.get(key) ?? {
@@ -563,9 +579,7 @@ const FinanceReport = () => {
   };
 
   const monthlyTrendData = useMemo<MonthlyTrendDatum[]>(() => {
-    const invoiceDates = filteredInvoices
-      .map((invoice) => parseInvoiceDate(invoice.invoiceDate))
-      .filter(Boolean) as Date[];
+    const invoiceDates = filteredInvoices.map((invoice) => getInvoiceDate(invoice)).filter(Boolean) as Date[];
 
     if (!invoiceDates.length) return [];
 
@@ -575,20 +589,14 @@ const FinanceReport = () => {
     const startMonth = explicitStart ?? startOfMonth(invoiceDates.reduce((min, date) => (date < min ? date : min)));
     const endMonth = explicitEnd ?? startOfMonth(invoiceDates.reduce((max, date) => (date > max ? date : max)));
 
-    const months: { key: string; label: string }[] = [];
-    for (let cursor = startMonth; cursor <= endMonth; cursor = addMonths(cursor, 1)) {
-      months.push({
-        key: format(cursor, "yyyy-MM"),
-        label: format(cursor, "MMM yyyy"),
-      });
-    }
+    const months = buildMonthSequence(startMonth, endMonth);
 
     const monthBuckets = new Map(
       months.map((month) => [month.key, { revenue: 0, discount: 0, units: 0 }])
     );
 
     filteredInvoices.forEach((invoice) => {
-      const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
+      const invoiceDate = getInvoiceDate(invoice);
       if (!invoiceDate) return;
       const key = format(invoiceDate, "yyyy-MM");
       const bucket = monthBuckets.get(key);
@@ -625,10 +633,7 @@ const FinanceReport = () => {
     const startMonth = explicitStart ?? startOfMonth(trackedDates.reduce((min, date) => (date < min ? date : min)));
     const endMonth = explicitEnd ?? startOfMonth(trackedDates.reduce((max, date) => (date > max ? date : max)));
 
-    const months: { key: string; label: string }[] = [];
-    for (let cursor = startMonth; cursor <= endMonth; cursor = addMonths(cursor, 1)) {
-      months.push({ key: format(cursor, "yyyy-MM"), label: format(cursor, "MMM yyyy") });
-    }
+    const months = buildMonthSequence(startMonth, endMonth);
 
     const monthBuckets = new Map(
       months.map((month) => [month.key, { revenue: 0, pgiCount: 0, grCount: 0, marginSum: 0 }])
@@ -1405,7 +1410,7 @@ const FinanceReport = () => {
               </TableHeader>
               <TableBody>
                 {filteredInvoices.map((invoice) => {
-                  const invoiceDate = parseInvoiceDate(invoice.invoiceDate);
+                  const invoiceDate = getInvoiceDate(invoice);
                   const margin = invoice.finalSalePrice - invoice.purchasePrice;
                   const marginRate = invoice.finalSalePrice ? margin / invoice.finalSalePrice : 0;
                   return (
