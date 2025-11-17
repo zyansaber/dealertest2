@@ -33,6 +33,8 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import emailjs from "emailjs-com";
+import { toast } from "sonner";
 
 type PGIRec = {
   pgidate?: string | null;
@@ -164,6 +166,10 @@ const currencyFormatter = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
 });
+
+const REPORT_EMAIL_SERVICE = "service_d39k2lv";
+const REPORT_EMAIL_TEMPLATE = "template_jp0j1s4";
+const REPORT_EMAIL_PUBLIC_KEY = "Ox1_IwykSClDMOhqz";
 
 const extractVin = (source: any): string | null => {
   if (source == null) return null;
@@ -734,6 +740,30 @@ export default function DealerYard() {
     }
   };
 
+  const handleReportIssue = async (row: { chassis: string; model?: string | null }) => {
+    if (!REPORT_EMAIL_SERVICE || !REPORT_EMAIL_PUBLIC_KEY || !REPORT_EMAIL_TEMPLATE) {
+      toast.error("Reporting configuration is missing.");
+      return;
+    }
+
+    try {
+      await emailjs.send(
+        REPORT_EMAIL_SERVICE,
+        REPORT_EMAIL_TEMPLATE,
+        {
+          dealer_slug: dealerSlug,
+          chassis: row.chassis,
+          model: toStr(row.model) || "-",
+        },
+        REPORT_EMAIL_PUBLIC_KEY
+      );
+      toast.success("Report sent successfully.");
+    } catch (error) {
+      console.error("Failed to send report", error);
+      toast.error("Failed to send report. Please try again.");
+    }
+  };
+
   useEffect(() => {
     if (handledAiState) return;
     const state = (location.state || {}) as any;
@@ -1246,6 +1276,7 @@ export default function DealerYard() {
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
                       <TableHead className="font-semibold">Handover</TableHead>
+                      <TableHead className="font-semibold">Report</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1263,6 +1294,16 @@ export default function DealerYard() {
                           </span>
                         </TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-amber-500 text-amber-700 hover:bg-amber-50"
+                            onClick={() => handleReportIssue(row)}
+                          >
+                            Report
+                          </Button>
+                        </TableCell>
                         <TableCell>
                           {yardActionsEnabled ? (
                             <Button
