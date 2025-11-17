@@ -99,12 +99,14 @@ export interface SecondHandSale {
   item: string;
   material: string;
   pgiDate: string;
+  grDate?: string;
   poLineNetValue: number;
   so: string;
   updatedAt: string;
   warehouse: string;
   warehouseSlug: string;
 }
+
 
 // Export dealer types
 export * from './dealer';
