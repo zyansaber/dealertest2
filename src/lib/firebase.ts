@@ -334,6 +334,7 @@ export const subscribeToSecondHandSales = (
         item: source.item ?? "",
         material: source.material ?? "",
         pgiDate: normalizeDateInput(source.pgi_date),
+        grDate: normalizeDateInput(source.gr_date),
         poLineNetValue: toNumber(source.po_line_net_value),
         so: source.so ?? "",
         updatedAt: normalizeDateInput(source.updated_at),
