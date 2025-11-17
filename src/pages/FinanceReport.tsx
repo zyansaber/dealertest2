@@ -43,7 +43,7 @@ const compactCurrency = new Intl.NumberFormat("en-AU", {
 const defaultDateRange = () => {
   const today = new Date();
   return {
-    start: format(startOfMonth(subMonths(today, 2)), "yyyy-MM-dd"),
+    start: format(startOfYear(today), "yyyy-MM-dd"),
     end: format(today, "yyyy-MM-dd"),
   };
 };
