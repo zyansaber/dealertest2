@@ -3,6 +3,14 @@ import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +37,7 @@ import {
   prettifyDealerName,
 } from "@/lib/dealerUtils";
 import { AlertTriangle } from "lucide-react";
-import { format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
+import { addDays, format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
 import {
   Area,
   Bar,
@@ -134,6 +142,7 @@ const FinanceReport = () => {
   const [secondHandLoading, setSecondHandLoading] = useState(true);
   const [newSalesLoading, setNewSalesLoading] = useState(true);
   const [stockToCustomerLoading, setStockToCustomerLoading] = useState(true);
+  const [weeklyDialogOpen, setWeeklyDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!dealerSlug || !financeEnabled) {
@@ -407,6 +416,40 @@ const filteredStockToCustomer = useMemo(() => {
       latestUpdate,
     };
   }, [filteredStockToCustomer]);
+
+  const weeklyActivity = useMemo(() => {
+    const retailDates = retailNewSales
+      .map((sale) => parseInvoiceDate(sale.createdOn))
+      .filter(Boolean) as Date[];
+    const stockToCustomerDates = filteredStockToCustomer
+      .map((record) => parseInvoiceDate(record.updateDate))
+      .filter(Boolean) as Date[];
+    const pgiDates = filteredInvoices.map((invoice) => parseInvoiceDate(invoice.pgiDate)).filter(Boolean) as Date[];
+
+    const allDates = [...retailDates, ...stockToCustomerDates, ...pgiDates];
+    if (!allDates.length) return [] as { label: string; retail: number; stockToCustomer: number; pgi: number }[];
+
+    const minDate = allDates.reduce((min, date) => (date < min ? date : min));
+    const maxDate = allDates.reduce((max, date) => (date > max ? date : max));
+    const startWeek = startOfWeek(minDate, { weekStartsOn: 1 });
+    const endWeek = startOfWeek(maxDate, { weekStartsOn: 1 });
+
+    const weeks: { label: string; retail: number; stockToCustomer: number; pgi: number }[] = [];
+    for (let cursor = new Date(startWeek); cursor <= endWeek; cursor = addDays(cursor, 7)) {
+      const weekStart = new Date(cursor);
+      const weekEnd = addDays(weekStart, 6);
+      const inWeek = (date: Date) => date >= weekStart && date <= weekEnd;
+
+      weeks.push({
+        label: `${format(weekStart, "dd MMM yyyy")} - ${format(weekEnd, "dd MMM yyyy")}`,
+        retail: retailDates.filter((date) => inWeek(date)).length,
+        stockToCustomer: stockToCustomerDates.filter((date) => inWeek(date)).length,
+        pgi: pgiDates.filter((date) => inWeek(date)).length,
+      });
+    }
+
+    return weeks;
+  }, [filteredInvoices, filteredStockToCustomer, retailNewSales]);
   
   const retailSalesByMonth = useMemo(() => {
     const createdDates = retailNewSales
@@ -888,10 +931,56 @@ const filteredStockToCustomer = useMemo(() => {
         </CardContent>
       </Card>
 
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-slate-600">Performance at a glance</p>
+          <p className="text-xs text-muted-foreground">Retail sales, SAP conversions, and PGIs</p>
+        </div>
+        <Dialog open={weeklyDialogOpen} onOpenChange={setWeeklyDialogOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline">View weekly breakdown</Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Weekly performance</DialogTitle>
+              <DialogDescription>
+                Counts for retail sales, Stock → Customer conversions, and PGI events grouped by week (Mon–Sun).
+              </DialogDescription>
+            </DialogHeader>
+            {weeklyActivity.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No weekly activity available for the selected range.</p>
+            ) : (
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-semibold">Week</TableHead>
+                      <TableHead className="font-semibold">Retail Sales</TableHead>
+                      <TableHead className="font-semibold">Stock → Customer</TableHead>
+                      <TableHead className="font-semibold">PGI Number</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {weeklyActivity.map((week) => (
+                      <TableRow key={week.label}>
+                        <TableCell className="font-medium">{week.label}</TableCell>
+                        <TableCell>{week.retail}</TableCell>
+                        <TableCell>{week.stockToCustomer}</TableCell>
+                        <TableCell>{week.pgi}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card>
           <CardHeader>
-            <CardTitle>Retail Sales</CardTitle>
+            <CardTitle>Retail Sales (new customer orders)</CardTitle>
             <p className="text-sm text-muted-foreground">billToNameFinal ≠ stock</p>
           </CardHeader>
           <CardContent>
@@ -917,6 +1006,7 @@ const filteredStockToCustomer = useMemo(() => {
           <CardContent>
             <div className="text-3xl font-semibold text-slate-900">{yardDateStats.invoiceDateCount}</div>
             <p className="text-sm text-muted-foreground mt-1">Within selected range</p>
+
           </CardContent>
         </Card>
         <Card>
