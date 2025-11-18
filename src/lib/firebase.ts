@@ -17,6 +17,7 @@ import type {
   DateTrack,
   YardNewVanInvoice,
   NewSaleRecord,
+  StockToCustomerRecord,
 } from "@/types";
 
 const firebaseConfig = {
@@ -357,6 +358,57 @@ export const subscribeToSecondHandSales = (
 
   onValue(salesRef, handler);
   return () => off(salesRef, "value", handler);
+};
+
+/** -------------------- stock to customer -------------------- */
+export const subscribeToStockToCustomer = (
+  salesOfficeSlug: string,
+  callback: (data: StockToCustomerRecord[]) => void
+) => {
+  if (!salesOfficeSlug) {
+    callback([]);
+    return () => {};
+  }
+
+  const sapStockRef = ref(database, "stock to customer");
+
+  const normalizeOffice = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const value = snapshot.val();
+    if (!value) {
+      callback([]);
+      return;
+    }
+
+    const targetSlug = normalizeOffice(salesOfficeSlug);
+
+    const records: StockToCustomerRecord[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const source = payload ?? {};
+      const salesOfficeName = String(source.Sales_Office_Name ?? source.salesOfficeName ?? "");
+
+      return {
+        id: key,
+        salesOrder: source.Sales_Order ?? key,
+        materialCode: source.SO_Material_0010 ?? "",
+        materialDesc: source.SO_Material_0010_Desc ?? "",
+        salesOfficeName: salesOfficeName || String(source.salesOfficeCode ?? targetSlug),
+        updateDate: normalizeDateInput(source.UDATE_YYYYMMDD ?? source.updateDate),
+        raw: source,
+      };
+    });
+
+    const filtered = records.filter((record) => normalizeOffice(record.salesOfficeName) === targetSlug);
+
+    callback(filtered);
+  };
+
+  onValue(sapStockRef, handler);
+  return () => off(sapStockRef, "value", handler);
 };
 
 /** -------------------- new sales -------------------- */
