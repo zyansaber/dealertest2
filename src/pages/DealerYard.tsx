@@ -368,6 +368,8 @@ export default function DealerYard() {
   const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
   const [pendingAiReceive, setPendingAiReceive] = useState<string | null>(null);
   const [handledAiState, setHandledAiState] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchStatus, setSearchStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
 
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
@@ -641,8 +643,18 @@ export default function DealerYard() {
     if (selectedType !== "All") {
       list = list.filter((x) => x.type === selectedType);
     }
+    if (searchTerm.trim()) {
+      const term = searchTerm.trim().toUpperCase();
+      list = list.filter((x) => x.chassis.toUpperCase().includes(term));
+    }
     return list;
-  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType]);
+  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType, searchTerm]);
+
+  const chassisSuggestions = useMemo(() => {
+    const term = searchTerm.trim().toUpperCase();
+    if (!term) return [] as typeof yardList;
+    return yardList.filter((row) => row.chassis.toUpperCase().includes(term)).slice(0, 5);
+  }, [searchTerm, yardList]);
 
   // Monthly charts data within KPI range
   const receivedMonthlyData = useMemo(() => {
@@ -727,16 +739,32 @@ export default function DealerYard() {
   const handleAddManual = async () => {
     const ch = manualChassis.trim().toUpperCase();
     if (!ch) {
-      setManualStatus({ type: "err", msg: "请输入车架号" });
+      setManualStatus({ type: "err", msg: "please type in Chassis number" });
       return;
     }
     try {
       await addManualChassisToYard(dealerSlug, ch);
-      setManualStatus({ type: "ok", msg: `已添加 ${ch} 到 Yard` });
+      setManualStatus({ type: "ok", msg: `Successfully added ${ch} into Yard` });
       setManualChassis("");
     } catch (e) {
       console.error(e);
-      setManualStatus({ type: "err", msg: "添加失败，请重试。" });
+      setManualStatus({ type: "err", msg: "Failed to add into Yard." });
+    }
+  };
+
+  const handleAddFromSearch = async () => {
+    const ch = searchTerm.trim().toUpperCase();
+    if (!ch) {
+      setSearchStatus({ type: "err", msg: "please type in Chassis number" });
+      return;
+    }
+    try {
+      await addManualChassisToYard(dealerSlug, ch);
+      setSearchStatus({ type: "ok", msg: `Successfully added ${ch} into Yard` });
+      setSearchTerm("");
+    } catch (e) {
+      console.error(e);
+      setSearchStatus({ type: "err", msg: "Failed to add into Yard." });
     }
   };
 
@@ -1225,10 +1253,63 @@ export default function DealerYard() {
 
         {/* Yard Inventory */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between flex-wrap gap-2">
-            <CardTitle>Yard Inventory</CardTitle>
+          <CardHeader className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2 w-full">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle>Yard Inventory</CardTitle>
+                <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
+                  <Input
+                    list="chassis-suggestions"
+                    placeholder="Search chassis"
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setSearchStatus(null);
+                    }}
+                    className="md:min-w-[260px]"
+                  />
+                  <datalist id="chassis-suggestions">
+                    {yardList.map((row) => (
+                      <option key={row.chassis} value={row.chassis} />
+                    ))}
+                  </datalist>
+                  {searchTerm.trim() && (
+                    <Button variant="secondary" size="sm" onClick={() => setSearchTerm("")}>
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {searchTerm.trim() && chassisSuggestions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span>Suggestions:</span>
+                  {chassisSuggestions.map((row) => (
+                    <Button
+                      key={row.chassis}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSearchTerm(row.chassis)}
+                    >
+                      {row.chassis}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              {searchTerm.trim() && chassisSuggestions.length === 0 && (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                  <span>未找到车架号，是否加入库存？</span>
+                  <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleAddFromSearch}>
+                    添加 {searchTerm.trim().toUpperCase()}
+                  </Button>
+                  {searchStatus && (
+                    <span className={`text-xs ${searchStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
+                      {searchStatus.msg}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="flex w-full md:w-auto items-stretch md:items-center gap-2">
-              {/* Manual entry on the left */}
               <Input
                 placeholder="Enter chassis number manually"
                 value={manualChassis}
