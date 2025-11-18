@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -11,12 +10,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ChartContainer,
   ChartLegend,
@@ -36,7 +37,7 @@ import {
   normalizeDealerSlug,
   prettifyDealerName,
 } from "@/lib/dealerUtils";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, FileDown } from "lucide-react";
 import { addDays, format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
 import {
   Area,
@@ -49,6 +50,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import * as XLSX from "xlsx";
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -450,6 +452,33 @@ const filteredStockToCustomer = useMemo(() => {
 
     return weeks;
   }, [filteredInvoices, filteredStockToCustomer, retailNewSales]);
+
+  const weeklyExportRows = useMemo(
+    () =>
+      weeklyActivity.map((week) => ({
+        Week: week.label,
+        "Retail Sales": week.retail,
+        "Stock → Customer": week.stockToCustomer,
+        "PGI Number": week.pgi,
+      })),
+    [weeklyActivity]
+  );
+
+  const handleExportWeeklyActivity = () => {
+    if (!weeklyExportRows.length) return;
+
+    try {
+      const ws = XLSX.utils.json_to_sheet(weeklyExportRows);
+      const colWidths = Object.keys(weeklyExportRows[0]).map((key) => ({ wch: Math.max(key.length, 18) }));
+      ws["!cols"] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Weekly Activity");
+      XLSX.writeFile(wb, "weekly_activity.xlsx");
+    } catch (err) {
+      console.error("Failed to export weekly activity:", err);
+    }
+  };
   
   const retailSalesByMonth = useMemo(() => {
     const createdDates = retailNewSales
@@ -940,37 +969,69 @@ const filteredStockToCustomer = useMemo(() => {
           <DialogTrigger asChild>
             <Button variant="outline">View weekly breakdown</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>Weekly performance</DialogTitle>
-              <DialogDescription>
-                Counts for retail sales, Stock → Customer conversions, and PGI events grouped by week (Mon–Sun).
-              </DialogDescription>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader className="gap-2 sm:flex sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <DialogTitle>Weekly performance</DialogTitle>
+                <DialogDescription>
+                  Counts for retail sales, Stock → Customer conversions, and PGI events grouped by week (Mon–Sun).
+                </DialogDescription>
+              </div>
+              <Button variant="secondary" size="sm" onClick={handleExportWeeklyActivity} disabled={!weeklyExportRows.length}>
+                <FileDown className="mr-2 h-4 w-4" />
+                Export to Excel
+              </Button>
             </DialogHeader>
             {weeklyActivity.length === 0 ? (
               <p className="text-sm text-muted-foreground">No weekly activity available for the selected range.</p>
             ) : (
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">Week</TableHead>
-                      <TableHead className="font-semibold">Retail Sales</TableHead>
-                      <TableHead className="font-semibold">Stock → Customer</TableHead>
-                      <TableHead className="font-semibold">PGI Number</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {weeklyActivity.map((week) => (
-                      <TableRow key={week.label}>
-                        <TableCell className="font-medium">{week.label}</TableCell>
-                        <TableCell>{week.retail}</TableCell>
-                        <TableCell>{week.stockToCustomer}</TableCell>
-                        <TableCell>{week.pgi}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Total weeks</p>
+                    <p className="text-xl font-semibold">{weeklyActivity.length}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Avg retail / week</p>
+                    <p className="text-xl font-semibold">
+                      {(
+                        weeklyActivity.reduce((sum, week) => sum + week.retail, 0) / weeklyActivity.length
+                      ).toFixed(1)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Avg SAP conversions / week</p>
+                    <p className="text-xl font-semibold">
+                      {(
+                        weeklyActivity.reduce((sum, week) => sum + week.stockToCustomer, 0) / weeklyActivity.length
+                      ).toFixed(1)}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-lg border">
+                  <ScrollArea className="max-h-[420px] rounded-lg">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="font-semibold">Week</TableHead>
+                          <TableHead className="font-semibold">Retail Sales</TableHead>
+                          <TableHead className="font-semibold">Stock → Customer</TableHead>
+                          <TableHead className="font-semibold">PGI Number</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {weeklyActivity.map((week) => (
+                          <TableRow key={week.label}>
+                            <TableCell className="font-medium">{week.label}</TableCell>
+                            <TableCell>{week.retail}</TableCell>
+                            <TableCell>{week.stockToCustomer}</TableCell>
+                            <TableCell>{week.pgi}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </div>
               </div>
             )}
           </DialogContent>
