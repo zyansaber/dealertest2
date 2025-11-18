@@ -16,8 +16,13 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { subscribeToNewSales, subscribeToSecondHandSales, subscribeToYardNewVanInvoices } from "@/lib/firebase";
-import type { NewSaleRecord, SecondHandSale, YardNewVanInvoice } from "@/types";
+import {
+  subscribeToNewSales,
+  subscribeToSecondHandSales,
+  subscribeToStockToCustomer,
+  subscribeToYardNewVanInvoices,
+} from "@/lib/firebase";
+import type { NewSaleRecord, SecondHandSale, StockToCustomerRecord, YardNewVanInvoice } from "@/types";
 import {
   isFinanceReportEnabled,
   normalizeDealerSlug,
@@ -123,10 +128,12 @@ const FinanceReport = () => {
   const [invoices, setInvoices] = useState<YardNewVanInvoice[]>([]);
   const [secondHandSales, setSecondHandSales] = useState<SecondHandSale[]>([]);
   const [newSales, setNewSales] = useState<NewSaleRecord[]>([]);
+  const [stockToCustomerOrders, setStockToCustomerOrders] = useState<StockToCustomerRecord[]>([]);
   const [dateRange, setDateRange] = useState(defaultDateRange);
   const [loading, setLoading] = useState(true);
   const [secondHandLoading, setSecondHandLoading] = useState(true);
   const [newSalesLoading, setNewSalesLoading] = useState(true);
+  const [stockToCustomerLoading, setStockToCustomerLoading] = useState(true);
 
   useEffect(() => {
     if (!dealerSlug || !financeEnabled) {
@@ -176,6 +183,22 @@ const FinanceReport = () => {
     return unsub;
   }, [dealerSlug]);
 
+  useEffect(() => {
+    if (!dealerSlug) {
+      setStockToCustomerOrders([]);
+      setStockToCustomerLoading(false);
+      return;
+    }
+
+    setStockToCustomerLoading(true);
+    const unsub = subscribeToStockToCustomer(dealerSlug, (data) => {
+      setStockToCustomerOrders(data);
+      setStockToCustomerLoading(false);
+    });
+
+    return unsub;
+  }, [dealerSlug]);
+  
   const filteredInvoices = useMemo(() => {
     const startDate = dateRange.start ? new Date(dateRange.start) : null;
     const endDate = dateRange.end ? new Date(dateRange.end) : null;
@@ -222,7 +245,7 @@ const FinanceReport = () => {
       });
   }, [secondHandSales, dateRange]);
 
- const filteredNewSales = useMemo(() => {
+  const filteredNewSales = useMemo(() => {
     const startDate = dateRange.start ? new Date(dateRange.start) : null;
     const endDate = dateRange.end ? new Date(dateRange.end) : null;
 
@@ -244,6 +267,30 @@ const FinanceReport = () => {
         return dateB - dateA;
       });
   }, [newSales, dateRange]);
+
+const filteredStockToCustomer = useMemo(() => {
+    const startDate = dateRange.start ? new Date(dateRange.start) : null;
+    const endDate = dateRange.end ? new Date(dateRange.end) : null;
+
+    return stockToCustomerOrders
+      .filter((record) => {
+        const updateDate = parseInvoiceDate(record.updateDate);
+        if (!updateDate) return false;
+        if (startDate && updateDate < startDate) return false;
+        if (endDate) {
+          const endOfDay = new Date(endDate);
+          endOfDay.setHours(23, 59, 59, 999);
+          if (updateDate > endOfDay) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = parseInvoiceDate(a.updateDate)?.getTime() ?? 0;
+        const dateB = parseInvoiceDate(b.updateDate)?.getTime() ?? 0;
+        return dateB - dateA;
+      });
+  }, [stockToCustomerOrders, dateRange]);
+
 
   const retailNewSales = useMemo(
     () => filteredNewSales.filter((sale) => (sale.billToNameFinal ?? "").toLowerCase() !== "stock"),
@@ -342,6 +389,25 @@ const FinanceReport = () => {
     };
   }, [filteredInvoices, invoices, dateRange]);
 
+  const stockToCustomerSummary = useMemo(() => {
+    const uniqueMaterials = new Set(
+      filteredStockToCustomer.map((record) => record.materialDesc || record.materialCode || "Unspecified")
+    );
+
+  const latestUpdate = filteredStockToCustomer.reduce<Date | null>((latest, record) => {
+      const updateDate = parseInvoiceDate(record.updateDate);
+      if (!updateDate) return latest;
+      if (!latest || updateDate > latest) return updateDate;
+      return latest;
+    }, null);
+
+    return {
+      totalConversions: filteredStockToCustomer.length,
+      uniqueMaterials: uniqueMaterials.size,
+      latestUpdate,
+    };
+  }, [filteredStockToCustomer]);
+  
   const retailSalesByMonth = useMemo(() => {
     const createdDates = retailNewSales
       .map((sale) => parseInvoiceDate(sale.createdOn))
@@ -376,7 +442,6 @@ const FinanceReport = () => {
     const invoiceDates = filteredInvoices
       .map((invoice) => getInvoiceDate(invoice))
       .filter(Boolean) as Date[];
-
     if (!invoiceDates.length) return [];
 
     const explicitStart = dateRange.start ? startOfMonth(new Date(dateRange.start)) : null;
@@ -402,6 +467,36 @@ const FinanceReport = () => {
     return months.map((month) => buckets.get(month.key)!);
   }, [dateRange.end, dateRange.start, filteredInvoices]);
 
+  const stockToCustomerTrend = useMemo(() => {
+    const updateDates = filteredStockToCustomer
+      .map((record) => parseInvoiceDate(record.updateDate))
+      .filter(Boolean) as Date[];
+
+    if (!updateDates.length) return [];
+
+    const explicitStart = dateRange.start ? startOfMonth(new Date(dateRange.start)) : null;
+    const explicitEnd = dateRange.end ? startOfMonth(new Date(dateRange.end)) : null;
+
+    const startMonth = explicitStart ?? startOfMonth(updateDates.reduce((min, date) => (date < min ? date : min)));
+    const endMonth = explicitEnd ?? startOfMonth(updateDates.reduce((max, date) => (date > max ? date : max)));
+
+    const months = buildMonthSequence(startMonth, endMonth);
+    const buckets = new Map(months.map((month) => [month.key, { label: month.label, conversions: 0 }]));
+
+    filteredStockToCustomer.forEach((record) => {
+      const updateDate = parseInvoiceDate(record.updateDate);
+      if (!updateDate) return;
+
+      const key = format(updateDate, "yyyy-MM");
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+
+      bucket.conversions += 1;
+    });
+
+    return months.map((month) => buckets.get(month.key)!);
+  }, [dateRange.end, dateRange.start, filteredStockToCustomer]);
+
   const retailModelBarData = useMemo(
     () =>
       newSalesSummary.modelBreakdown.slice(0, 8).map((model) => ({
@@ -409,6 +504,23 @@ const FinanceReport = () => {
         modelCount: model.count,
       })),
     [newSalesSummary.modelBreakdown]
+  );
+
+  const stockToCustomerMaterialMix = useMemo(
+    () => {
+      const counts = new Map<string, number>();
+
+      filteredStockToCustomer.forEach((record) => {
+        const key = record.materialDesc || record.materialCode || "Unspecified";
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      });
+
+      return Array.from(counts.entries())
+        .map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 8);
+    },
+    [filteredStockToCustomer]
   );
 
   const analytics = useMemo(() => {
@@ -436,7 +548,7 @@ const FinanceReport = () => {
       };
     }
 
-    const discountSegments = [
+ const discountSegments = [
       { label: "Minimal (<$5k)", min: 0, max: 4999 },
       { label: "$5k – $10k", min: 5000, max: 9999 },
       { label: "$10k – $15k", min: 10000, max: 14999 },
@@ -776,7 +888,7 @@ const FinanceReport = () => {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card>
           <CardHeader>
             <CardTitle>Retail Sales</CardTitle>
@@ -815,6 +927,34 @@ const FinanceReport = () => {
           <CardContent>
             <div className="text-3xl font-semibold text-slate-900">{yardDateStats.pgiDateCount}</div>
             <p className="text-sm text-muted-foreground mt-1">Throughput marker</p>
+          </CardContent>
+        </Card>
+          <Card>
+          <CardHeader className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>Stock → Customer</CardTitle>
+              <Badge variant="outline" className="text-[11px]">SAP</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">Sales orders converted from stock</p>
+          </CardHeader>
+          <CardContent>
+            {stockToCustomerLoading ? (
+              <p className="text-muted-foreground">Loading SAP conversions...</p>
+            ) : (
+              <>
+                <div className="text-3xl font-semibold text-slate-900">
+                  {stockToCustomerSummary.totalConversions}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {stockToCustomerSummary.latestUpdate
+                    ? `Last update ${format(stockToCustomerSummary.latestUpdate, "dd MMM yyyy")}`
+                    : "No SAP stock conversions"}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {stockToCustomerSummary.uniqueMaterials} material descriptions
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -960,6 +1100,106 @@ const FinanceReport = () => {
         </div>
       </div>
 
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>SAP Stock → Customer Trend</CardTitle>
+              <Badge variant="outline" className="text-[11px]">SAP</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">Monthly conversions aligned to UDATE_YYYYMMDD</p>
+          </CardHeader>
+          <CardContent>
+            {stockToCustomerLoading ? (
+              <p className="text-muted-foreground">Loading SAP stock-to-customer feed...</p>
+            ) : stockToCustomerTrend.length === 0 ? (
+              <p className="text-muted-foreground">No SAP stock-to-customer conversions in this range.</p>
+            ) : (
+              <ChartContainer
+                config={{
+                  conversions: { label: "Conversions", color: "#0ea5e9" },
+                }}
+                className="h-80"
+              >
+                <ComposedChart data={stockToCustomerTrend} margin={{ top: 12, left: 12, right: 12, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id="sapConversionGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-conversions)" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="var(--color-conversions)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        indicator="line"
+                        formatter={(value) => (
+                          <div className="flex flex-1 justify-between">
+                            <span>Conversions</span>
+                            <span className="font-medium">{value as number}</span>
+                          </div>
+                        )}
+                      />
+                    }
+                  />
+                  <Area
+                    dataKey="conversions"
+                    type="monotone"
+                    fill="url(#sapConversionGradient)"
+                    stroke="var(--color-conversions)"
+                    strokeWidth={2}
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    dataKey="conversions"
+                    type="monotone"
+                    stroke="var(--color-conversions)"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                  />
+                </ComposedChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>SAP Material Description Volume</CardTitle>
+              <Badge variant="outline" className="text-[11px]">SAP</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">Top SO_Material_0010_Desc ranked by conversion count</p>
+          </CardHeader>
+          <CardContent>
+            {stockToCustomerLoading ? (
+              <p className="text-muted-foreground">Pulling SAP material breakdown...</p>
+            ) : stockToCustomerMaterialMix.length === 0 ? (
+              <p className="text-muted-foreground">No SAP stock-to-customer materials in this window.</p>
+            ) : (
+              <ChartContainer
+                config={{
+                  value: { label: "Conversions", color: "#a855f7" },
+                }}
+                className="h-80"
+              >
+                <BarChart data={stockToCustomerMaterialMix} margin={{ left: 12, right: 12, bottom: 12 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-20} textAnchor="end" height={80} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="value" fill="var(--color-value)" radius={[10, 10, 4, 4]} barSize={32}>
+                    <LabelList dataKey="value" position="top" offset={8} fill="#0f172a" />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+      
       <Card>
         <CardHeader>
           <CardTitle>Retail Sales Detail</CardTitle>
