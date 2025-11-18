@@ -1253,13 +1253,13 @@ export default function DealerYard() {
 
         {/* Yard Inventory */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex flex-col gap-3">
-            <div className="flex flex-col gap-2 w-full">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardHeader className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 w-full">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 md:gap-4">
                 <CardTitle>Yard Inventory</CardTitle>
-                <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
+                <div className="flex flex-wrap gap-2 items-center w-full md:w-auto md:justify-end md:ml-auto">
                   <Input
-                    list="chassis-suggestions"
+                    list={searchTerm.trim() ? "chassis-suggestions" : undefined}
                     placeholder="Search chassis"
                     value={searchTerm}
                     onChange={(e) => {
@@ -1268,11 +1268,13 @@ export default function DealerYard() {
                     }}
                     className="md:min-w-[260px]"
                   />
-                  <datalist id="chassis-suggestions">
-                    {yardList.map((row) => (
-                      <option key={row.chassis} value={row.chassis} />
-                    ))}
-                  </datalist>
+                  {searchTerm.trim() && (
+                    <datalist id="chassis-suggestions">
+                      {yardList.map((row) => (
+                        <option key={row.chassis} value={row.chassis} />
+                      ))}
+                    </datalist>
+                  )}
                   {searchTerm.trim() && (
                     <Button variant="secondary" size="sm" onClick={() => setSearchTerm("")}>
                       Clear
