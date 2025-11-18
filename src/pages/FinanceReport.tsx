@@ -1065,6 +1065,104 @@ const filteredStockToCustomer = useMemo(() => {
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle>SAP Stock → Customer Trend</CardTitle>
+                <Badge variant="outline" className="text-[11px]">SAP</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">Monthly conversions aligned to UDATE_YYYYMMDD</p>
+            </CardHeader>
+            <CardContent>
+              {stockToCustomerLoading ? (
+                <p className="text-muted-foreground">Loading SAP stock-to-customer feed...</p>
+              ) : stockToCustomerTrend.length === 0 ? (
+                <p className="text-muted-foreground">No SAP stock-to-customer conversions in this range.</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    conversions: { label: "Conversions", color: "#0ea5e9" },
+                  }}
+                  className="h-80"
+                >
+                  <ComposedChart data={stockToCustomerTrend} margin={{ top: 12, left: 12, right: 12, bottom: 4 }}>
+                    <defs>
+                      <linearGradient id="sapConversionGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-conversions)" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="var(--color-conversions)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(value) => (
+                            <div className="flex flex-1 justify-between">
+                              <span>Conversions</span>
+                              <span className="font-medium">{value as number}</span>
+                            </div>
+                          )}
+                        />
+                      }
+                    />
+                    <Area
+                      dataKey="conversions"
+                      type="monotone"
+                      fill="url(#sapConversionGradient)"
+                      stroke="var(--color-conversions)"
+                      strokeWidth={2}
+                      activeDot={{ r: 4 }}
+                    />
+                    <Line
+                      dataKey="conversions"
+                      type="monotone"
+                      stroke="var(--color-conversions)"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                  </ComposedChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle>SAP Material Description Volume</CardTitle>
+                <Badge variant="outline" className="text-[11px]">SAP</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">Top SO_Material_0010_Desc ranked by conversion count</p>
+            </CardHeader>
+            <CardContent>
+              {stockToCustomerLoading ? (
+                <p className="text-muted-foreground">Pulling SAP material breakdown...</p>
+              ) : stockToCustomerMaterialMix.length === 0 ? (
+                <p className="text-muted-foreground">No SAP stock-to-customer materials in this window.</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    value: { label: "Conversions", color: "#a855f7" },
+                  }}
+                  className="h-80"
+                >
+                  <BarChart data={stockToCustomerMaterialMix} margin={{ left: 12, right: 12, bottom: 12 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-20} textAnchor="end" height={80} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="value" fill="var(--color-value)" radius={[10, 10, 4, 4]} barSize={32}>
+                      <LabelList dataKey="value" position="top" offset={8} fill="#0f172a" />
+                    </Bar>
+                  </BarChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-6">
@@ -1098,106 +1196,6 @@ const filteredStockToCustomer = useMemo(() => {
           </Card>
 
         </div>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle>SAP Stock → Customer Trend</CardTitle>
-              <Badge variant="outline" className="text-[11px]">SAP</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">Monthly conversions aligned to UDATE_YYYYMMDD</p>
-          </CardHeader>
-          <CardContent>
-            {stockToCustomerLoading ? (
-              <p className="text-muted-foreground">Loading SAP stock-to-customer feed...</p>
-            ) : stockToCustomerTrend.length === 0 ? (
-              <p className="text-muted-foreground">No SAP stock-to-customer conversions in this range.</p>
-            ) : (
-              <ChartContainer
-                config={{
-                  conversions: { label: "Conversions", color: "#0ea5e9" },
-                }}
-                className="h-80"
-              >
-                <ComposedChart data={stockToCustomerTrend} margin={{ top: 12, left: 12, right: 12, bottom: 4 }}>
-                  <defs>
-                    <linearGradient id="sapConversionGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-conversions)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--color-conversions)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        indicator="line"
-                        formatter={(value) => (
-                          <div className="flex flex-1 justify-between">
-                            <span>Conversions</span>
-                            <span className="font-medium">{value as number}</span>
-                          </div>
-                        )}
-                      />
-                    }
-                  />
-                  <Area
-                    dataKey="conversions"
-                    type="monotone"
-                    fill="url(#sapConversionGradient)"
-                    stroke="var(--color-conversions)"
-                    strokeWidth={2}
-                    activeDot={{ r: 4 }}
-                  />
-                  <Line
-                    dataKey="conversions"
-                    type="monotone"
-                    stroke="var(--color-conversions)"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
-                </ComposedChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle>SAP Material Description Volume</CardTitle>
-              <Badge variant="outline" className="text-[11px]">SAP</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">Top SO_Material_0010_Desc ranked by conversion count</p>
-          </CardHeader>
-          <CardContent>
-            {stockToCustomerLoading ? (
-              <p className="text-muted-foreground">Pulling SAP material breakdown...</p>
-            ) : stockToCustomerMaterialMix.length === 0 ? (
-              <p className="text-muted-foreground">No SAP stock-to-customer materials in this window.</p>
-            ) : (
-              <ChartContainer
-                config={{
-                  value: { label: "Conversions", color: "#a855f7" },
-                }}
-                className="h-80"
-              >
-                <BarChart data={stockToCustomerMaterialMix} margin={{ left: 12, right: 12, bottom: 12 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-20} textAnchor="end" height={80} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="value" fill="var(--color-value)" radius={[10, 10, 4, 4]} barSize={32}>
-                    <LabelList dataKey="value" position="top" offset={8} fill="#0f172a" />
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
       </div>
       
       <Card>
