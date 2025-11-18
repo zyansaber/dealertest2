@@ -108,6 +108,27 @@ export interface SecondHandSale {
   warehouseSlug: string;
 }
 
+export interface NewSaleRecord {
+  id: string;
+  createdOn?: string;
+  salesOfficeName?: string;
+  materialDesc0010?: string;
+  materialDesc?: string;
+  modelDesc?: string;
+  billToNameFinal?: string;
+  customerName?: string;
+  customer?: string;
+}
+
+export interface StockToCustomerRecord {
+  id: string;
+  salesOrder: string;
+  materialCode: string;
+  materialDesc: string;
+  salesOfficeName: string;
+  updateDate: string;
+  raw?: Record<string, any>;
+}
 
 // Export dealer types
 export * from './dealer';
