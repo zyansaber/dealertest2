@@ -25,7 +25,17 @@ import {
 } from "@/lib/dealerUtils";
 import { AlertTriangle } from "lucide-react";
 import { format, isValid, parse, parseISO, startOfMonth, startOfWeek, startOfYear, subMonths } from "date-fns";
-import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ComposedChart,
+  LabelList,
+  Line,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const currency = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -826,12 +836,24 @@ const FinanceReport = () => {
                   }}
                   className="h-72"
                 >
-                  <BarChart data={retailSalesByMonth} margin={{ left: 12, right: 12, bottom: 12 }}>
+                  <BarChart
+                    data={retailSalesByMonth}
+                    margin={{ top: 12, left: 16, right: 16, bottom: 12 }}
+                    barCategoryGap="32%"
+                    barGap={8}
+                  >
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
                     <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="retailSales" fill="var(--color-retailSales)" radius={[6, 6, 0, 0]} barSize={28} />
+                    <Bar
+                      dataKey="retailSales"
+                      fill="var(--color-retailSales)"
+                      radius={[8, 8, 0, 0]}
+                      maxBarSize={40}
+                    >
+                      <LabelList dataKey="retailSales" position="top" offset={8} fill="#0f172a" />
+                    </Bar>
                   </BarChart>
                 </ChartContainer>
               )}
@@ -853,12 +875,24 @@ const FinanceReport = () => {
                   }}
                   className="h-72"
                 >
-                  <BarChart data={invoiceCountByMonth} margin={{ left: 12, right: 12, bottom: 12 }}>
+                  <BarChart
+                    data={invoiceCountByMonth}
+                    margin={{ top: 12, left: 16, right: 16, bottom: 12 }}
+                    barCategoryGap="32%"
+                    barGap={8}
+                  >
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
                     <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="invoiceCount" fill="var(--color-invoiceCount)" radius={[6, 6, 0, 0]} barSize={28} />
+                    <Bar
+                      dataKey="invoiceCount"
+                      fill="var(--color-invoiceCount)"
+                      radius={[8, 8, 0, 0]}
+                      maxBarSize={40}
+                    >
+                      <LabelList dataKey="invoiceCount" position="top" offset={8} fill="#0f172a" />
+                    </Bar>
                   </BarChart>
                 </ChartContainer>
               )}
