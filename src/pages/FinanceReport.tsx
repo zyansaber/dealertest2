@@ -419,6 +419,8 @@ const filteredStockToCustomer = useMemo(() => {
     };
   }, [filteredStockToCustomer]);
 
+  type WeeklyActivityRow = { label: string; retail: number; stockToCustomer: number; pgi: number; start: number };
+
   const weeklyActivity = useMemo(() => {
     const retailDates = retailNewSales
       .map((sale) => parseInvoiceDate(sale.createdOn))
@@ -429,14 +431,14 @@ const filteredStockToCustomer = useMemo(() => {
     const pgiDates = filteredInvoices.map((invoice) => parseInvoiceDate(invoice.pgiDate)).filter(Boolean) as Date[];
 
     const allDates = [...retailDates, ...stockToCustomerDates, ...pgiDates];
-    if (!allDates.length) return [] as { label: string; retail: number; stockToCustomer: number; pgi: number }[];
+    if (!allDates.length) return [] as WeeklyActivityRow[];
 
     const minDate = allDates.reduce((min, date) => (date < min ? date : min));
     const maxDate = allDates.reduce((max, date) => (date > max ? date : max));
     const startWeek = startOfWeek(minDate, { weekStartsOn: 1 });
     const endWeek = startOfWeek(maxDate, { weekStartsOn: 1 });
 
-    const weeks: { label: string; retail: number; stockToCustomer: number; pgi: number }[] = [];
+    const weeks: WeeklyActivityRow[] = [];
     for (let cursor = new Date(startWeek); cursor <= endWeek; cursor = addDays(cursor, 7)) {
       const weekStart = new Date(cursor);
       const weekEnd = addDays(weekStart, 6);
@@ -447,10 +449,11 @@ const filteredStockToCustomer = useMemo(() => {
         retail: retailDates.filter((date) => inWeek(date)).length,
         stockToCustomer: stockToCustomerDates.filter((date) => inWeek(date)).length,
         pgi: pgiDates.filter((date) => inWeek(date)).length,
+        start: weekStart.getTime(),
       });
     }
 
-    return weeks;
+    return weeks.sort((a, b) => b.start - a.start);
   }, [filteredInvoices, filteredStockToCustomer, retailNewSales]);
 
   const weeklyExportRows = useMemo(
@@ -969,7 +972,7 @@ const filteredStockToCustomer = useMemo(() => {
           <DialogTrigger asChild>
             <Button variant="outline">View weekly breakdown</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-4xl">
+          <DialogContent className="max-w-4xl max-h-[80vh]">
             <DialogHeader className="gap-2 sm:flex sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <DialogTitle>Weekly performance</DialogTitle>
@@ -1008,8 +1011,8 @@ const filteredStockToCustomer = useMemo(() => {
                     </p>
                   </div>
                 </div>
-                <div className="rounded-lg border">
-                  <ScrollArea className="max-h-[420px] rounded-lg">
+                <div className="rounded-lg border bg-white">
+                  <ScrollArea className="max-h-[520px] h-[420px] rounded-lg">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/40">
