@@ -343,7 +343,7 @@ const filteredStockToCustomer = useMemo(() => {
       const pgiDate = parseInvoiceDate(sale.pgiDate);
       const grDate = parseInvoiceDate(sale.grDate);
       if (grDate && pgiDate) {
-        const diffDays = Math.round((grDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24));
+        const diffDays = Math.round((pgiDate.getTime() - grDate.getTime()) / (1000 * 60 * 60 * 24));
         timeFromPGIToGRSum += diffDays;
         timeFromPGIToGRCount += 1;
       }
@@ -2224,7 +2224,7 @@ const filteredStockToCustomer = useMemo(() => {
                   const margin = sale.finalInvoicePrice - sale.poLineNetValue;
                   const marginRate = sale.finalInvoicePrice ? margin / sale.finalInvoicePrice : 0;
                   const daysToGR = grDate && pgiDate
-                    ? Math.round((grDate.getTime() - pgiDate.getTime()) / (1000 * 60 * 60 * 24))
+                    ? Math.round((pgiDate.getTime() - grDate.getTime()) / (1000 * 60 * 60 * 24))
                     : null;
                   return (
                     <TableRow key={sale.id}>
