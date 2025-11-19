@@ -842,6 +842,51 @@ const filteredStockToCustomer = useMemo(() => {
     });
   }, [dateRange.end, dateRange.start, filteredInvoices]);
 
+    const newCustomerOrderTrend = useMemo(() => {
+    const createdDates = filteredNewSales
+      .map((sale) => parseInvoiceDate(sale.createdOn))
+      .filter(Boolean) as Date[];
+
+    if (!createdDates.length) return [] as { key: string; label: string; revenue: number; orders: number; discountRate: number }[];
+
+    const explicitStart = dateRange.start ? startOfMonth(new Date(dateRange.start)) : null;
+    const explicitEnd = dateRange.end ? startOfMonth(new Date(dateRange.end)) : null;
+
+    const startMonth = explicitStart ?? startOfMonth(createdDates.reduce((min, date) => (date < min ? date : min)));
+    const endMonth = explicitEnd ?? startOfMonth(createdDates.reduce((max, date) => (date > max ? date : max)));
+
+    const months = buildMonthSequence(startMonth, endMonth);
+    const buckets = new Map(
+      months.map((month) => [month.key, { label: month.label, revenue: 0, orders: 0, zg00Sum: 0 }])
+    );
+
+    filteredNewSales.forEach((sale) => {
+      const createdDate = parseInvoiceDate(sale.createdOn);
+      if (!createdDate) return;
+
+      const key = format(createdDate, "yyyy-MM");
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+
+      bucket.revenue += sale.finalPriceExGst ?? 0;
+      bucket.orders += 1;
+      bucket.zg00Sum += sale.zg00Amount ?? 0;
+    });
+
+    return months.map((month) => {
+      const bucket = buckets.get(month.key)!;
+      const discountRate = bucket.revenue ? -(bucket.zg00Sum / bucket.revenue) : 0;
+
+      return {
+        key: month.key,
+        label: bucket.label,
+        revenue: bucket.revenue,
+        orders: bucket.orders,
+        discountRate,
+      };
+    });
+  }, [dateRange.end, dateRange.start, filteredNewSales]);
+
   const secondHandTrendData = useMemo<SecondHandTrendDatum[]>(() => {
     const trackedDates = filteredSecondHandSales
       .map((sale) => [parseInvoiceDate(sale.invoiceDate), parseInvoiceDate(sale.pgiDate), parseInvoiceDate(sale.grDate)])
@@ -908,6 +953,10 @@ const filteredStockToCustomer = useMemo(() => {
   }, [dateRange.end, dateRange.start, filteredSecondHandSales]);
 
   const hasTrendData = useMemo(() => monthlyTrendData.some((month) => month.units > 0), [monthlyTrendData]);
+  const hasNewCustomerTrend = useMemo(
+    () => newCustomerOrderTrend.some((month) => month.orders > 0 || month.revenue > 0),
+    [newCustomerOrderTrend]
+  );
   const hasSecondHandTrend = useMemo(
     () =>
       secondHandTrendData.some(
@@ -1450,113 +1499,225 @@ const filteredStockToCustomer = useMemo(() => {
           </p>
         </CardHeader>
         <CardContent>
-          {!hasTrendData ? (
-            <p className="text-muted-foreground">Need invoices across multiple months to show a trend.</p>
-          ) : (
-            <div className="w-full overflow-x-auto">
-              <ChartContainer
-                config={{
-                  revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
-                  avgDiscountRate: { label: "Monthly discount rate", color: "#ef4444" },
-                  units: { label: "Invoice units", color: "hsl(var(--chart-3))" },
-                }}
-                className="h-[360px] min-w-[960px]"
-              >
-                <ComposedChart data={monthlyTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
-                <YAxis
-                  yAxisId="revenue"
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => formatCompactMoney(value as number)}
-                />
-                <YAxis
-                  yAxisId="discount"
-                  orientation="right"
-                  tickLine={false}
-                  axisLine={false}
-                  domain={[(dataMin: number) => Math.min(dataMin, -0.01), 0]}
-                  tickFormatter={(value) => formatPercent(value as number)}
-                />
-                <YAxis yAxisId="units" hide domain={[0, "auto"]} />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      indicator="line"
-                      formatter={(value, name, item, __, payload) => {
-                        if (!payload || typeof value !== "number") return null;
-
-                        if (item?.dataKey === "revenue") {
-                          return (
-                            <div className="flex flex-1 justify-between">
-                              <span>Revenue</span>
-                              <span className="font-medium">{currency.format(value)}</span>
-                            </div>
-                          );
-                        }
-
-                        if (item?.dataKey === "units") {
-                          return (
-                            <div className="flex flex-1 justify-between">
-                              <span>Invoice Units</span>
-                              <span className="font-medium">{value}</span>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div className="flex flex-1 justify-between">
-                            <span>Monthly discount rate</span>
-                            <span className="font-medium">{formatPercent(value)}</span>
-                          </div>
-                        );
-                      }}
+          <div className="grid gap-6 xl:grid-cols-2">
+            <div className="w-full overflow-x-auto space-y-2">
+              <h4 className="text-sm font-semibold">Invoice revenue trend</h4>
+              {!hasTrendData ? (
+                <p className="text-muted-foreground">Need invoices across multiple months to show a trend.</p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
+                    avgDiscountRate: { label: "Monthly discount rate", color: "#ef4444" },
+                    units: { label: "Invoice units", color: "hsl(var(--chart-3))" },
+                  }}
+                  className="h-[360px] min-w-[960px]"
+                >
+                  <ComposedChart data={monthlyTrendData} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
+                    <YAxis
+                      yAxisId="revenue"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => formatCompactMoney(value as number)}
                     />
-                  }
-                />
-                <ChartLegend
-                  verticalAlign="top"
-                  align="left"
-                  content={
-                    <ChartLegendContent
-                      className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5"
+                    <YAxis
+                      yAxisId="discount"
+                      orientation="right"
+                      tickLine={false}
+                      axisLine={false}
+                      domain={[(dataMin: number) => Math.min(dataMin, -0.01), 0]}
+                      tickFormatter={(value) => formatPercent(value as number)}
                     />
-                  }
-                />
-                <Bar dataKey="units" yAxisId="units" fill="var(--color-units)" radius={[4, 4, 0, 0]} barSize={22} />
-                <Area
-                  type="monotone"
-                  dataKey="revenue"
-                  yAxisId="revenue"
-                  stroke="var(--color-revenue)"
-                  strokeWidth={2}
-                  fill="url(#revenueGradient)"
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="avgDiscountRate"
-                  yAxisId="discount"
-                  stroke="var(--color-avgDiscountRate)"
-                  strokeWidth={2}
-                  dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
-                  activeDot={{ r: 5, strokeWidth: 2 }}
-                />
-              </ComposedChart>
-              </ChartContainer>
+                    <YAxis yAxisId="units" hide domain={[0, "auto"]} />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(value, name, item, __, payload) => {
+                            if (!payload || typeof value !== "number") return null;
+
+                            if (item?.dataKey === "revenue") {
+                              return (
+                                <div className="flex flex-1 justify-between">
+                                  <span>Revenue</span>
+                                  <span className="font-medium">{currency.format(value)}</span>
+                                </div>
+                              );
+                            }
+
+                            if (item?.dataKey === "units") {
+                              return (
+                                <div className="flex flex-1 justify-between">
+                                  <span>Invoice Units</span>
+                                  <span className="font-medium">{value}</span>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>Monthly discount rate</span>
+                                <span className="font-medium">{formatPercent(value)}</span>
+                              </div>
+                            );
+                          }}
+                        />
+                      }
+                    />
+                    <ChartLegend
+                      verticalAlign="top"
+                      align="left"
+                      content={
+                        <ChartLegendContent
+                          className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5"
+                        />
+                      }
+                    />
+                    <Bar dataKey="units" yAxisId="units" fill="var(--color-units)" radius={[4, 4, 0, 0]} barSize={22} />
+                    <Area
+                      type="monotone"
+                      dataKey="revenue"
+                      yAxisId="revenue"
+                      stroke="var(--color-revenue)"
+                      strokeWidth={2}
+                      fill="url(#revenueGradient)"
+                      activeDot={{ r: 4 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="avgDiscountRate"
+                      yAxisId="discount"
+                      stroke="var(--color-avgDiscountRate)"
+                      strokeWidth={2}
+                      dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
+                      activeDot={{ r: 5, strokeWidth: 2 }}
+                    />
+                  </ComposedChart>
+                </ChartContainer>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Revenue (area), invoice units (bars), and discount rate (line) now use their true values so you can compare
+                scale and direction at a glance.
+              </p>
             </div>
-          )}
-          <p className="text-xs text-muted-foreground mt-3">
-            Revenue (area), invoice units (bars), and discount rate (line) now use their true values so you can compare scale
-            and direction at a glance.
-          </p>
+
+            <div className="w-full overflow-x-auto space-y-2">
+              <h4 className="text-sm font-semibold">New customer order sales and trend</h4>
+              {!hasNewCustomerTrend ? (
+                <p className="text-muted-foreground">
+                  Need new customer orders across multiple months to show revenue, order count, and ZG00 trends.
+                </p>
+              ) : (
+                <ChartContainer
+                  config={{
+                    revenue: { label: "Order revenue (ex GST)", color: "hsl(var(--chart-1))" },
+                    orders: { label: "Order count", color: "hsl(var(--chart-3))" },
+                    discountRate: { label: "ZG00 discount rate", color: "#ef4444" },
+                  }}
+                  className="h-[360px] min-w-[960px]"
+                >
+                  <ComposedChart data={newCustomerOrderTrend} margin={{ left: 12, right: 12, top: 12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={20} />
+                    <YAxis
+                      yAxisId="revenue"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) => formatCompactMoney(value as number)}
+                    />
+                    <YAxis
+                      yAxisId="discount"
+                      orientation="right"
+                      tickLine={false}
+                      axisLine={false}
+                      domain={[(dataMin: number) => Math.min(dataMin, -0.01), 0]}
+                      tickFormatter={(value) => formatPercent(value as number)}
+                    />
+                    <YAxis yAxisId="orders" hide domain={[0, "auto"]} />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          indicator="line"
+                          formatter={(value, name, item, __, payload) => {
+                            if (!payload || typeof value !== "number") return null;
+
+                            if (item?.dataKey === "revenue") {
+                              return (
+                                <div className="flex flex-1 justify-between">
+                                  <span>Order revenue (ex GST)</span>
+                                  <span className="font-medium">{currency.format(value)}</span>
+                                </div>
+                              );
+                            }
+
+                            if (item?.dataKey === "orders") {
+                              return (
+                                <div className="flex flex-1 justify-between">
+                                  <span>Orders</span>
+                                  <span className="font-medium">{value}</span>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>ZG00 discount rate</span>
+                                <span className="font-medium">{formatPercent(value)}</span>
+                              </div>
+                            );
+                          }}
+                        />
+                      }
+                    />
+                    <ChartLegend
+                      verticalAlign="top"
+                      align="left"
+                      content={
+                        <ChartLegendContent
+                          className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5"
+                        />
+                      }
+                    />
+                    <Bar
+                      dataKey="revenue"
+                      yAxisId="revenue"
+                      fill="var(--color-revenue)"
+                      radius={[4, 4, 0, 0]}
+                      barSize={22}
+                    />
+                    <Bar
+                      dataKey="orders"
+                      yAxisId="orders"
+                      fill="var(--color-orders)"
+                      radius={[4, 4, 0, 0]}
+                      barSize={18}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="discountRate"
+                      yAxisId="discount"
+                      stroke="var(--color-discountRate)"
+                      strokeWidth={2}
+                      dot={{ r: 3, strokeWidth: 2, fill: "#fff" }}
+                      activeDot={{ r: 5, strokeWidth: 2 }}
+                    />
+                  </ComposedChart>
+                </ChartContainer>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Bars show order revenue (ex GST) and order count, with the red line highlighting ZG00 discount percentage per
+                month.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
