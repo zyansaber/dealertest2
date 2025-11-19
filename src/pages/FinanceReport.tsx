@@ -842,7 +842,7 @@ const filteredStockToCustomer = useMemo(() => {
     });
   }, [dateRange.end, dateRange.start, filteredInvoices]);
 
-    const newCustomerOrderTrend = useMemo(() => {
+  const newCustomerOrderTrend = useMemo(() => {
     const createdDates = filteredNewSales
       .map((sale) => parseInvoiceDate(sale.createdOn))
       .filter(Boolean) as Date[];
@@ -1619,8 +1619,8 @@ const filteredStockToCustomer = useMemo(() => {
                 <ChartContainer
                   config={{
                     revenue: { label: "Order revenue (ex GST)", color: "hsl(var(--chart-1))" },
-                    orders: { label: "Order count", color: "hsl(var(--chart-3))" },
-                    discountRate: { label: "ZG00 discount rate", color: "#ef4444" },
+                    orders: { label: "Order count", color: "hsl(var(--chart-4))" },
+                    discountRate: { label: "Monthly discount rate", color: "#ef4444" },
                   }}
                   className="h-[360px] min-w-[960px]"
                 >
@@ -1669,7 +1669,7 @@ const filteredStockToCustomer = useMemo(() => {
 
                             return (
                               <div className="flex flex-1 justify-between">
-                                <span>ZG00 discount rate</span>
+                                <span>Monthly discount rate</span>
                                 <span className="font-medium">{formatPercent(value)}</span>
                               </div>
                             );
@@ -1713,8 +1713,8 @@ const filteredStockToCustomer = useMemo(() => {
                 </ChartContainer>
               )}
               <p className="text-xs text-muted-foreground">
-                Bars show order revenue (ex GST) and order count, with the red line highlighting ZG00 discount percentage per
-                month.
+                Bars show order revenue (ex GST) and order count, with the red line highlighting the monthly discount rate
+                (ZG00 percentage) each month.
               </p>
             </div>
           </div>
@@ -1746,7 +1746,6 @@ const filteredStockToCustomer = useMemo(() => {
             <p className="text-sm text-slate-500 mt-1">
               Incl. surcharges and adjustments
             </p>
-
           </CardContent>
         </Card>
         <Card>
