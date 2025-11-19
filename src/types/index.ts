@@ -118,6 +118,8 @@ export interface NewSaleRecord {
   billToNameFinal?: string;
   customerName?: string;
   customer?: string;
+  finalPriceExGst?: number;
+  zg00Amount?: number;
 }
 
 export interface StockToCustomerRecord {
