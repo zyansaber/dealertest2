@@ -436,6 +436,8 @@ export const subscribeToNewSales = (
       salesOfficeName: payload.salesOfficeName ?? salesOfficeSlug,
       materialDesc0010: payload.materialDesc0010 ?? payload.materialDesc ?? payload.modelDesc ?? "",
       billToNameFinal: payload.billToNameFinal ?? payload.customerName ?? payload.customer,
+      finalPriceExGst: toNumber(payload.final_price_exgst ?? payload.finalPriceExGst),
+      zg00Amount: toNumber(payload.zg00_amount ?? payload.zg00Amount),
     }));
 
     callback(records);
