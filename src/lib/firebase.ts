@@ -438,6 +438,9 @@ export const subscribeToNewSales = (
       billToNameFinal: payload.billToNameFinal ?? payload.customerName ?? payload.customer,
       finalPriceExGst: toNumber(payload.final_price_exgst ?? payload.finalPriceExGst),
       zg00Amount: toNumber(payload.zg00_amount ?? payload.zg00Amount),
+      chassisNumber: payload.chassisnumber ?? payload.chassisNumber ?? payload.chassis ?? "",
+      priceSource: payload.price_source ?? payload.priceSource ?? payload.price_source_new ?? payload.priceSourceNew,
+      soNetValue: toNumber(payload.so_net_value ?? payload.soNetValue ?? payload.soNetValueInclGst),
     }));
 
     callback(records);
