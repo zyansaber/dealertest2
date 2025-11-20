@@ -27,11 +27,18 @@ import {
 } from "@/components/ui/chart";
 import {
   subscribeToNewSales,
+  subscribeToSchedule,
   subscribeToSecondHandSales,
   subscribeToStockToCustomer,
   subscribeToYardNewVanInvoices,
 } from "@/lib/firebase";
-import type { NewSaleRecord, SecondHandSale, StockToCustomerRecord, YardNewVanInvoice } from "@/types";
+import type {
+  NewSaleRecord,
+  ScheduleItem,
+  SecondHandSale,
+  StockToCustomerRecord,
+  YardNewVanInvoice,
+} from "@/types";
 import {
   isFinanceReportEnabled,
   normalizeDealerSlug,
@@ -138,6 +145,7 @@ const FinanceReport = () => {
   const [invoices, setInvoices] = useState<YardNewVanInvoice[]>([]);
   const [secondHandSales, setSecondHandSales] = useState<SecondHandSale[]>([]);
   const [newSales, setNewSales] = useState<NewSaleRecord[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [stockToCustomerOrders, setStockToCustomerOrders] = useState<StockToCustomerRecord[]>([]);
   const [dateRange, setDateRange] = useState(defaultDateRange);
   const [loading, setLoading] = useState(true);
@@ -194,6 +202,18 @@ const FinanceReport = () => {
     return unsub;
   }, [dealerSlug]);
 
+  useEffect(() => {
+    const unsub = subscribeToSchedule((data) => {
+      setSchedule(data);
+    }, {
+      includeFinished: true,
+      includeNoCustomer: true,
+    });
+
+    return unsub;
+  }, []);
+
+  
   useEffect(() => {
     if (!dealerSlug) {
       setStockToCustomerOrders([]);
@@ -302,6 +322,72 @@ const filteredStockToCustomer = useMemo(() => {
       });
   }, [stockToCustomerOrders, dateRange]);
 
+  const scheduleByChassis = useMemo(() => {
+    const map = new Map<string, ScheduleItem>();
+    schedule.forEach((item) => {
+      const chassis = String(item?.Chassis ?? "").trim().toUpperCase();
+      if (!chassis) return;
+      map.set(chassis, item);
+    });
+    return map;
+  }, [schedule]);
+
+  const forecastedProductionPerformance = useMemo(() => {
+    const buckets = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        revenueInvoice: number;
+        revenueSalesOrder: number;
+        unitsInvoice: number;
+        unitsSalesOrder: number;
+        monthStart: number;
+      }
+    >();
+
+    filteredNewSales.forEach((sale) => {
+      const chassis = sale.chassisNumber?.trim().toUpperCase();
+      if (!chassis) return;
+
+      const scheduleItem = scheduleByChassis.get(chassis);
+      const forecastDate = parseInvoiceDate(scheduleItem?.["Forecast Production Date"]);
+      if (!forecastDate) return;
+
+      const plannedDate = addDays(forecastDate, 40);
+      const key = format(plannedDate, "yyyy-MM");
+      const label = format(plannedDate, "MMM yyyy");
+      const bucket =
+        buckets.get(key) ||
+        buckets
+          .set(key, {
+            key,
+            label,
+            revenueInvoice: 0,
+            revenueSalesOrder: 0,
+            unitsInvoice: 0,
+            unitsSalesOrder: 0,
+            monthStart: new Date(plannedDate.getFullYear(), plannedDate.getMonth(), 1).getTime(),
+          })
+          .get(key)!;
+
+      const source = (sale.priceSource ?? "sales_order").toLowerCase();
+      const isInvoice = source === "invoice";
+      const revenue = sale.soNetValue ?? 0;
+
+      if (isInvoice) {
+        bucket.revenueInvoice += revenue;
+        bucket.unitsInvoice += 1;
+      } else {
+        bucket.revenueSalesOrder += revenue;
+        bucket.unitsSalesOrder += 1;
+      }
+    });
+
+    return Array.from(buckets.values())
+      .sort((a, b) => a.monthStart - b.monthStart)
+      .map(({ monthStart, ...rest }) => rest);
+  }, [filteredNewSales, scheduleByChassis]);
 
   const retailNewSales = useMemo(
     () => filteredNewSales.filter((sale) => (sale.billToNameFinal ?? "").toLowerCase() !== "stock"),
@@ -1400,6 +1486,67 @@ const filteredStockToCustomer = useMemo(() => {
 
         </div>
       </div>
+
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Forecast Production + 40 Days</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Matches new sales to scheduled chassis, adds 40 days to the forecast production date, and stacks revenue/units by
+            price source.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {forecastedProductionPerformance.length === 0 ? (
+            <p className="text-muted-foreground">
+              Need matching chassis numbers between new sales and schedule to plot forecasted production revenue and units.
+            </p>
+          ) : (
+            <ChartContainer
+              config={{
+                revenueInvoice: { label: "Revenue (invoice)", color: "hsl(var(--chart-1))" },
+                revenueSalesOrder: { label: "Revenue (sales order)", color: "hsl(var(--chart-2))" },
+                unitsInvoice: { label: "Units (invoice)", color: "hsl(var(--chart-3))" },
+                unitsSalesOrder: { label: "Units (sales order)", color: "hsl(var(--chart-4))" },
+              }}
+              className="h-[420px]"
+            >
+              <BarChart
+                data={forecastedProductionPerformance}
+                margin={{ left: 12, right: 12, top: 20, bottom: 12 }}
+                barGap={12}
+              >
+                <CartesianGrid strokeDasharray="4 4" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-15} textAnchor="end" />
+                <YAxis
+                  yAxisId="revenue"
+                  tickFormatter={formatCompactMoney}
+                  tickLine={false}
+                  axisLine={false}
+                  width={60}
+                />
+                <YAxis yAxisId="units" orientation="right" allowDecimals={false} tickLine={false} axisLine={false} width={36} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend
+                  verticalAlign="top"
+                  align="left"
+                  content={
+                    <ChartLegendContent className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5" />
+                  }
+                />
+                <Bar dataKey="revenueInvoice" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueInvoice)" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="revenueSalesOrder" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueSalesOrder)" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="unitsInvoice" stackId="units" yAxisId="units" fill="var(--color-unitsInvoice)" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="unitsSalesOrder" stackId="units" yAxisId="units" fill="var(--color-unitsSalesOrder)" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Forecast production dates are shifted forward by 40 days. Bars show revenue (soNetValue) and unit counts stacked by
+            price source: invoice vs sales order.
+          </p>
+        </CardContent>
+      </Card>
       
       <Card>
         <CardHeader>
