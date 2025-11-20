@@ -1191,7 +1191,7 @@ const filteredStockToCustomer = useMemo(() => {
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Bar
                       dataKey="retailSales"
-                      fill="var(--color-retailSales)"
+                      fill="#2563eb"
                       radius={[8, 8, 0, 0]}
                       maxBarSize={40}
                     >
@@ -1230,7 +1230,7 @@ const filteredStockToCustomer = useMemo(() => {
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Bar
                       dataKey="invoiceCount"
-                      fill="var(--color-invoiceCount)"
+                      fill="#16a34a" // 绿色
                       radius={[8, 8, 0, 0]}
                       maxBarSize={40}
                     >
@@ -1689,14 +1689,14 @@ const filteredStockToCustomer = useMemo(() => {
                     <Bar
                       dataKey="revenue"
                       yAxisId="revenue"
-                      fill="var(--color-revenue)"
+                      fill="#2563eb" // 蓝色：订单金额
                       radius={[4, 4, 0, 0]}
                       barSize={22}
                     />
                     <Bar
                       dataKey="orders"
                       yAxisId="orders"
-                      fill="var(--color-orders)"
+                      fill="#f97316" // 橙色：订单数量
                       radius={[4, 4, 0, 0]}
                       barSize={18}
                     />
