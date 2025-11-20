@@ -19,6 +19,13 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
@@ -153,6 +160,7 @@ const FinanceReport = () => {
   const [newSalesLoading, setNewSalesLoading] = useState(true);
   const [stockToCustomerLoading, setStockToCustomerLoading] = useState(true);
   const [weeklyDialogOpen, setWeeklyDialogOpen] = useState(false);
+  const [forecastMonthFilter, setForecastMonthFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!dealerSlug || !financeEnabled) {
@@ -401,6 +409,26 @@ const filteredStockToCustomer = useMemo(() => {
         avgDiscountRate: discountCount ? discountSum / discountCount : 0,
       }));
   }, [filteredNewSales, scheduleByChassis]);
+
+  const forecastMonthOptions = useMemo(
+    () => forecastedProductionPerformance.map((item) => ({ key: item.key, label: item.label })),
+    [forecastedProductionPerformance]
+  );
+
+  const filteredForecastedProductionPerformance = useMemo(() => {
+    if (forecastMonthFilter === "all") return forecastedProductionPerformance;
+
+    return forecastedProductionPerformance.filter((item) => item.key === forecastMonthFilter);
+  }, [forecastMonthFilter, forecastedProductionPerformance]);
+
+  useEffect(() => {
+    if (forecastMonthFilter === "all") return;
+
+    const stillExists = forecastMonthOptions.some((option) => option.key === forecastMonthFilter);
+    if (!stillExists) {
+      setForecastMonthFilter("all");
+    }
+  }, [forecastMonthFilter, forecastMonthOptions]);
 
   const retailNewSales = useMemo(
     () => filteredNewSales.filter((sale) => (sale.billToNameFinal ?? "").toLowerCase() !== "stock"),
@@ -1559,22 +1587,53 @@ const filteredStockToCustomer = useMemo(() => {
               Need matching chassis numbers between new sales and schedule to plot forecasted production revenue and units.
             </p>
           ) : (
-            <div className="w-full overflow-x-auto">
+            <div className="w-full space-y-6 overflow-x-auto">
+              <div className="flex flex-col gap-3 rounded-lg border bg-white/60 p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Future production outlook</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use the month filter to zoom into a single production window.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="text-xs text-slate-600" htmlFor="forecast-month-filter">
+                    Month filter
+                  </Label>
+                  <Select
+                    value={forecastMonthFilter}
+                    onValueChange={setForecastMonthFilter}
+                    disabled={forecastMonthOptions.length === 0}
+                  >
+                    <SelectTrigger id="forecast-month-filter" className="w-[220px]">
+                      <SelectValue placeholder="All months" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All months</SelectItem>
+                      {forecastMonthOptions.map((month) => (
+                        <SelectItem key={month.key} value={month.key}>
+                          {month.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <ChartContainer
                 config={{
-                  revenueInvoice: { label: "Revenue (invoice)", color: "hsl(var(--chart-1))" },
-                  revenueSalesOrder: { label: "Revenue (sales order)", color: "hsl(var(--chart-2))" },
-                  unitsInvoice: { label: "Units (invoice)", color: "hsl(var(--chart-3))" },
-                  unitsSalesOrder: { label: "Units (sales order)", color: "hsl(var(--chart-4))" },
-                  avgDiscountRate: { label: "Avg discount rate", color: "#ef4444" },
+                  revenueInvoice: { label: "Revenue (invoice)", color: "#16a34a" },
+                  revenueSalesOrder: { label: "Revenue (sales order)", color: "#2563eb" },
+                  unitsInvoice: { label: "Units (invoice)", color: "#f59e0b" },
+                  unitsSalesOrder: { label: "Units (sales order)", color: "#b91c1c" },
+                  avgDiscountRate: { label: "Avg discount rate", color: "#0f172a" },
                 }}
-                className="h-[420px] min-w-[960px]"
+                className="h-[440px] min-w-[960px] rounded-lg border bg-white/80 p-4 shadow-sm"
               >
                 <ComposedChart
-                  data={forecastedProductionPerformance}
-                  margin={{ top: 32, right: 24, bottom: 24, left: 16 }}
-                  barGap={10}
-                  barCategoryGap="24%"
+                  data={filteredForecastedProductionPerformance}
+                  margin={{ top: 32, right: 24, bottom: 24, left: 12 }}
+                  barGap={8}
+                  barCategoryGap="18%"
                 >
                   <defs>
                     <linearGradient id="revenueInvoiceGradient" x1="0" y1="0" x2="0" y2="1">
@@ -1684,8 +1743,10 @@ const filteredStockToCustomer = useMemo(() => {
                     stackId="revenue"
                     yAxisId="revenue"
                     fill="url(#revenueInvoiceGradient)"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={40}
+                    radius={[10, 10, 0, 0]}
+                    maxBarSize={48}
+                    stroke="var(--color-revenueInvoice)"
+                    strokeOpacity={0.2}
                   >
                     <LabelList
                       dataKey="revenueInvoice"
@@ -1701,8 +1762,10 @@ const filteredStockToCustomer = useMemo(() => {
                     stackId="revenue"
                     yAxisId="revenue"
                     fill="url(#revenueSalesOrderGradient)"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={40}
+                    radius={[10, 10, 0, 0]}
+                    maxBarSize={48}
+                    stroke="var(--color-revenueSalesOrder)"
+                    strokeOpacity={0.2}
                   >
                     <LabelList
                       dataKey="revenueSalesOrder"
@@ -1718,9 +1781,11 @@ const filteredStockToCustomer = useMemo(() => {
                     stackId="units"
                     yAxisId="units"
                     fill="var(--color-unitsInvoice)"
-                    radius={[6, 6, 0, 0]}
-                    barSize={18}
-                    opacity={0.9}
+                    radius={[8, 8, 0, 0]}
+                    barSize={16}
+                    opacity={0.95}
+                    stroke="var(--color-unitsInvoice)"
+                    strokeOpacity={0.2}
                   >
                     <LabelList
                       dataKey="unitsInvoice"
@@ -1737,9 +1802,11 @@ const filteredStockToCustomer = useMemo(() => {
                     stackId="units"
                     yAxisId="units"
                     fill="var(--color-unitsSalesOrder)"
-                    radius={[6, 6, 0, 0]}
-                    barSize={18}
-                    opacity={0.9}
+                    radius={[8, 8, 0, 0]}
+                    barSize={16}
+                    opacity={0.95}
+                    stroke="var(--color-unitsSalesOrder)"
+                    strokeOpacity={0.2}
                   >
                     <LabelList
                       dataKey="unitsSalesOrder"
@@ -1755,26 +1822,57 @@ const filteredStockToCustomer = useMemo(() => {
                     type="monotone"
                     dataKey="avgDiscountRate"
                     yAxisId="discount"
-                    stroke="#ef4444"
+                    stroke="var(--color-avgDiscountRate)"
                     strokeWidth={2}
-                    dot={{ r: 3, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
-                    activeDot={{ r: 5, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
+                    dot={{ r: 3.5, strokeWidth: 2, stroke: "var(--color-avgDiscountRate)", fill: "#fff" }}
+                    activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--color-avgDiscountRate)", fill: "#fff" }}
                   >
                     <LabelList
                       dataKey="avgDiscountRate"
                       position="top"
                       formatter={(value: number) => (value > 0 ? formatPercent(value) : "")}
-                      fill="#ef4444"
+                      fill="var(--color-avgDiscountRate)"
                       style={{ fontSize: 11 }}
                     />
                   </Line>
                 </ComposedChart>
               </ChartContainer>
+
+              <div className="overflow-x-auto rounded-lg border bg-white/60 shadow-sm">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Forecast production date (month)</TableHead>
+                      <TableHead className="text-right">Invoice revenue</TableHead>
+                      <TableHead className="text-right">Sales order revenue</TableHead>
+                      <TableHead className="text-right">Total revenue</TableHead>
+                      <TableHead className="text-right">Invoice units</TableHead>
+                      <TableHead className="text-right">Sales order units</TableHead>
+                      <TableHead className="text-right">Avg discount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredForecastedProductionPerformance.map((bucket) => (
+                      <TableRow key={bucket.key}>
+                        <TableCell className="font-medium">{bucket.label}</TableCell>
+                        <TableCell className="text-right">{currency.format(bucket.revenueInvoice)}</TableCell>
+                        <TableCell className="text-right">{currency.format(bucket.revenueSalesOrder)}</TableCell>
+                        <TableCell className="text-right">
+                          {currency.format(bucket.revenueInvoice + bucket.revenueSalesOrder)}
+                        </TableCell>
+                        <TableCell className="text-right">{bucket.unitsInvoice}</TableCell>
+                        <TableCell className="text-right">{bucket.unitsSalesOrder}</TableCell>
+                        <TableCell className="text-right">{formatPercent(bucket.avgDiscountRate)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-3">
             Forecast production dates are shifted forward by 40 days. Bars show revenue (soNetValue) and unit counts split by price
-            source (invoice vs sales order). The red line tracks the average discount rate (ZG00 ÷ revenue) for each future month.
+            source (invoice vs sales order). The line tracks the average discount rate (ZG00 ÷ revenue) for each future month.
           </p>
         </CardContent>
       </Card>
