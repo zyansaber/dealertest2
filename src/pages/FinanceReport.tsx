@@ -1542,11 +1542,12 @@ const filteredStockToCustomer = useMemo(() => {
       </Card>
     </div>
   );
-    const forecastRevenueContent = (
+
+  const forecastRevenueContent = (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Forecast revenue (customers' vans)</CardTitle>
+          <CardTitle>Forecast revenue (customers&apos; vans)</CardTitle>
           <p className="text-sm text-muted-foreground">
             Matches new sales to scheduled chassis, adds 40 days to the forecast production date, and compares revenue/units by
             price source with discount rate overlay.
@@ -1558,128 +1559,222 @@ const filteredStockToCustomer = useMemo(() => {
               Need matching chassis numbers between new sales and schedule to plot forecasted production revenue and units.
             </p>
           ) : (
-            <ChartContainer
-              config={{
-                revenueInvoice: { label: "Revenue (invoice)", color: "hsl(var(--chart-1))" },
-                revenueSalesOrder: { label: "Revenue (sales order)", color: "hsl(var(--chart-2))" },
-                unitsInvoice: { label: "Units (invoice)", color: "hsl(var(--chart-3))" },
-                unitsSalesOrder: { label: "Units (sales order)", color: "hsl(var(--chart-4))" },
-                avgDiscountRate: { label: "Avg discount rate", color: "#ef4444" },
-              }}
-              className="h-[480px] w-full"
-            >
-              <ComposedChart
-                data={forecastedProductionPerformance}
-                margin={{ left: 12, right: 12, top: 20, bottom: 12 }}
-                barGap={12}
-                barCategoryGap="30%"
+            <div className="w-full overflow-x-auto">
+              <ChartContainer
+                config={{
+                  revenueInvoice: { label: "Revenue (invoice)", color: "hsl(var(--chart-1))" },
+                  revenueSalesOrder: { label: "Revenue (sales order)", color: "hsl(var(--chart-2))" },
+                  unitsInvoice: { label: "Units (invoice)", color: "hsl(var(--chart-3))" },
+                  unitsSalesOrder: { label: "Units (sales order)", color: "hsl(var(--chart-4))" },
+                  avgDiscountRate: { label: "Avg discount rate", color: "#ef4444" },
+                }}
+                className="h-[420px] min-w-[960px]"
               >
-                <CartesianGrid strokeDasharray="3 3" vertical />
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  interval={0}
-                  angle={-15}
-                  textAnchor="end"
-                  tick={{ fill: "#1f2937", fontSize: 12 }}
-                />
-                <YAxis
-                  yAxisId="revenue"
-                  tickFormatter={formatCompactMoney}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: "#1f2937", fontSize: 12 }}
-                  width={64}
-                />
-                <YAxis
-                  yAxisId="units"
-                  orientation="right"
-                  allowDecimals={false}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: "#1f2937", fontSize: 12 }}
-                  width={40}
-                />
-                <YAxis
-                  yAxisId="discount"
-                  orientation="right"
-                  tickLine={false}
-                  axisLine={false}
-                  domain={[0, (dataMax: number) => Math.max(0.2, dataMax)]}
-                  tickFormatter={(value) => formatPercent(value as number)}
-                  tick={{ fill: "#1f2937", fontSize: 12 }}
-                  width={52}
-                />
-                <ChartTooltip
-                  content={
-                    <ChartTooltipContent
-                      formatter={(value, name) => {
-                        if (typeof value !== "number") return value;
-                        if (name?.toString().toLowerCase().includes("revenue")) return currency.format(value);
-                        if (name?.toString().toLowerCase().includes("unit")) return value;
-                        return formatPercent(value);
-                      }}
-                    />
-                  }
-                />
-                <ChartLegend
-                  verticalAlign="top"
-                  align="left"
-                  content={
-                    <ChartLegendContent className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5" />
-                  }
-                />
-                <Bar dataKey="revenueInvoice" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueInvoice)" radius={[8, 8, 0, 0]}>
-                  <LabelList
+                <ComposedChart
+                  data={forecastedProductionPerformance}
+                  margin={{ top: 32, right: 24, bottom: 24, left: 16 }}
+                  barGap={10}
+                  barCategoryGap="24%"
+                >
+                  <defs>
+                    <linearGradient id="revenueInvoiceGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-revenueInvoice)" stopOpacity={0.95} />
+                      <stop offset="95%" stopColor="var(--color-revenueInvoice)" stopOpacity={0.4} />
+                    </linearGradient>
+                    <linearGradient id="revenueSalesOrderGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-revenueSalesOrder)" stopOpacity={0.95} />
+                      <stop offset="95%" stopColor="var(--color-revenueSalesOrder)" stopOpacity={0.4} />
+                    </linearGradient>
+                  </defs>
+
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    interval={0}
+                    angle={-20}
+                    textAnchor="end"
+                    height={48}
+                    tickMargin={10}
+                    tick={{ fill: "#1f2937", fontSize: 12 }}
+                  />
+
+                  <YAxis
+                    yAxisId="revenue"
+                    tickFormatter={formatCompactMoney}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: "#1f2937", fontSize: 12 }}
+                    width={64}
+                  />
+
+                  <YAxis
+                    yAxisId="units"
+                    orientation="right"
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: "#1f2937", fontSize: 12 }}
+                    width={40}
+                  />
+
+                  <YAxis
+                    yAxisId="discount"
+                    orientation="right"
+                    tickLine={false}
+                    axisLine={false}
+                    domain={[0, (dataMax: number) => Math.max(0.2, dataMax || 0.2)]}
+                    tickFormatter={(value) => formatPercent(value as number)}
+                    tick={{ fill: "#64748b", fontSize: 11 }}
+                    width={52}
+                  />
+
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        className="min-w-[220px]"
+                        formatter={(value, name) => {
+                          if (typeof value !== "number") return value;
+
+                          const key = name?.toString().toLowerCase() ?? "";
+
+                          if (key.includes("revenue")) {
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>{name}</span>
+                                <span className="font-medium">{currency.format(value)}</span>
+                              </div>
+                            );
+                          }
+
+                          if (key.includes("unit")) {
+                            return (
+                              <div className="flex flex-1 justify-between">
+                                <span>{name}</span>
+                                <span className="font-medium">{value}</span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-1 justify-between">
+                              <span>{name}</span>
+                              <span className="font-medium">{formatPercent(value)}</span>
+                            </div>
+                          );
+                        }}
+                      />
+                    }
+                  />
+
+                  <ChartLegend
+                    verticalAlign="top"
+                    align="left"
+                    content={
+                      <ChartLegendContent
+                        className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5"
+                      />
+                    }
+                  />
+
+                  <Bar
                     dataKey="revenueInvoice"
-                    position="insideTop"
-                    formatter={(value: number) => formatCompactMoney(value)}
-                    fill="#1f2937"
-                  />
-                </Bar>
-                <Bar dataKey="revenueSalesOrder" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueSalesOrder)" radius={[8, 8, 0, 0]}>
-                  <LabelList
+                    stackId="revenue"
+                    yAxisId="revenue"
+                    fill="url(#revenueInvoiceGradient)"
+                    radius={[8, 8, 0, 0]}
+                    maxBarSize={40}
+                  >
+                    <LabelList
+                      dataKey="revenueInvoice"
+                      position="insideTop"
+                      formatter={(value: number) => (value > 0 ? formatCompactMoney(value) : "")}
+                      fill="#0f172a"
+                      style={{ fontSize: 11, fontWeight: 500 }}
+                    />
+                  </Bar>
+
+                  <Bar
                     dataKey="revenueSalesOrder"
-                    position="insideTop"
-                    formatter={(value: number) => formatCompactMoney(value)}
-                    fill="#1f2937"
-                  />
-                </Bar>
-                <Bar dataKey="unitsInvoice" stackId="units" yAxisId="units" fill="var(--color-unitsInvoice)" radius={[8, 8, 0, 0]}>
-                  <LabelList dataKey="unitsInvoice" position="top" formatter={(value: number) => value ?? 0} fill="#1f2937" />
-                </Bar>
-                <Bar
-                  dataKey="unitsSalesOrder"
-                  stackId="units"
-                  yAxisId="units"
-                  fill="var(--color-unitsSalesOrder)"
-                  radius={[8, 8, 0, 0]}
-                >
-                  <LabelList dataKey="unitsSalesOrder" position="top" formatter={(value: number) => value ?? 0} fill="#1f2937" />
-                </Bar>
-                <Line
-                  type="monotone"
-                  dataKey="avgDiscountRate"
-                  yAxisId="discount"
-                  stroke="#ef4444"
-                  strokeWidth={2}
-                  dot={{ r: 3, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
-                  activeDot={{ r: 5, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
-                >
-                  <LabelList
+                    stackId="revenue"
+                    yAxisId="revenue"
+                    fill="url(#revenueSalesOrderGradient)"
+                    radius={[8, 8, 0, 0]}
+                    maxBarSize={40}
+                  >
+                    <LabelList
+                      dataKey="revenueSalesOrder"
+                      position="insideTop"
+                      formatter={(value: number) => (value > 0 ? formatCompactMoney(value) : "")}
+                      fill="#0f172a"
+                      style={{ fontSize: 11, fontWeight: 500 }}
+                    />
+                  </Bar>
+
+                  <Bar
+                    dataKey="unitsInvoice"
+                    stackId="units"
+                    yAxisId="units"
+                    fill="var(--color-unitsInvoice)"
+                    radius={[6, 6, 0, 0]}
+                    barSize={18}
+                    opacity={0.9}
+                  >
+                    <LabelList
+                      dataKey="unitsInvoice"
+                      position="top"
+                      formatter={(value: number) => (value > 0 ? value : "")}
+                      offset={6}
+                      fill="#1f2937"
+                      style={{ fontSize: 11 }}
+                    />
+                  </Bar>
+
+                  <Bar
+                    dataKey="unitsSalesOrder"
+                    stackId="units"
+                    yAxisId="units"
+                    fill="var(--color-unitsSalesOrder)"
+                    radius={[6, 6, 0, 0]}
+                    barSize={18}
+                    opacity={0.9}
+                  >
+                    <LabelList
+                      dataKey="unitsSalesOrder"
+                      position="top"
+                      formatter={(value: number) => (value > 0 ? value : "")}
+                      offset={6}
+                      fill="#1f2937"
+                      style={{ fontSize: 11 }}
+                    />
+                  </Bar>
+
+                  <Line
+                    type="monotone"
                     dataKey="avgDiscountRate"
-                    position="top"
-                    formatter={(value: number) => formatPercent(value)}
-                    fill="#ef4444"
-                  />
-                </Line>
-              </ComposedChart>
-            </ChartContainer>
+                    yAxisId="discount"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    dot={{ r: 3, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
+                    activeDot={{ r: 5, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
+                  >
+                    <LabelList
+                      dataKey="avgDiscountRate"
+                      position="top"
+                      formatter={(value: number) => (value > 0 ? formatPercent(value) : "")}
+                      fill="#ef4444"
+                      style={{ fontSize: 11 }}
+                    />
+                  </Line>
+                </ComposedChart>
+              </ChartContainer>
+            </div>
           )}
           <p className="text-xs text-muted-foreground mt-3">
-            Forecast production dates are shifted forward by 40 days. Bars show revenue (soNetValue) and unit counts stacked by
-            price source: invoice vs sales order. Discount rate (red line) uses ZG00 amount divided by revenue.
+            Forecast production dates are shifted forward by 40 days. Bars show revenue (soNetValue) and unit counts split by price
+            source (invoice vs sales order). The red line tracks the average discount rate (ZG00 ÷ revenue) for each future month.
           </p>
         </CardContent>
       </Card>
