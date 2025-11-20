@@ -343,6 +343,8 @@ const filteredStockToCustomer = useMemo(() => {
         unitsInvoice: number;
         unitsSalesOrder: number;
         monthStart: number;
+        discountSum: number;
+        discountCount: number;
       }
     >();
 
@@ -368,12 +370,15 @@ const filteredStockToCustomer = useMemo(() => {
             unitsInvoice: 0,
             unitsSalesOrder: 0,
             monthStart: new Date(plannedDate.getFullYear(), plannedDate.getMonth(), 1).getTime(),
+            discountSum: 0,
+            discountCount: 0,
           })
           .get(key)!;
 
       const source = (sale.priceSource ?? "sales_order").toLowerCase();
       const isInvoice = source === "invoice";
       const revenue = sale.soNetValue ?? 0;
+      const discountRate = revenue > 0 ? Math.max(0, (sale.zg00Amount ?? 0) / revenue) : 0;
 
       if (isInvoice) {
         bucket.revenueInvoice += revenue;
@@ -382,11 +387,19 @@ const filteredStockToCustomer = useMemo(() => {
         bucket.revenueSalesOrder += revenue;
         bucket.unitsSalesOrder += 1;
       }
+
+      if (Number.isFinite(discountRate) && revenue > 0) {
+        bucket.discountSum += discountRate;
+        bucket.discountCount += 1;
+      }
     });
 
     return Array.from(buckets.values())
       .sort((a, b) => a.monthStart - b.monthStart)
-      .map(({ monthStart, ...rest }) => rest);
+      .map(({ monthStart, discountSum, discountCount, ...rest }) => ({
+        ...rest,
+        avgDiscountRate: discountCount ? discountSum / discountCount : 0,
+      }));
   }, [filteredNewSales, scheduleByChassis]);
 
   const retailNewSales = useMemo(
@@ -1589,6 +1602,137 @@ const filteredStockToCustomer = useMemo(() => {
       </Card>
     </div>
   );
+    const forecastRevenueContent = (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Forecast revenue (customers' vans)</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Matches new sales to scheduled chassis, adds 40 days to the forecast production date, and compares revenue/units by
+            price source with discount rate overlay.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {forecastedProductionPerformance.length === 0 ? (
+            <p className="text-muted-foreground">
+              Need matching chassis numbers between new sales and schedule to plot forecasted production revenue and units.
+            </p>
+          ) : (
+            <ChartContainer
+              config={{
+                revenueInvoice: { label: "Revenue (invoice)", color: "hsl(var(--chart-1))" },
+                revenueSalesOrder: { label: "Revenue (sales order)", color: "hsl(var(--chart-2))" },
+                unitsInvoice: { label: "Units (invoice)", color: "hsl(var(--chart-3))" },
+                unitsSalesOrder: { label: "Units (sales order)", color: "hsl(var(--chart-4))" },
+                avgDiscountRate: { label: "Avg discount rate", color: "#ef4444" },
+              }}
+              className="h-[480px] w-full"
+            >
+              <ComposedChart
+                data={forecastedProductionPerformance}
+                margin={{ left: 12, right: 12, top: 20, bottom: 12 }}
+                barGap={12}
+              >
+                <CartesianGrid strokeDasharray="4 4" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-15} textAnchor="end" />
+                <YAxis
+                  yAxisId="revenue"
+                  tickFormatter={formatCompactMoney}
+                  tickLine={false}
+                  axisLine={false}
+                  width={64}
+                />
+                <YAxis
+                  yAxisId="units"
+                  orientation="right"
+                  allowDecimals={false}
+                  tickLine={false}
+                  axisLine={false}
+                  width={40}
+                />
+                <YAxis
+                  yAxisId="discount"
+                  orientation="right"
+                  tickLine={false}
+                  axisLine={false}
+                  domain={[0, (dataMax: number) => Math.max(0.2, dataMax)]}
+                  tickFormatter={(value) => formatPercent(value as number)}
+                  width={52}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      formatter={(value, name) => {
+                        if (typeof value !== "number") return value;
+                        if (name?.toString().toLowerCase().includes("revenue")) return currency.format(value);
+                        if (name?.toString().toLowerCase().includes("unit")) return value;
+                        return formatPercent(value);
+                      }}
+                    />
+                  }
+                />
+                <ChartLegend
+                  verticalAlign="top"
+                  align="left"
+                  content={
+                    <ChartLegendContent className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5" />
+                  }
+                />
+                <Bar dataKey="revenueInvoice" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueInvoice)" radius={[8, 8, 0, 0]}>
+                  <LabelList
+                    dataKey="revenueInvoice"
+                    position="insideTop"
+                    formatter={(value: number) => formatCompactMoney(value)}
+                    fill="#0f172a"
+                  />
+                </Bar>
+                <Bar dataKey="revenueSalesOrder" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueSalesOrder)" radius={[8, 8, 0, 0]}>
+                  <LabelList
+                    dataKey="revenueSalesOrder"
+                    position="insideTop"
+                    formatter={(value: number) => formatCompactMoney(value)}
+                    fill="#0f172a"
+                  />
+                </Bar>
+                <Bar dataKey="unitsInvoice" stackId="units" yAxisId="units" fill="var(--color-unitsInvoice)" radius={[8, 8, 0, 0]}>
+                  <LabelList dataKey="unitsInvoice" position="top" formatter={(value: number) => value ?? 0} fill="#0f172a" />
+                </Bar>
+                <Bar
+                  dataKey="unitsSalesOrder"
+                  stackId="units"
+                  yAxisId="units"
+                  fill="var(--color-unitsSalesOrder)"
+                  radius={[8, 8, 0, 0]}
+                >
+                  <LabelList dataKey="unitsSalesOrder" position="top" formatter={(value: number) => value ?? 0} fill="#0f172a" />
+                </Bar>
+                <Line
+                  type="monotone"
+                  dataKey="avgDiscountRate"
+                  yAxisId="discount"
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                  dot={{ r: 3, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
+                  activeDot={{ r: 5, strokeWidth: 2, stroke: "#ef4444", fill: "#fff" }}
+                >
+                  <LabelList
+                    dataKey="avgDiscountRate"
+                    position="top"
+                    formatter={(value: number) => formatPercent(value)}
+                    fill="#ef4444"
+                  />
+                </Line>
+              </ComposedChart>
+            </ChartContainer>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Forecast production dates are shifted forward by 40 days. Bars show revenue (soNetValue) and unit counts stacked by
+            price source: invoice vs sales order. Discount rate (red line) uses ZG00 amount divided by revenue.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
 
   const content = (
     <div className="space-y-6">
@@ -2578,6 +2722,7 @@ const filteredStockToCustomer = useMemo(() => {
           <TabsList>
             <TabsTrigger value="basic">Basic performance data</TabsTrigger>
             <TabsTrigger value="new-vans">New Van Sales</TabsTrigger>
+            <TabsTrigger value="forecast-revenue">forecast revenue (customers' vans)</TabsTrigger>
             <TabsTrigger value="parts" disabled>
               Parts Sales
             </TabsTrigger>
@@ -2616,6 +2761,18 @@ const filteredStockToCustomer = useMemo(() => {
               </Card>
             ) : (
               content
+            )}
+          </TabsContent>
+
+          <TabsContent value="forecast-revenue">
+            {newSalesLoading ? (
+              <Card>
+                <CardContent className="p-10 text-center text-muted-foreground">
+                  Loading forecast revenue...
+                </CardContent>
+              </Card>
+            ) : (
+              forecastRevenueContent
             )}
           </TabsContent>
 
