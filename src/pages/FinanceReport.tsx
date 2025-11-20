@@ -1487,7 +1487,6 @@ const filteredStockToCustomer = useMemo(() => {
         </div>
       </div>
 
-
       <Card>
         <CardHeader>
           <CardTitle>Forecast Production + 40 Days</CardTitle>
