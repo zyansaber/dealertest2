@@ -120,6 +120,9 @@ export interface NewSaleRecord {
   customer?: string;
   finalPriceExGst?: number;
   zg00Amount?: number;
+  chassisNumber?: string;
+  priceSource?: string;
+  soNetValue?: number;
 }
 
 export interface StockToCustomerRecord {
