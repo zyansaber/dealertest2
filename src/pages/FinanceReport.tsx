@@ -1502,66 +1502,6 @@ const filteredStockToCustomer = useMemo(() => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Forecast Production + 40 Days</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Matches new sales to scheduled chassis, adds 40 days to the forecast production date, and stacks revenue/units by
-            price source.
-          </p>
-        </CardHeader>
-        <CardContent>
-          {forecastedProductionPerformance.length === 0 ? (
-            <p className="text-muted-foreground">
-              Need matching chassis numbers between new sales and schedule to plot forecasted production revenue and units.
-            </p>
-          ) : (
-            <ChartContainer
-              config={{
-                revenueInvoice: { label: "Revenue (invoice)", color: "hsl(var(--chart-1))" },
-                revenueSalesOrder: { label: "Revenue (sales order)", color: "hsl(var(--chart-2))" },
-                unitsInvoice: { label: "Units (invoice)", color: "hsl(var(--chart-3))" },
-                unitsSalesOrder: { label: "Units (sales order)", color: "hsl(var(--chart-4))" },
-              }}
-              className="h-[420px]"
-            >
-              <BarChart
-                data={forecastedProductionPerformance}
-                margin={{ left: 12, right: 12, top: 20, bottom: 12 }}
-                barGap={12}
-              >
-                <CartesianGrid strokeDasharray="4 4" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-15} textAnchor="end" />
-                <YAxis
-                  yAxisId="revenue"
-                  tickFormatter={formatCompactMoney}
-                  tickLine={false}
-                  axisLine={false}
-                  width={60}
-                />
-                <YAxis yAxisId="units" orientation="right" allowDecimals={false} tickLine={false} axisLine={false} width={36} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend
-                  verticalAlign="top"
-                  align="left"
-                  content={
-                    <ChartLegendContent className="justify-start gap-3 text-sm text-muted-foreground [&>div]:gap-2 [&>div]:rounded-full [&>div]:border [&>div]:border-border/60 [&>div]:bg-muted/40 [&>div]:px-3 [&>div]:py-1 [&>div>div:first-child]:h-2.5 [&>div>div:first-child]:w-2.5" />
-                  }
-                />
-                <Bar dataKey="revenueInvoice" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueInvoice)" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="revenueSalesOrder" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueSalesOrder)" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="unitsInvoice" stackId="units" yAxisId="units" fill="var(--color-unitsInvoice)" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="unitsSalesOrder" stackId="units" yAxisId="units" fill="var(--color-unitsSalesOrder)" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
-          )}
-          <p className="text-xs text-muted-foreground mt-3">
-            Forecast production dates are shifted forward by 40 days. Bars show revenue (soNetValue) and unit counts stacked by
-            price source: invoice vs sales order.
-          </p>
-        </CardContent>
-      </Card>
-      
-      <Card>
-        <CardHeader>
           <CardTitle>Retail Sales Detail</CardTitle>
           <p className="text-sm text-muted-foreground">Created date, sales office, and customer category</p>
         </CardHeader>
@@ -1632,14 +1572,24 @@ const filteredStockToCustomer = useMemo(() => {
                 data={forecastedProductionPerformance}
                 margin={{ left: 12, right: 12, top: 20, bottom: 12 }}
                 barGap={12}
+                barCategoryGap="30%"
               >
-                <CartesianGrid strokeDasharray="4 4" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} interval={0} angle={-15} textAnchor="end" />
+                <CartesianGrid strokeDasharray="3 3" vertical />
+                <XAxis
+                  dataKey="label"
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  angle={-15}
+                  textAnchor="end"
+                  tick={{ fill: "#1f2937", fontSize: 12 }}
+                />
                 <YAxis
                   yAxisId="revenue"
                   tickFormatter={formatCompactMoney}
                   tickLine={false}
                   axisLine={false}
+                  tick={{ fill: "#1f2937", fontSize: 12 }}
                   width={64}
                 />
                 <YAxis
@@ -1648,6 +1598,7 @@ const filteredStockToCustomer = useMemo(() => {
                   allowDecimals={false}
                   tickLine={false}
                   axisLine={false}
+                  tick={{ fill: "#1f2937", fontSize: 12 }}
                   width={40}
                 />
                 <YAxis
@@ -1657,6 +1608,7 @@ const filteredStockToCustomer = useMemo(() => {
                   axisLine={false}
                   domain={[0, (dataMax: number) => Math.max(0.2, dataMax)]}
                   tickFormatter={(value) => formatPercent(value as number)}
+                  tick={{ fill: "#1f2937", fontSize: 12 }}
                   width={52}
                 />
                 <ChartTooltip
@@ -1683,7 +1635,7 @@ const filteredStockToCustomer = useMemo(() => {
                     dataKey="revenueInvoice"
                     position="insideTop"
                     formatter={(value: number) => formatCompactMoney(value)}
-                    fill="#0f172a"
+                    fill="#1f2937"
                   />
                 </Bar>
                 <Bar dataKey="revenueSalesOrder" stackId="revenue" yAxisId="revenue" fill="var(--color-revenueSalesOrder)" radius={[8, 8, 0, 0]}>
@@ -1691,11 +1643,11 @@ const filteredStockToCustomer = useMemo(() => {
                     dataKey="revenueSalesOrder"
                     position="insideTop"
                     formatter={(value: number) => formatCompactMoney(value)}
-                    fill="#0f172a"
+                    fill="#1f2937"
                   />
                 </Bar>
                 <Bar dataKey="unitsInvoice" stackId="units" yAxisId="units" fill="var(--color-unitsInvoice)" radius={[8, 8, 0, 0]}>
-                  <LabelList dataKey="unitsInvoice" position="top" formatter={(value: number) => value ?? 0} fill="#0f172a" />
+                  <LabelList dataKey="unitsInvoice" position="top" formatter={(value: number) => value ?? 0} fill="#1f2937" />
                 </Bar>
                 <Bar
                   dataKey="unitsSalesOrder"
@@ -1704,7 +1656,7 @@ const filteredStockToCustomer = useMemo(() => {
                   fill="var(--color-unitsSalesOrder)"
                   radius={[8, 8, 0, 0]}
                 >
-                  <LabelList dataKey="unitsSalesOrder" position="top" formatter={(value: number) => value ?? 0} fill="#0f172a" />
+                  <LabelList dataKey="unitsSalesOrder" position="top" formatter={(value: number) => value ?? 0} fill="#1f2937" />
                 </Bar>
                 <Line
                   type="monotone"
