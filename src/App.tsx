@@ -80,6 +80,7 @@ const App = () => (
               <DealerYard />
             </ProtectedDealerRoute>
           } />
+          
           <Route path="/dealer/:dealerSlug/inventory-management" element={
             <ProtectedDealerRoute>
               <InventoryManagement />
