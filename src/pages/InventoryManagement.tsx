@@ -604,7 +604,7 @@ export default function InventoryManagement() {
 
           <Card className="shadow-sm border-slate-200">
             <CardHeader className="border-b border-slate-200 pb-4">
-              <CardTitle className="text-lg font-semibold text-slate-900">AI Restock Guidance</CardTitle>
+              <CardTitle className="text-lg font-semibold text-slate-900">Restock Guidance</CardTitle>
               <p className="text-sm text-slate-600">
                 Draft capture advice based on current yard stock, inbound builds, and the empty slots timeline.
               </p>
@@ -729,7 +729,7 @@ export default function InventoryManagement() {
                   </TableRow>
                   <TableRow className="border-b border-slate-200">
                     <TableHead className="w-[84px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
-                    <TableHead className="w-[160px] max-w-[160px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
+                    <TableHead className="w-[120px] max-w-[160px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
                     <TableHead className="w-[120px] text-right text-xs uppercase tracking-wide text-slate-600">Standard Price</TableHead>
                     <TableHead className="w-[128px] border-l border-slate-200 text-right text-xs uppercase tracking-wide text-slate-600">
                       Current Yard Stock
