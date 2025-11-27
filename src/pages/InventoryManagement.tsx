@@ -1,6 +1,6 @@
 // src/pages/InventoryManagement.tsx
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { useParams } from "react-router-dom";
 
 import Sidebar from "@/components/Sidebar";
@@ -51,6 +51,8 @@ const normalizeTierCode = (tier?: string) => {
   if (match) return match[1].toUpperCase();
   return text.split(/[\s–-]/)[0]?.toUpperCase() || "";
 };
+
+const hasKey = (obj: any, key: string) => Object.prototype.hasOwnProperty.call(obj ?? {}, key);
 
 const normalizeModelLabel = (label?: string) => {
   const text = toStr(label).trim();
@@ -291,7 +293,7 @@ export default function InventoryManagement() {
   };
 
   const prioritizedTierModels = useMemo(() => {
-    const priorities = ["A1+", "A1", "A2", "B1"];
+    const priorities = ["A1", "A1+", "A2", "B1"];
     const values = Array.isArray(modelAnalysis)
       ? (modelAnalysis as ModelAnalysisRecord[])
       : Object.values((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>);
@@ -320,6 +322,87 @@ export default function InventoryManagement() {
 
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
 
+  const tierTargets: Record<string, { label: string; role: string; minimum: number; ceiling?: number }> = {
+    A1: { label: "Core", role: "Never run dry; keep multiple couple options visible.", minimum: 3 },
+    "A1+": { label: "Flagship", role: "Prioritise showcase quality; always have a demo.", minimum: 1 },
+    A2: { label: "Supporting", role: "Fill structural gaps like family bunk and hybrid.", minimum: 1 },
+    B1: { label: "Niche", role: "Tightly control volume; refresh quickly.", minimum: 0, ceiling: 1 },
+  };
+
+  const tierAggregates = useMemo(() => {
+    const totals: Record<string, { stock: number; incoming: number[] }> = {};
+    Object.keys(tierTargets).forEach((tier) => {
+      totals[tier] = { stock: 0, incoming: Array(monthBuckets.length).fill(0) };
+    });
+
+    modelRows.forEach((row) => {
+      const tier = normalizeTierCode(row.tier);
+      if (!tier || !totals[tier]) return;
+      totals[tier].stock += row.currentStock;
+      row.incoming.forEach((val, idx) => {
+        totals[tier].incoming[idx] = (totals[tier].incoming[idx] || 0) + (val || 0);
+      });
+    });
+
+    return totals;
+  }, [modelRows, monthBuckets.length]);
+
+  const emptySlots = useMemo(() => {
+    return schedule
+      .filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug)
+      .filter((item) => {
+        const hasDealer = toStr((item as any)?.Dealer).trim() !== "";
+        const lacksChassis = !hasKey(item, "Chassis");
+        return hasDealer && lacksChassis;
+      });
+  }, [dealerSlug, schedule]);
+
+  const emptySlotRecommendations = useMemo(() => {
+    if (monthBuckets.length === 0) return [] as string[];
+
+    const slotsByMonth = monthBuckets.map(() => 0);
+    emptySlots.forEach((slot) => {
+      const forecastRaw =
+        (slot as any)?.["Forecast Production Date"] || (slot as any)?.["Forecast production date"] || (slot as any)?.["Forecast Production date"];
+      const forecastDate = parseDate(forecastRaw);
+      if (!forecastDate) return;
+      const monthIndex = monthBuckets.findIndex((bucket) => forecastDate >= bucket.start && forecastDate < bucket.end);
+      if (monthIndex >= 0) slotsByMonth[monthIndex] += 1;
+    });
+
+    const priorities = ["A1", "A1+", "A2", "B1"];
+    const suggestions: string[] = [];
+
+    slotsByMonth.forEach((count, idx) => {
+      if (count === 0) return;
+      const available: Record<string, number> = {};
+      priorities.forEach((tier) => {
+        const totals = tierAggregates[tier] || { stock: 0, incoming: [] };
+        available[tier] = totals.stock + (totals.incoming[idx] || 0);
+      });
+
+      const assignments: Record<string, number> = {};
+      for (let i = 0; i < count; i += 1) {
+        const targetTier = priorities.find((tier) => available[tier] < (tierTargets[tier]?.minimum ?? 0)) || "A1";
+        assignments[targetTier] = (assignments[targetTier] || 0) + 1;
+        available[targetTier] += 1;
+      }
+
+      const parts = priorities
+        .filter((tier) => assignments[tier])
+        .map(
+          (tier) =>
+            `${assignments[tier]} × ${tier} (${tierTargets[tier]?.label ?? ""}${tierTargets[tier]?.label ? "" : ""})`
+        );
+
+      if (parts.length > 0) {
+        suggestions.push(`${monthBuckets[idx].label}: fill ${parts.join(", ")} to cover empty slots.`);
+      }
+    });
+
+    return suggestions;
+  }, [emptySlots, monthBuckets, tierAggregates, tierTargets]);
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
@@ -345,15 +428,16 @@ export default function InventoryManagement() {
           {prioritizedTierModels.length > 0 && (
             <Card className="shadow-sm border-slate-200">
               <CardHeader className="border-b border-slate-200 pb-4">
-                <CardTitle className="text-lg font-semibold text-slate-900">Product Inventory Tier Advisory</CardTitle>
+                <CardTitle className="text-lg font-semibold text-slate-900">Priority Inventory</CardTitle>
                 <p className="text-sm text-slate-600">
-                  A1+, A1, A2, and B1 tiers are grouped together. Click a model to view its functional layout, key strengths, and
-                  strategic role.
+                  Tiers A1, A1+, A2, and B1 appear together so the core range, flagship showcase, supporting structures, and niche
+                  bets stay aligned with strategy.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3">
                 {prioritizedTierModels.map(({ tier, models }) => {
                   const colors = tierColor(tier);
+                  const tierMeta = tierTargets[tier];
                   return (
                     <div
                       key={tier}
@@ -362,10 +446,11 @@ export default function InventoryManagement() {
                       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>Tier {tier}</span>
-                          <span className="text-xs uppercase tracking-wide text-slate-500">Priority Inventory</span>
+                          {tierMeta && (
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tierMeta.label}</span>
+                          )}
                         </div>
-                        <div className="h-4 w-px bg-slate-200" aria-hidden />
-                        <span className="text-sm text-slate-600">按 Tier 横向展示车型，点击查看要点</span>
+                        {tierMeta?.role && <span className="text-sm text-slate-600">{tierMeta.role}</span>}
                       </div>
 
                       <div className="px-4 py-3">
@@ -375,7 +460,7 @@ export default function InventoryManagement() {
                             const key = `${tier}-${modelLabel}`;
                             const isOpen = expandedModel === key;
                             return (
-                              <div key={key} className="min-w-[160px]">
+                              <div key={key} className="min-w-[180px]">
                                 <button
                                   type="button"
                                   onClick={() => setExpandedModel(isOpen ? null : key)}
@@ -421,6 +506,63 @@ export default function InventoryManagement() {
               </CardContent>
             </Card>
           )}
+
+          <Card className="shadow-sm border-slate-200">
+            <CardHeader className="border-b border-slate-200 pb-4">
+              <CardTitle className="text-lg font-semibold text-slate-900">AI Restock Guidance</CardTitle>
+              <p className="text-sm text-slate-600">
+                Draft capture advice based on current yard stock, inbound builds, and the empty slots timeline.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                {Object.entries(tierTargets).map(([tier, meta]) => {
+                  const colors = tierColor(tier);
+                  const aggregates = tierAggregates[tier] || { stock: 0, incoming: Array(monthBuckets.length).fill(0) };
+                  const nearTermInbound = aggregates.incoming.slice(0, 2).reduce((sum, v) => sum + (v || 0), 0);
+                  return (
+                    <div
+                      key={tier}
+                      className={`flex items-start gap-3 rounded-xl border ${colors.border} bg-white/70 px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.08)]`}
+                    >
+                      <div className={`mt-0.5 h-8 w-8 flex items-center justify-center rounded-full ${colors.pill} font-bold`}>
+                        {tier}
+                      </div>
+                      <div className="space-y-1 text-sm text-slate-700">
+                        <div className="flex items-center gap-2 font-semibold text-slate-900">
+                          <span>{meta.label}</span>
+                          <span className="text-xs font-medium text-slate-500">Min {meta.minimum}{meta.ceiling !== undefined ? ` • Max ${meta.ceiling}` : ""}</span>
+                        </div>
+                        <p className="text-slate-600 leading-relaxed">{meta.role}</p>
+                        <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                          <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-800">Stock now: {aggregates.stock}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-800">Inbound (next 2 mo): {nearTermInbound}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                <div className="flex items-center gap-2 font-semibold text-slate-900">
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                  Empty slot capture suggestions
+                </div>
+                {emptySlotRecommendations.length === 0 ? (
+                  <p className="text-slate-600">No empty slots on the horizon; keep monitoring the schedule.</p>
+                ) : (
+                  <ul className="list-disc space-y-1 pl-5">
+                    {emptySlotRecommendations.map((item) => (
+                      <li key={item} className="leading-relaxed text-slate-800">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
           <Card className="shadow-sm border-slate-200">
             <CardHeader className="border-b border-slate-200 pb-4">
