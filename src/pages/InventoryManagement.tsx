@@ -711,16 +711,35 @@ export default function InventoryManagement() {
               <Table className="min-w-[1100px] text-sm">
                 <TableHeader className="bg-slate-100/80">
                   <TableRow className="border-b border-slate-200">
+                    <TableHead colSpan={3} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                      Model Info
+                    </TableHead>
+                    <TableHead
+                      colSpan={3}
+                      className="border-l border-slate-200 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-700"
+                    >
+                      Yard Snapshot
+                    </TableHead>
+                    <TableHead
+                      colSpan={monthBuckets.length}
+                      className="border-l border-slate-200 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-700"
+                    >
+                      Inbound Schedule
+                    </TableHead>
+                  </TableRow>
+                  <TableRow className="border-b border-slate-200">
                     <TableHead className="w-[84px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
-                    <TableHead className="w-[190px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
+                    <TableHead className="w-[160px] max-w-[160px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
                     <TableHead className="w-[120px] text-right text-xs uppercase tracking-wide text-slate-600">Standard Price</TableHead>
-                    <TableHead className="w-[128px] text-right text-xs uppercase tracking-wide text-slate-600">Current Yard Stock</TableHead>
+                    <TableHead className="w-[128px] border-l border-slate-200 text-right text-xs uppercase tracking-wide text-slate-600">
+                      Current Yard Stock
+                    </TableHead>
                     <TableHead className="w-[142px] text-right text-xs uppercase tracking-wide text-red-600">Handover (Last 3 Months)</TableHead>
                     <TableHead className="w-[142px] text-right text-xs uppercase tracking-wide text-slate-600">Factory PGI (Last 3 Months)</TableHead>
-                    {monthBuckets.map((bucket) => (
+                    {monthBuckets.map((bucket, idx) => (
                       <TableHead
                         key={bucket.label}
-                        className="w-[86px] text-right text-xs uppercase tracking-wide text-slate-600"
+                        className={`w-[86px] text-right text-xs uppercase tracking-wide text-slate-600 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                       >
                         {bucket.label}
                       </TableHead>
@@ -749,17 +768,19 @@ export default function InventoryManagement() {
                               <span className="text-xs text-slate-500">—</span>
                             )}
                           </TableCell>
-                          <TableCell className={`font-semibold text-slate-900 ${colors.text}`}>{row.model}</TableCell>
+                          <TableCell className={`max-w-[160px] whitespace-normal font-semibold leading-tight text-slate-900 ${colors.text}`}>
+                            {row.model}
+                          </TableCell>
                           <TableCell className="text-right font-semibold text-slate-900 tabular-nums">
                             {formatStandardPrice(row.standardPrice)}
                           </TableCell>
-                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.currentStock}</TableCell>
+                          <TableCell className="border-l border-slate-200 text-right font-semibold text-slate-900 tabular-nums">{row.currentStock}</TableCell>
                           <TableCell className="text-right font-semibold text-red-600 tabular-nums">{row.recentHandover}</TableCell>
                           <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.recentPgi}</TableCell>
                           {monthBuckets.map((_, monthIdx) => (
                             <TableCell
                               key={`${row.model}-${monthIdx}`}
-                              className="text-right font-medium text-slate-800 tabular-nums"
+                              className={`text-right font-medium text-slate-800 tabular-nums ${monthIdx === 0 ? "border-l border-slate-200" : ""}`}
                             >
                               {row.incoming[monthIdx] ?? 0}
                             </TableCell>
