@@ -1,11 +1,19 @@
 // src/pages/InventoryManagement.tsx
 import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useParams } from "react-router-dom";
 
 import Sidebar from "@/components/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { subscribeToHandover, subscribeToPGIRecords, subscribeToSchedule, subscribeToYardStock } from "@/lib/firebase";
+import {
+  subscribeToHandover,
+  subscribeToModelAnalysis,
+  subscribeToPGIRecords,
+  subscribeToSchedule,
+  subscribeToYardStock,
+  type ModelAnalysisRecord,
+} from "@/lib/firebase";
 import { normalizeDealerSlug, prettifyDealerName } from "@/lib/dealerUtils";
 import type { ScheduleItem } from "@/types";
 
@@ -16,6 +24,7 @@ type ModelStats = {
   recentPgi: number;
   recentHandover: number;
   incoming: number[]; // six months
+  tier?: string;
 };
 
 type MonthBucket = {
@@ -86,14 +95,17 @@ export default function InventoryManagement() {
   const [pgiRecords, setPgiRecords] = useState<Record<string, AnyRecord>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
+  const [modelAnalysis, setModelAnalysis] = useState<Record<string, ModelAnalysisRecord> | ModelAnalysisRecord[] | null>(null);
 
   useEffect(() => {
     let unsubYard: (() => void) | undefined;
     let unsubHandover: (() => void) | undefined;
+    let unsubModelAnalysis: (() => void) | undefined;
     if (dealerSlug) {
       unsubYard = subscribeToYardStock(dealerSlug, (data) => setYardStock(data || {}));
       unsubHandover = subscribeToHandover(dealerSlug, (data) => setHandoverRecords(data || {}));
     }
+    unsubModelAnalysis = subscribeToModelAnalysis((data) => setModelAnalysis(data || {}));
     const unsubPgi = subscribeToPGIRecords((data) => setPgiRecords(data || {}));
     const unsubSchedule = subscribeToSchedule(
       (data) => setSchedule(Array.isArray(data) ? data : []),
@@ -103,10 +115,27 @@ export default function InventoryManagement() {
     return () => {
       unsubYard?.();
       unsubHandover?.();
+      unsubModelAnalysis?.();
       unsubPgi?.();
       unsubSchedule?.();
     };
   }, [dealerSlug]);
+
+  const analysisByModel = useMemo(() => {
+    const map: Record<string, ModelAnalysisRecord> = {};
+    const values = Array.isArray(modelAnalysis)
+      ? (modelAnalysis as ModelAnalysisRecord[])
+      : Object.values((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>);
+
+    values.forEach((entry) => {
+      if (!entry) return;
+      const model = toStr((entry as any)?.model || (entry as any)?.Model).trim();
+      if (!model) return;
+      map[model.toLowerCase()] = entry;
+    });
+
+    return map;
+  }, [modelAnalysis]);
 
   const scheduleByChassis = useMemo(() => {
     const map: Record<string, Partial<ScheduleItem>> = {};
@@ -220,12 +249,50 @@ export default function InventoryManagement() {
     }
 
     return Array.from(modelMap.entries())
-      .map(([model, stats]) => ({ model, ...stats }))
+      .map(([model, stats]) => {
+        const tier = toStr(analysisByModel[model.toLowerCase()]?.tier || analysisByModel[model.toLowerCase()]?.Tier);
+        return { model, ...stats, tier };
+      })
       .sort((a, b) => b.currentStock - a.currentStock || a.model.localeCompare(b.model));
-  }, [dealerSlug, handoverRecords, monthBuckets, pgiRecords, schedule, scheduleByChassis, yardStock]);
+  }, [analysisByModel, dealerSlug, handoverRecords, monthBuckets, pgiRecords, schedule, scheduleByChassis, yardStock]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const sidebarOrders = useMemo(() => schedule.filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug), [schedule, dealerSlug]);
+
+  const tierColor = (tier?: string) => {
+    const key = toStr(tier).split(/[\s–-]/)[0]?.toUpperCase() || "";
+    const palette: Record<string, { bg: string; border: string; text: string; pill: string }> = {
+      A1: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-900", pill: "bg-blue-100 text-blue-800" },
+      A2: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-900", pill: "bg-emerald-100 text-emerald-800" },
+      B1: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-900", pill: "bg-amber-100 text-amber-800" },
+      B2: { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-900", pill: "bg-purple-100 text-purple-800" },
+    };
+    return palette[key] || { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-900", pill: "bg-slate-100 text-slate-700" };
+  };
+
+  const tierGroups = useMemo(() => {
+    const grouped: Record<string, ModelAnalysisRecord[]> = {};
+    const values = Array.isArray(modelAnalysis)
+      ? (modelAnalysis as ModelAnalysisRecord[])
+      : Object.values((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>);
+
+    values.forEach((entry) => {
+      if (!entry) return;
+      const tier = toStr((entry as any)?.tier || (entry as any)?.Tier || "Unassigned");
+      if (!grouped[tier]) grouped[tier] = [];
+      grouped[tier].push(entry);
+    });
+
+    const orderedTiers = Object.keys(grouped).sort((a, b) => {
+      if (toStr(a).startsWith("A1")) return -1;
+      if (toStr(b).startsWith("A1")) return 1;
+      return a.localeCompare(b);
+    });
+
+    return orderedTiers.map((tier) => ({ tier, models: grouped[tier] }));
+  }, [modelAnalysis]);
+
+  const [expandedModel, setExpandedModel] = useState<string | null>(null);
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -249,14 +316,85 @@ export default function InventoryManagement() {
             </div>
           </div>
 
+          {tierGroups.length > 0 && (
+            <Card className="shadow-sm border-slate-200">
+              <CardHeader className="border-b border-slate-200 pb-4">
+                <CardTitle className="text-lg font-semibold text-slate-900">Product Inventory Tiers</CardTitle>
+                <p className="text-sm text-slate-600">Click a model to view its functional layout, key strengths, and strategic role.</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {tierGroups.map(({ tier, models }) => {
+                  const colors = tierColor(tier);
+                  return (
+                    <div
+                      key={tier}
+                      className={`rounded-xl border ${colors.border} ${colors.bg} p-4 shadow-[0_1px_3px_rgba(0,0,0,0.05)]`}
+                    >
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>{tier}</span>
+                        <span className="text-sm text-slate-700">Models aligned to this tier</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {models.map((entry) => {
+                          const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
+                          const isOpen = expandedModel === modelLabel;
+                          return (
+                            <div key={`${tier}-${modelLabel}`} className="min-w-[180px]">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedModel(isOpen ? null : modelLabel)}
+                                className={`w-full rounded-lg border ${colors.border} bg-white px-3 py-2 text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div>
+                                    <div className="text-sm font-semibold text-slate-900">{modelLabel}</div>
+                                    <div className="text-xs text-slate-600">Tap to {isOpen ? "hide" : "see"} details</div>
+                                  </div>
+                                  {isOpen ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+                                </div>
+                              </button>
+                              {isOpen && (
+                                <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm">
+                                  {entry.function_layout && (
+                                    <div className="mb-2">
+                                      <div className="font-semibold text-slate-900">Functional Layout</div>
+                                      <p className="leading-relaxed">{entry.function_layout}</p>
+                                    </div>
+                                  )}
+                                  {entry.key_strengths && (
+                                    <div className="mb-2">
+                                      <div className="font-semibold text-slate-900">Key Strengths</div>
+                                      <p className="leading-relaxed">{entry.key_strengths}</p>
+                                    </div>
+                                  )}
+                                  {entry.strategic_role && (
+                                    <div>
+                                      <div className="font-semibold text-slate-900">Strategic Role</div>
+                                      <p className="leading-relaxed">{entry.strategic_role}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="shadow-sm border-slate-200">
             <CardHeader className="border-b border-slate-200 pb-4">
               <CardTitle className="text-lg font-semibold text-slate-900">Stock Model Outlook</CardTitle>
             </CardHeader>
             <CardContent className="overflow-auto">
-              <Table className="min-w-[720px] text-sm">
+              <Table className="min-w-[820px] text-sm">
                 <TableHeader className="bg-slate-50">
                   <TableRow>
+                    <TableHead className="font-semibold text-slate-700">Tier</TableHead>
                     <TableHead className="font-semibold text-slate-700">Stock Model</TableHead>
                     <TableHead className="text-right font-semibold text-slate-700">Current Yard Stock</TableHead>
                     <TableHead className="text-right font-semibold text-red-600">Handover (Last 3 Months)</TableHead>
@@ -271,24 +409,32 @@ export default function InventoryManagement() {
                 <TableBody>
                   {modelRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4 + monthBuckets.length}>
+                      <TableCell colSpan={5 + monthBuckets.length}>
                         <div className="py-6 text-center text-slate-500">No stock models in yard inventory.</div>
                       </TableCell>
                     </TableRow>
                   ) : (
-                    modelRows.map((row) => (
-                      <TableRow key={row.model} className="hover:bg-slate-50/80">
-                        <TableCell className="font-medium text-slate-900">{row.model}</TableCell>
-                        <TableCell className="text-right text-slate-800">{row.currentStock}</TableCell>
-                        <TableCell className="text-right font-semibold text-red-600">{row.recentHandover}</TableCell>
-                        <TableCell className="text-right text-slate-800">{row.recentPgi}</TableCell>
-                        {monthBuckets.map((_, idx) => (
-                          <TableCell key={`${row.model}-${idx}`} className="text-right text-slate-800">
-                            {row.incoming[idx] ?? 0}
+                    modelRows.map((row) => {
+                      const colors = tierColor(row.tier);
+                      return (
+                        <TableRow key={row.model} className={`hover:bg-slate-50/80 ${colors.bg}`}>
+                          <TableCell className="font-medium text-slate-900">
+                            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${colors.pill}`}>
+                              {row.tier || "Unassigned"}
+                            </span>
                           </TableCell>
-                        ))}
-                      </TableRow>
-                    ))
+                          <TableCell className={`font-medium ${colors.text}`}>{row.model}</TableCell>
+                          <TableCell className="text-right text-slate-800">{row.currentStock}</TableCell>
+                          <TableCell className="text-right font-semibold text-red-600">{row.recentHandover}</TableCell>
+                          <TableCell className="text-right text-slate-800">{row.recentPgi}</TableCell>
+                          {monthBuckets.map((_, idx) => (
+                            <TableCell key={`${row.model}-${idx}`} className="text-right text-slate-800">
+                              {row.incoming[idx] ?? 0}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
