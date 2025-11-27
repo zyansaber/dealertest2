@@ -183,7 +183,10 @@ export default function InventoryManagement() {
         if (!model) return;
         if (!modelMap.has(model)) return;
 
-        const forecastRaw = (item as any)?.["Forecast Melbourne Factory Start Date"];
+        const forecastRaw =
+          (item as any)?.["Forecast Melbourne Factory Start Date"] ??
+          (item as any)?.["Forecast Production Date"] ??
+          (item as any)?.["Forecast production date"];
         const forecastDate = parseDate(forecastRaw);
         if (!forecastDate) return;
         const arrivalDate = addDays(forecastDate, 30);
