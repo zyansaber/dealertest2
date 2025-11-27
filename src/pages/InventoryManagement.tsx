@@ -160,6 +160,9 @@ export default function InventoryManagement() {
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
   const [modelAnalysis, setModelAnalysis] = useState<Record<string, ModelAnalysisRecord> | ModelAnalysisRecord[] | null>(null);
   const [sortKey, setSortKey] = useState<"currentStock" | "recentHandover" | "recentPgi">("currentStock");
+  const [tierFilter, setTierFilter] = useState<string>("");
+  const [modelRangeFilter, setModelRangeFilter] = useState<string>("");
+  const [modelFilter, setModelFilter] = useState<string>("");
 
   const today = useMemo(() => new Date(), []);
   const currentMonthStart = useMemo(() => startOfMonth(today), [today]);
@@ -188,6 +191,7 @@ export default function InventoryManagement() {
       unsubSchedule?.();
     };
   }, [dealerSlug]);
+
 
   const analysisByModel = useMemo(() => {
     const map: Record<string, ModelAnalysisRecord> = {};
@@ -224,8 +228,8 @@ export default function InventoryManagement() {
     return map;
   }, [schedule]);
 
-  const monthBuckets = useMemo<MonthBucket[]>(() => {
-    return Array.from({ length: 6 }, (_, i) => {
+const monthBuckets = useMemo<MonthBucket[]>(() => {
+    return Array.from({ length: 7 }, (_, i) => {
       const bucketStart = startOfMonth(addMonths(currentMonthStart, i));
       const end = startOfMonth(addMonths(bucketStart, 1));
       return {
@@ -330,7 +334,8 @@ export default function InventoryManagement() {
         const stats = ensureModel(model);
 
         const isCarryOver = arrivalDate >= previousMonthStart && arrivalDate < currentMonthStart;
-        if (isCarryOver) {
+        const fallsThisMonth = arrivalDate < addMonths(currentMonthStart, 1);
+        if (isCarryOver || fallsThisMonth) {
           stats.incoming[0] += 1;
           return;
         }
@@ -441,6 +446,47 @@ export default function InventoryManagement() {
 
     return totals;
   }, [modelRows, monthBuckets.length]);
+
+  const filteredRows = useMemo(() => {
+    return modelRows.filter((row) => {
+      const tierMatches = tierFilter ? normalizeTierCode(row.tier) === normalizeTierCode(tierFilter) : true;
+      const modelRange = row.model.slice(0, 3).toUpperCase();
+      const rangeMatches = modelRangeFilter ? modelRange === modelRangeFilter.toUpperCase() : true;
+      const modelMatches = modelFilter ? row.model.toLowerCase() === modelFilter.toLowerCase() : true;
+      return tierMatches && rangeMatches && modelMatches;
+    });
+  }, [modelFilter, modelRangeFilter, modelRows, tierFilter]);
+
+  const filterOptions = useMemo(() => {
+    const tiers = Array.from(
+      new Set(modelRows.map((row) => normalizeTierCode(row.tier)).filter((tier) => tier))
+    ).sort();
+    const ranges = Array.from(
+      new Set(modelRows.map((row) => row.model.slice(0, 3).toUpperCase()).filter(Boolean))
+    ).sort();
+    const models = Array.from(new Set(modelRows.map((row) => row.model))).sort((a, b) => a.localeCompare(b));
+    return { tiers, ranges, models };
+  }, [modelRows]);
+
+  const totalsRow = useMemo(() => {
+    const base = {
+      currentStock: 0,
+      recentHandover: 0,
+      recentPgi: 0,
+      incoming: Array(monthBuckets.length).fill(0),
+    };
+
+    filteredRows.forEach((row) => {
+      base.currentStock += row.currentStock || 0;
+      base.recentHandover += row.recentHandover || 0;
+      base.recentPgi += row.recentPgi || 0;
+      row.incoming.forEach((val, idx) => {
+        base.incoming[idx] = (base.incoming[idx] || 0) + (val || 0);
+      });
+    });
+
+    return base;
+  }, [filteredRows, monthBuckets.length]);
 
   const emptySlots = useMemo<EmptySlot[]>(() => {
     return schedule
@@ -717,15 +763,11 @@ export default function InventoryManagement() {
 
           <Card className="shadow-sm border-slate-200">
             <CardHeader className="border-b border-slate-200 pb-4">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <CardTitle className="text-lg font-semibold text-slate-900">Stock Model Outlook</CardTitle>
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700">
                   <span className="uppercase tracking-wide text-slate-500">Sort by</span>
-                  {[
-                    { key: "currentStock", label: "Current Yard Stock" },
-                    { key: "recentHandover", label: "Handover (Last 3 Months)" },
-                    { key: "recentPgi", label: "Factory PGI (Last 3 Months)" },
-                  ].map((option) => (
+                  {[{ key: "currentStock", label: "Current Yard Stock" }, { key: "recentHandover", label: "Handover (Last 3 Months)" }, { key: "recentPgi", label: "Factory PGI (Last 3 Months)" }].map((option) => (
                     <button
                       key={option.key}
                       type="button"
@@ -741,9 +783,47 @@ export default function InventoryManagement() {
                   ))}
                 </div>
               </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <select
+                  value={modelRangeFilter}
+                  onChange={(e) => setModelRangeFilter(e.target.value)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <option value="">Model Range (all)</option>
+                  {filterOptions.ranges.map((range) => (
+                    <option key={range} value={range}>
+                      {range}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={modelFilter}
+                  onChange={(e) => setModelFilter(e.target.value)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <option value="">Model (all)</option>
+                  {filterOptions.models.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={tierFilter}
+                  onChange={(e) => setTierFilter(e.target.value)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <option value="">Tier (all)</option>
+                  {filterOptions.tiers.map((tier) => (
+                    <option key={tier} value={tier}>
+                      {tier}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </CardHeader>
             <CardContent className="overflow-auto">
-              <Table className="min-w-[1100px] text-sm">
+              <Table className="min-w-[1150px] text-sm">
                 <TableHeader className="bg-slate-100/80">
                   <TableRow className="border-b border-slate-200">
                     <TableHead colSpan={3} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700">
@@ -756,41 +836,60 @@ export default function InventoryManagement() {
                       Yard Snapshot
                     </TableHead>
                     <TableHead
-                      colSpan={monthBuckets.length}
+                      colSpan={monthBuckets.length + 1}
                       className="border-l border-slate-200 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-700"
                     >
                       Inbound Schedule
                     </TableHead>
                   </TableRow>
                   <TableRow className="border-b border-slate-200">
-                    <TableHead className="w-[84px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
-                    <TableHead className="w-[160px] max-w-[160px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
-                    <TableHead className="w-[120px] text-right text-xs uppercase tracking-wide text-slate-600">Standard Price</TableHead>
-                    <TableHead className="w-[128px] border-l border-slate-200 text-right text-xs uppercase tracking-wide text-slate-600">
+                    <TableHead className="w-[72px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
+                    <TableHead className="w-[140px] max-w-[140px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
+                    <TableHead className="w-[104px] text-right text-xs uppercase tracking-wide text-slate-600">Standard Price</TableHead>
+                    <TableHead className="w-[110px] border-l border-slate-200 text-right text-xs uppercase tracking-wide text-slate-600">
                       Current Yard Stock
                     </TableHead>
-                    <TableHead className="w-[142px] text-right text-xs uppercase tracking-wide text-red-600">Handover (Last 3 Months)</TableHead>
-                    <TableHead className="w-[142px] text-right text-xs uppercase tracking-wide text-slate-600">Factory PGI (Last 3 Months)</TableHead>
+                    <TableHead className="w-[118px] text-right text-xs uppercase tracking-wide text-red-600">Handover (Last 3 Months)</TableHead>
+                    <TableHead className="w-[118px] text-right text-xs uppercase tracking-wide text-slate-600">Factory PGI (Last 3 Months)</TableHead>
                     {monthBuckets.map((bucket, idx) => (
                       <TableHead
                         key={bucket.label}
-                        className={`w-[86px] text-right text-xs uppercase tracking-wide text-slate-600 ${idx === 0 ? "border-l border-slate-200" : ""}`}
+                        className={`w-[78px] text-right text-xs uppercase tracking-wide text-slate-600 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                       >
                         {bucket.label}
                       </TableHead>
                     ))}
+                    <TableHead className="w-[90px] text-right text-xs uppercase tracking-wide text-slate-700">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {modelRows.length === 0 ? (
+                  {filteredRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6 + monthBuckets.length}>
+                      <TableCell colSpan={7 + monthBuckets.length}>
                         <div className="py-6 text-center text-slate-500">No stock models in yard inventory.</div>
                       </TableCell>
                     </TableRow>
                   ) : (
-                    modelRows.map((row, idx) => {
+                    <>
+                      <TableRow className="border-b border-slate-300/80 bg-slate-100 text-slate-900">
+                        <TableCell className="font-semibold">Total</TableCell>
+                        <TableCell className="font-semibold">—</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">—</TableCell>
+                        <TableCell className="border-l border-slate-300 text-right font-semibold tabular-nums">{totalsRow.currentStock}</TableCell>
+                        <TableCell className="text-right font-semibold text-red-600 tabular-nums">{totalsRow.recentHandover}</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">{totalsRow.recentPgi}</TableCell>
+                        {totalsRow.incoming.map((val, idx) => (
+                          <TableCell key={`total-${idx}`} className={`text-right font-semibold tabular-nums ${idx === 0 ? "border-l border-slate-300" : ""}`}>
+                            {val}
+                          </TableCell>
+                        ))}
+                        <TableCell className="text-right font-semibold tabular-nums">
+                          {totalsRow.currentStock + totalsRow.recentHandover + totalsRow.recentPgi + totalsRow.incoming.reduce((sum, v) => sum + (v || 0), 0)}
+                        </TableCell>
+                      </TableRow>
+                      {filteredRows.map((row, idx) => {
                       const colors = tierColor(row.tier);
+                      const inboundTotal = row.incoming.reduce((sum, v) => sum + (v || 0), 0);
                       return (
                         <TableRow
                           key={row.model}
@@ -803,7 +902,7 @@ export default function InventoryManagement() {
                               <span className="text-xs text-slate-500">—</span>
                             )}
                           </TableCell>
-                          <TableCell className={`max-w-[160px] whitespace-normal font-semibold leading-tight text-slate-900 ${colors.text}`}>
+                          <TableCell className={`max-w-[140px] whitespace-normal font-semibold leading-tight text-slate-900 ${colors.text}`}>
                             {row.model}
                           </TableCell>
                           <TableCell className="text-right font-semibold text-slate-900 tabular-nums">
@@ -820,9 +919,11 @@ export default function InventoryManagement() {
                               {row.incoming[monthIdx] ?? 0}
                             </TableCell>
                           ))}
+                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.currentStock + row.recentHandover + row.recentPgi + inboundTotal}</TableCell>
                         </TableRow>
                       );
-                    })
+                    })}
+                    </>
                   )}
                 </TableBody>
               </Table>
