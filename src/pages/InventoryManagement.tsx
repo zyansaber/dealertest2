@@ -396,8 +396,6 @@ export default function InventoryManagement() {
     const entries = values
       .map((entry) => {
         const tier = normalizeTierCode((entry as any)?.tier || (entry as any)?.Tier);
-      .map((entry) => {
-        const tier = normalizeTierCode((entry as any)?.tier || (entry as any)?.Tier);
         return { entry, tier };
       })
       .filter(({ tier }) => priorities.includes(tier));
