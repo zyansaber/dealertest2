@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Package, BarChart3, Factory, FileX, LayoutDashboard, Truck, DollarSign } from "lucide-react";
+import { Package, BarChart3, Factory, FileX, LayoutDashboard, Truck, DollarSign, ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
@@ -104,6 +104,15 @@ export default function Sidebar({
     { path: `${basePath}/yard`, label: "Yard Inventory & On The Road", icon: Truck, end: true },
     { path: `${basePath}/unsigned`, label: "Unsigned & Empty Slots", icon: FileX, end: true },
   ];
+
+if (!isGroup) {
+    navigationItems.splice(4, 0, {
+      path: `${basePath}/inventory-management`,
+      label: "Inventory Management",
+      icon: ClipboardList,
+      end: true,
+    });
+  }
 
   if (!isGroup && isFinanceReportEnabled(normalizedDealerSlug)) {
     navigationItems.push({
