@@ -170,13 +170,9 @@ export default function InventoryManagement() {
 
   const analysisByModel = useMemo(() => {
     const map: Record<string, ModelAnalysisRecord> = {};
-    const values = Array.isArray(modelAnalysis)
-      ? (modelAnalysis as ModelAnalysisRecord[])
-      : Object.values((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>);
-
-    values.forEach((entry) => {
-      if (!entry) return;
-      const raw = toStr((entry as any)?.model || (entry as any)?.Model).trim();
+    const registerEntry = (entry: ModelAnalysisRecord, fallbackLabel?: string) => {
+      if (!entry && !fallbackLabel) return;
+      const raw = toStr((entry as any)?.model || (entry as any)?.Model || fallbackLabel).trim();
       if (!raw) return;
       const labels = normalizeModelLabel(raw);
       labels.forEach((label) => {
@@ -184,7 +180,15 @@ export default function InventoryManagement() {
         if (!key) return;
         map[key] = entry;
       });
-    });
+    };
+
+    if (Array.isArray(modelAnalysis)) {
+      (modelAnalysis as ModelAnalysisRecord[]).forEach((entry) => registerEntry(entry));
+    } else {
+      Object.entries((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>).forEach(([key, entry]) =>
+        registerEntry(entry, key)
+      );
+    }
 
     return map;
   }, [modelAnalysis]);
