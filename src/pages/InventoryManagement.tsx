@@ -1,3 +1,4 @@
+
 // src/pages/InventoryManagement.tsx
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
@@ -121,6 +122,7 @@ export default function InventoryManagement() {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
   const [modelAnalysis, setModelAnalysis] = useState<Record<string, ModelAnalysisRecord> | ModelAnalysisRecord[] | null>(null);
+  const [sortKey, setSortKey] = useState<"currentStock" | "recentHandover" | "recentPgi">("currentStock");
 
   useEffect(() => {
     let unsubYard: (() => void) | undefined;
@@ -273,15 +275,21 @@ export default function InventoryManagement() {
       });
     }
 
-    return Array.from(modelMap.entries())
-      .map(([model, stats]) => {
-        const tier = normalizeTierCode(
-          analysisByModel[model.toLowerCase()]?.tier || analysisByModel[model.toLowerCase()]?.Tier
-        );
-        return { model, ...stats, tier };
-      })
-      .sort((a, b) => b.currentStock - a.currentStock || a.model.localeCompare(b.model));
-  }, [analysisByModel, dealerSlug, handoverRecords, monthBuckets, pgiRecords, schedule, scheduleByChassis, yardStock]);
+    const rows = Array.from(modelMap.entries()).map(([model, stats]) => {
+      const tier = normalizeTierCode(
+        analysisByModel[model.toLowerCase()]?.tier || analysisByModel[model.toLowerCase()]?.Tier
+      );
+      return { model, ...stats, tier };
+    });
+
+    const sorter: Record<typeof sortKey, (a: ModelStats & { model: string }, b: ModelStats & { model: string }) => number> = {
+      currentStock: (a, b) => b.currentStock - a.currentStock || a.model.localeCompare(b.model),
+      recentHandover: (a, b) => b.recentHandover - a.recentHandover || a.model.localeCompare(b.model),
+      recentPgi: (a, b) => b.recentPgi - a.recentPgi || a.model.localeCompare(b.model),
+    };
+
+    return rows.sort(sorter[sortKey]);
+  }, [analysisByModel, dealerSlug, handoverRecords, monthBuckets, pgiRecords, schedule, scheduleByChassis, sortKey, yardStock]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const sidebarOrders = useMemo(() => schedule.filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug), [schedule, dealerSlug]);
@@ -601,13 +609,57 @@ export default function InventoryManagement() {
                     ))}
                   </ul>
                 )}
+                <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-700">
+                  <div className="font-semibold text-slate-900">How refill plans are built</div>
+                  <ol className="mt-1 list-decimal space-y-1 pl-4">
+                    <li>
+                      Identify empty production slots: use the unsigned/empty-slot logic (schedule rows with dealer slug, no
+                      chassis) and treat forecast production date + 40 days as the delivery month.
+                    </li>
+                    <li>
+                      Count coverage before each delivery month: current stock plus inbound schedule for the same tier up to
+                      that month.
+                    </li>
+                    <li>
+                      Allocate models per slot: pick the lowest-coverage tier (A1→A1+→A2→B1) and choose the model in that tier
+                      with the thinnest coverage to assign to the slot.
+                    </li>
+                    <li>
+                      Summarise per month: group the assigned models and surface the suggested quantities for each delivery
+                      month so dealers can action orders.
+                    </li>
+                  </ol>
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="shadow-sm border-slate-200">
             <CardHeader className="border-b border-slate-200 pb-4">
-              <CardTitle className="text-lg font-semibold text-slate-900">Stock Model Outlook</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-lg font-semibold text-slate-900">Stock Model Outlook</CardTitle>
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <span className="uppercase tracking-wide text-slate-500">Sort by</span>
+                  {[
+                    { key: "currentStock", label: "Current Yard Stock" },
+                    { key: "recentHandover", label: "Handover (Last 3 Months)" },
+                    { key: "recentPgi", label: "Factory PGI (Last 3 Months)" },
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setSortKey(option.key as typeof sortKey)}
+                      className={`rounded-full border px-3 py-1 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
+                        sortKey === option.key
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="overflow-auto">
               <Table className="min-w-[980px] text-sm">
