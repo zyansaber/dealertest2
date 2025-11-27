@@ -65,6 +65,7 @@ export default function Sidebar({
   // 获取当前页面类型（dashboard, dealerorders, inventorystock, unsigned, yard）
   const getCurrentPage = () => {
     const path = location.pathname;
+    if (path.includes('/inventory-management')) return 'inventory-management';
     if (path.includes('/finance-report')) return 'finance-report';
     if (path.includes('/inventorystock')) return 'inventorystock';
     if (path.includes('/unsigned')) return 'unsigned';
