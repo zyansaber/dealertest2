@@ -27,6 +27,7 @@ import DealerGroupUnsigned from "./pages/DealerGroupUnsigned";
 import DealerYard from "./pages/DealerYard";
 import DealerGroupYard from "./pages/DealerGroupYard";
 import AIFloatingAssistant from "./components/AIFloatingAssistant";
+import InventoryManagement from "./pages/InventoryManagement";
 
 const queryClient = new QueryClient();
 
@@ -77,6 +78,11 @@ const App = () => (
           <Route path="/dealer/:dealerSlug/yard" element={
             <ProtectedDealerRoute>
               <DealerYard />
+            </ProtectedDealerRoute>
+          } />
+          <Route path="/dealer/:dealerSlug/inventory-management" element={
+            <ProtectedDealerRoute>
+              <InventoryManagement />
             </ProtectedDealerRoute>
           } />
 
