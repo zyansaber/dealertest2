@@ -164,7 +164,7 @@ export default function InventoryManagement() {
   const today = useMemo(() => new Date(), []);
   const currentMonthStart = useMemo(() => startOfMonth(today), [today]);
   const previousMonthStart = useMemo(() => startOfMonth(addMonths(today, -1)), [today]);
-  
+
   useEffect(() => {
     let unsubYard: (() => void) | undefined;
     let unsubHandover: (() => void) | undefined;
@@ -321,7 +321,7 @@ export default function InventoryManagement() {
         if (isFinishedProduction(productionStatus)) return;
 
         const forecastRaw =
-          (item as any)?.["Forecast Melbourne Factory Start Date"] ??
+          (item as any)?.["Forecast Production Date: dd/mm/yyyy"] ??
           (item as any)?.["Forecast Production Date"] ??
           (item as any)?.["Forecast production date"];
         const forecastDate = parseDate(forecastRaw);
