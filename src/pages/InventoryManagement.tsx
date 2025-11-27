@@ -44,6 +44,23 @@ const slugifyDealerName = (name?: string) =>
 
 const isStockCustomer = (customer?: string) => toStr(customer).toLowerCase().endsWith("stock");
 
+const normalizeTierCode = (tier?: string) => {
+  const text = toStr(tier).trim();
+  if (!text) return "";
+  const match = text.match(/(A1\+|A1|A2|B1|B2)/i);
+  if (match) return match[1].toUpperCase();
+  return text.split(/[\s–-]/)[0]?.toUpperCase() || "";
+};
+
+const normalizeModelLabel = (label?: string) => {
+  const text = toStr(label).trim();
+  if (!text) return ["Unknown Model"];
+  if (/^SRC22F\s*\(2\/3\s*bunks\)$/i.test(text)) {
+    return ["SRC22F 2 bunks", "SRC22F 3 bunks"];
+  }
+  return [text];
+};
+
 function parseDate(value?: string | null): Date | null {
   if (!value) return null;
   const raw = String(value).trim();
@@ -250,7 +267,9 @@ export default function InventoryManagement() {
 
     return Array.from(modelMap.entries())
       .map(([model, stats]) => {
-        const tier = toStr(analysisByModel[model.toLowerCase()]?.tier || analysisByModel[model.toLowerCase()]?.Tier);
+        const tier = normalizeTierCode(
+          analysisByModel[model.toLowerCase()]?.tier || analysisByModel[model.toLowerCase()]?.Tier
+        );
         return { model, ...stats, tier };
       })
       .sort((a, b) => b.currentStock - a.currentStock || a.model.localeCompare(b.model));
@@ -260,8 +279,9 @@ export default function InventoryManagement() {
   const sidebarOrders = useMemo(() => schedule.filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug), [schedule, dealerSlug]);
 
   const tierColor = (tier?: string) => {
-    const key = toStr(tier).split(/[\s–-]/)[0]?.toUpperCase() || "";
+    const key = normalizeTierCode(tier);
     const palette: Record<string, { bg: string; border: string; text: string; pill: string }> = {
+      "A1+": { bg: "bg-sky-50", border: "border-sky-200", text: "text-sky-900", pill: "bg-sky-100 text-sky-800" },
       A1: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-900", pill: "bg-blue-100 text-blue-800" },
       A2: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-900", pill: "bg-emerald-100 text-emerald-800" },
       B1: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-900", pill: "bg-amber-100 text-amber-800" },
@@ -270,26 +290,32 @@ export default function InventoryManagement() {
     return palette[key] || { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-900", pill: "bg-slate-100 text-slate-700" };
   };
 
-  const tierGroups = useMemo(() => {
-    const grouped: Record<string, ModelAnalysisRecord[]> = {};
+  const prioritizedTierModels = useMemo(() => {
+    const priorities = ["A1+", "A1", "A2", "B1"];
     const values = Array.isArray(modelAnalysis)
       ? (modelAnalysis as ModelAnalysisRecord[])
       : Object.values((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>);
 
-    values.forEach((entry) => {
-      if (!entry) return;
-      const tier = toStr((entry as any)?.tier || (entry as any)?.Tier || "Unassigned");
-      if (!grouped[tier]) grouped[tier] = [];
-      grouped[tier].push(entry);
-    });
+    const entries = values
+      .map((entry) => {
+        const tier = normalizeTierCode((entry as any)?.tier || (entry as any)?.Tier);
+        return { entry, tier };
+      })
+      .filter(({ tier }) => priorities.includes(tier));
 
-    const orderedTiers = Object.keys(grouped).sort((a, b) => {
-      if (toStr(a).startsWith("A1")) return -1;
-      if (toStr(b).startsWith("A1")) return 1;
-      return a.localeCompare(b);
-    });
-
-    return orderedTiers.map((tier) => ({ tier, models: grouped[tier] }));
+    return priorities
+      .map((tier) => ({
+        tier,
+        models: entries
+          .filter((item) => item.tier === tier)
+          .flatMap((item) =>
+            normalizeModelLabel((item.entry as any)?.model || (item.entry as any)?.Model).map((label) => ({
+              ...item.entry,
+              model: label,
+            }))
+          ),
+      }))
+      .filter(({ models }) => models.length > 0);
   }, [modelAnalysis]);
 
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
@@ -316,72 +342,76 @@ export default function InventoryManagement() {
             </div>
           </div>
 
-          {tierGroups.length > 0 && (
+          {prioritizedTierModels.length > 0 && (
             <Card className="shadow-sm border-slate-200">
               <CardHeader className="border-b border-slate-200 pb-4">
                 <CardTitle className="text-lg font-semibold text-slate-900">Product Inventory Tiers</CardTitle>
-                <p className="text-sm text-slate-600">Click a model to view its functional layout, key strengths, and strategic role.</p>
+                <p className="text-sm text-slate-600">
+                  A1+, A1, A2, and B1 tiers displayed together. Click a model to view its functional layout, key strengths, and
+                  strategic role.
+                </p>
               </CardHeader>
               <CardContent className="space-y-4">
-                {tierGroups.map(({ tier, models }) => {
-                  const colors = tierColor(tier);
-                  return (
-                    <div
-                      key={tier}
-                      className={`rounded-xl border ${colors.border} ${colors.bg} p-4 shadow-[0_1px_3px_rgba(0,0,0,0.05)]`}
-                    >
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>{tier}</span>
-                        <span className="text-sm text-slate-700">Models aligned to this tier</span>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-3">
-                        {models.map((entry) => {
-                          const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
-                          const isOpen = expandedModel === modelLabel;
-                          return (
-                            <div key={`${tier}-${modelLabel}`} className="min-w-[180px]">
-                              <button
-                                type="button"
-                                onClick={() => setExpandedModel(isOpen ? null : modelLabel)}
-                                className={`w-full rounded-lg border ${colors.border} bg-white px-3 py-2 text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div>
-                                    <div className="text-sm font-semibold text-slate-900">{modelLabel}</div>
-                                    <div className="text-xs text-slate-600">Tap to {isOpen ? "hide" : "see"} details</div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
+                  <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 pb-3">
+                    {prioritizedTierModels.map(({ tier }) => {
+                      const colors = tierColor(tier);
+                      return (
+                        <span key={tier} className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>
+                          {tier}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    {prioritizedTierModels.flatMap(({ tier, models }) => {
+                      const colors = tierColor(tier);
+                      return models.map((entry) => {
+                        const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
+                        const isOpen = expandedModel === modelLabel;
+                        return (
+                          <div key={`${tier}-${modelLabel}`} className="flex-1 min-w-[220px]">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedModel(isOpen ? null : modelLabel)}
+                              className={`w-full rounded-lg border ${colors.border} bg-white px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="text-sm font-semibold text-slate-900">{modelLabel}</div>
+                                  <div className="text-xs text-slate-600">Tier {tier}</div>
+                                </div>
+                                {isOpen ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+                              </div>
+                            </button>
+                            {isOpen && (
+                              <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm">
+                                {entry.function_layout && (
+                                  <div className="mb-2">
+                                    <div className="font-semibold text-slate-900">Functional Layout</div>
+                                    <p className="leading-relaxed">{entry.function_layout}</p>
                                   </div>
-                                  {isOpen ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
-                                </div>
-                              </button>
-                              {isOpen && (
-                                <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm">
-                                  {entry.function_layout && (
-                                    <div className="mb-2">
-                                      <div className="font-semibold text-slate-900">Functional Layout</div>
-                                      <p className="leading-relaxed">{entry.function_layout}</p>
-                                    </div>
-                                  )}
-                                  {entry.key_strengths && (
-                                    <div className="mb-2">
-                                      <div className="font-semibold text-slate-900">Key Strengths</div>
-                                      <p className="leading-relaxed">{entry.key_strengths}</p>
-                                    </div>
-                                  )}
-                                  {entry.strategic_role && (
-                                    <div>
-                                      <div className="font-semibold text-slate-900">Strategic Role</div>
-                                      <p className="leading-relaxed">{entry.strategic_role}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                                )}
+                                {entry.key_strengths && (
+                                  <div className="mb-2">
+                                    <div className="font-semibold text-slate-900">Key Strengths</div>
+                                    <p className="leading-relaxed">{entry.key_strengths}</p>
+                                  </div>
+                                )}
+                                {entry.strategic_role && (
+                                  <div>
+                                    <div className="font-semibold text-slate-900">Strategic Role</div>
+                                    <p className="leading-relaxed">{entry.strategic_role}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -391,14 +421,14 @@ export default function InventoryManagement() {
               <CardTitle className="text-lg font-semibold text-slate-900">Stock Model Outlook</CardTitle>
             </CardHeader>
             <CardContent className="overflow-auto">
-              <Table className="min-w-[820px] text-sm">
+              <Table className="min-w-[920px] text-sm table-fixed">
                 <TableHeader className="bg-slate-50">
                   <TableRow>
-                    <TableHead className="font-semibold text-slate-700">Tier</TableHead>
-                    <TableHead className="font-semibold text-slate-700">Stock Model</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700">Current Yard Stock</TableHead>
-                    <TableHead className="text-right font-semibold text-red-600">Handover (Last 3 Months)</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700">Factory PGI (Last 3 Months)</TableHead>
+                    <TableHead className="w-[80px] font-semibold text-slate-700">Tier</TableHead>
+                    <TableHead className="w-[180px] font-semibold text-slate-700">Stock Model</TableHead>
+                    <TableHead className="w-[140px] text-right font-semibold text-slate-700">Current Yard Stock</TableHead>
+                    <TableHead className="w-[160px] text-right font-semibold text-red-600">Handover (Last 3 Months)</TableHead>
+                    <TableHead className="w-[160px] text-right font-semibold text-slate-700">Factory PGI (Last 3 Months)</TableHead>
                     {monthBuckets.map((bucket) => (
                       <TableHead key={bucket.label} className="text-right font-semibold text-slate-700">
                         {bucket.label}
@@ -419,9 +449,11 @@ export default function InventoryManagement() {
                       return (
                         <TableRow key={row.model} className={`hover:bg-slate-50/80 ${colors.bg}`}>
                           <TableCell className="font-medium text-slate-900">
-                            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${colors.pill}`}>
-                              {row.tier || "Unassigned"}
-                            </span>
+                            {row.tier ? (
+                              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${colors.pill}`}>{row.tier}</span>
+                            ) : (
+                              <span className="text-xs text-slate-500">—</span>
+                            )}
                           </TableCell>
                           <TableCell className={`font-medium ${colors.text}`}>{row.model}</TableCell>
                           <TableCell className="text-right text-slate-800">{row.currentStock}</TableCell>
