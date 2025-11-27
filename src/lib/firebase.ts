@@ -183,6 +183,38 @@ export function dealerNameToSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+/** -------------------- modelanalysis -------------------- */
+export type ModelAnalysisRecord = {
+  model?: string;
+  tier?: string;
+  function_layout?: string;
+  key_strengths?: string;
+  strategic_role?: string;
+};
+
+export const subscribeToModelAnalysis = (
+  callback: (data: Record<string, ModelAnalysisRecord> | any[]) => void
+) => {
+  const analysisRef = ref(database, "modelanalysis");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const val = snapshot.exists() ? snapshot.val() : null;
+    if (!val) {
+      callback({});
+      return;
+    }
+
+    if (Array.isArray(val)) {
+      callback(val.filter(Boolean));
+    } else {
+      callback(val);
+    }
+  };
+
+  onValue(analysisRef, handler);
+  return () => off(analysisRef, "value", handler);
+};
+
 /** -------------------- utils -------------------- */
 const parseDDMMYYYY = (dateStr: string | null): Date => {
   if (!dateStr || dateStr.trim() === "") return new Date(9999, 11, 31);
