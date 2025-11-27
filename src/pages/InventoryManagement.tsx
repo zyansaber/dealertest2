@@ -1,4 +1,3 @@
-
 // src/pages/InventoryManagement.tsx
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
@@ -68,6 +67,11 @@ const normalizeModelLabel = (label?: string) => {
     return ["SRC22F 2 bunks", "SRC22F 3 bunks"];
   }
   return [text];
+};
+
+const isUnknownModel = (model: string) => {
+  const name = toStr(model).trim().toLowerCase();
+  return !name || name === "unknown" || name === "unknown model";
 };
 
 function parseDate(value?: string | null): Date | null {
@@ -211,7 +215,8 @@ export default function InventoryManagement() {
       })();
       if (inferredType !== "Stock") return;
 
-      const model = toStr((rec.model ?? (scheduleMatch as any)?.Model) ?? "Unknown").trim() || "Unknown";
+      const model = toStr((rec.model ?? (scheduleMatch as any)?.Model) ?? "").trim();
+      if (isUnknownModel(model)) return;
       const stats = ensureModel(model);
       stats.currentStock += 1;
     });
@@ -227,7 +232,8 @@ export default function InventoryManagement() {
         parseDate((rec as any)?.PgiDate);
       if (!date || date < threeMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
-      const model = toStr(((rec as any)?.model ?? (scheduleMatch as any)?.Model) ?? "Unknown").trim() || "Unknown";
+      const model = toStr(((rec as any)?.model ?? (scheduleMatch as any)?.Model) ?? "").trim();
+      if (isUnknownModel(model)) return;
       const stats = ensureModel(model);
       stats.recentPgi += 1;
     });
@@ -239,9 +245,8 @@ export default function InventoryManagement() {
       const date = parseDate((rec as any)?.handoverAt) || parseDate((rec as any)?.createdAt);
       if (!date || date < threeMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
-      const model =
-        toStr((rec as any)?.model ?? (scheduleMatch as any)?.Model ?? (scheduleMatch as any)?.model ?? "Unknown").trim() ||
-        "Unknown";
+      const model = toStr((rec as any)?.model ?? (scheduleMatch as any)?.Model ?? (scheduleMatch as any)?.model ?? "").trim();
+      if (isUnknownModel(model)) return;
       const stats = ensureModel(model);
       stats.recentHandover += 1;
     });
