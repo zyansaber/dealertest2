@@ -5,7 +5,7 @@ import { useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { subscribeToPGIRecords, subscribeToSchedule, subscribeToYardStock } from "@/lib/firebase";
+import { subscribeToHandover, subscribeToPGIRecords, subscribeToSchedule, subscribeToYardStock } from "@/lib/firebase";
 import { normalizeDealerSlug, prettifyDealerName } from "@/lib/dealerUtils";
 import type { ScheduleItem } from "@/types";
 
@@ -14,6 +14,7 @@ type AnyRecord = Record<string, any>;
 type ModelStats = {
   currentStock: number;
   recentPgi: number;
+  recentHandover: number;
   incoming: number[]; // six months
 };
 
@@ -84,11 +85,14 @@ export default function InventoryManagement() {
   const [yardStock, setYardStock] = useState<Record<string, AnyRecord>>({});
   const [pgiRecords, setPgiRecords] = useState<Record<string, AnyRecord>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
 
   useEffect(() => {
     let unsubYard: (() => void) | undefined;
+    let unsubHandover: (() => void) | undefined;
     if (dealerSlug) {
       unsubYard = subscribeToYardStock(dealerSlug, (data) => setYardStock(data || {}));
+      unsubHandover = subscribeToHandover(dealerSlug, (data) => setHandoverRecords(data || {}));
     }
     const unsubPgi = subscribeToPGIRecords((data) => setPgiRecords(data || {}));
     const unsubSchedule = subscribeToSchedule(
@@ -98,6 +102,7 @@ export default function InventoryManagement() {
 
     return () => {
       unsubYard?.();
+      unsubHandover?.();
       unsubPgi?.();
       unsubSchedule?.();
     };
@@ -131,7 +136,7 @@ export default function InventoryManagement() {
 
     const ensureModel = (model: string) => {
       if (!modelMap.has(model)) {
-        modelMap.set(model, { currentStock: 0, recentPgi: 0, incoming: Array(6).fill(0) });
+        modelMap.set(model, { currentStock: 0, recentPgi: 0, recentHandover: 0, incoming: Array(6).fill(0) });
       }
       return modelMap.get(model)!;
     };
@@ -171,6 +176,20 @@ export default function InventoryManagement() {
       stats.recentPgi += 1;
     });
 
+    const handoverEntries = Object.entries(handoverRecords || {}).map(([chassis, rec]) => ({ chassis, ...(rec || {}) }));
+    handoverEntries.forEach(({ chassis, ...rec }) => {
+      const dealerFromRec = slugifyDealerName((rec as any)?.dealerSlug || (rec as any)?.dealerName || "");
+      if (dealerFromRec !== dealerSlug) return;
+      const date = parseDate((rec as any)?.handoverAt) || parseDate((rec as any)?.createdAt);
+      if (!date || date < threeMonthsAgo) return;
+      const scheduleMatch = scheduleByChassis[chassis];
+      const model =
+        toStr((rec as any)?.model ?? (scheduleMatch as any)?.Model ?? (scheduleMatch as any)?.model ?? "Unknown").trim() ||
+        "Unknown";
+      const stats = ensureModel(model);
+      stats.recentHandover += 1;
+    });
+
     const horizonStart = monthBuckets[0]?.start;
     const horizonEnd = monthBuckets[monthBuckets.length - 1]?.end;
     if (horizonStart && horizonEnd) {
@@ -203,7 +222,7 @@ export default function InventoryManagement() {
     return Array.from(modelMap.entries())
       .map(([model, stats]) => ({ model, ...stats }))
       .sort((a, b) => b.currentStock - a.currentStock || a.model.localeCompare(b.model));
-  }, [dealerSlug, monthBuckets, pgiRecords, schedule, scheduleByChassis, yardStock]);
+  }, [dealerSlug, handoverRecords, monthBuckets, pgiRecords, schedule, scheduleByChassis, yardStock]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const sidebarOrders = useMemo(() => schedule.filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug), [schedule, dealerSlug]);
@@ -230,19 +249,20 @@ export default function InventoryManagement() {
             </div>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Stock Model Outlook</CardTitle>
+          <Card className="shadow-sm border-slate-200">
+            <CardHeader className="border-b border-slate-200 pb-4">
+              <CardTitle className="text-lg font-semibold text-slate-900">Stock Model Outlook</CardTitle>
             </CardHeader>
             <CardContent className="overflow-auto">
-              <Table>
-                <TableHeader>
+              <Table className="min-w-[720px] text-sm">
+                <TableHeader className="bg-slate-50">
                   <TableRow>
-                    <TableHead>Stock Model</TableHead>
-                    <TableHead className="text-right">Current Yard Stock</TableHead>
-                    <TableHead className="text-right">Factory PGI (Last 3 Months)</TableHead>
+                    <TableHead className="font-semibold text-slate-700">Stock Model</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700">Current Yard Stock</TableHead>
+                    <TableHead className="text-right font-semibold text-red-600">Handover (Last 3 Months)</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700">Factory PGI (Last 3 Months)</TableHead>
                     {monthBuckets.map((bucket) => (
-                      <TableHead key={bucket.label} className="text-right">
+                      <TableHead key={bucket.label} className="text-right font-semibold text-slate-700">
                         {bucket.label}
                       </TableHead>
                     ))}
@@ -251,18 +271,19 @@ export default function InventoryManagement() {
                 <TableBody>
                   {modelRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3 + monthBuckets.length}>
+                      <TableCell colSpan={4 + monthBuckets.length}>
                         <div className="py-6 text-center text-slate-500">No stock models in yard inventory.</div>
                       </TableCell>
                     </TableRow>
                   ) : (
                     modelRows.map((row) => (
-                      <TableRow key={row.model}>
-                        <TableCell className="font-medium">{row.model}</TableCell>
-                        <TableCell className="text-right">{row.currentStock}</TableCell>
-                        <TableCell className="text-right">{row.recentPgi}</TableCell>
+                      <TableRow key={row.model} className="hover:bg-slate-50/80">
+                        <TableCell className="font-medium text-slate-900">{row.model}</TableCell>
+                        <TableCell className="text-right text-slate-800">{row.currentStock}</TableCell>
+                        <TableCell className="text-right font-semibold text-red-600">{row.recentHandover}</TableCell>
+                        <TableCell className="text-right text-slate-800">{row.recentPgi}</TableCell>
                         {monthBuckets.map((_, idx) => (
-                          <TableCell key={`${row.model}-${idx}`} className="text-right">
+                          <TableCell key={`${row.model}-${idx}`} className="text-right text-slate-800">
                             {row.incoming[idx] ?? 0}
                           </TableCell>
                         ))}
