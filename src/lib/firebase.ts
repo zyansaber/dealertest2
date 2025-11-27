@@ -190,6 +190,7 @@ export type ModelAnalysisRecord = {
   function_layout?: string;
   key_strengths?: string;
   strategic_role?: string;
+  standard_price?: number | string;
 };
 
 export const subscribeToModelAnalysis = (
