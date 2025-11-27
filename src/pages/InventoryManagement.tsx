@@ -78,6 +78,7 @@ const normalizeModelLabel = (label?: string) => {
   } else {
     const base = text.split(/\s+/)[0];
     if (base) normalized.add(base);
+    normalized.add(text.replace(/(\bF[^\s]*)\s+.*$/i, "$1"));
     normalized.add(text);
   }
 
@@ -139,6 +140,12 @@ const startOfDay = (date: Date) => {
   return d;
 };
 
+const normalizeProductionStatus = (value?: unknown) => toStr(value).trim().toLowerCase();
+const isFinishedProduction = (value?: unknown) => {
+  const status = normalizeProductionStatus(value);
+  return status === "finished" || status === "finish";
+};
+
 export default function InventoryManagement() {
   const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
 
@@ -154,6 +161,10 @@ export default function InventoryManagement() {
   const [modelAnalysis, setModelAnalysis] = useState<Record<string, ModelAnalysisRecord> | ModelAnalysisRecord[] | null>(null);
   const [sortKey, setSortKey] = useState<"currentStock" | "recentHandover" | "recentPgi">("currentStock");
 
+  const today = useMemo(() => new Date(), []);
+  const currentMonthStart = useMemo(() => startOfMonth(today), [today]);
+  const previousMonthStart = useMemo(() => startOfMonth(addMonths(today, -1)), [today]);
+  
   useEffect(() => {
     let unsubYard: (() => void) | undefined;
     let unsubHandover: (() => void) | undefined;
@@ -214,9 +225,8 @@ export default function InventoryManagement() {
   }, [schedule]);
 
   const monthBuckets = useMemo<MonthBucket[]>(() => {
-    const start = startOfMonth(addMonths(new Date(), 1));
     return Array.from({ length: 6 }, (_, i) => {
-      const bucketStart = startOfMonth(addMonths(start, i));
+      const bucketStart = startOfMonth(addMonths(currentMonthStart, i));
       const end = startOfMonth(addMonths(bucketStart, 1));
       return {
         start: bucketStart,
@@ -224,7 +234,7 @@ export default function InventoryManagement() {
         label: monthFormatter.format(bucketStart),
       };
     });
-  }, []);
+  }, [currentMonthStart]);
 
   const modelRows = useMemo(() => {
     const modelMap = new Map<string, ModelStats>();
@@ -233,7 +243,12 @@ export default function InventoryManagement() {
 
     const ensureModel = (model: string) => {
       if (!modelMap.has(model)) {
-        modelMap.set(model, { currentStock: 0, recentPgi: 0, recentHandover: 0, incoming: Array(6).fill(0) });
+        modelMap.set(model, {
+          currentStock: 0,
+          recentPgi: 0,
+          recentHandover: 0,
+          incoming: Array(monthBuckets.length).fill(0),
+        });
       }
       return modelMap.get(model)!;
     };
@@ -290,7 +305,7 @@ export default function InventoryManagement() {
       stats.recentHandover += 1;
     });
 
-    const horizonStart = monthBuckets[0]?.start;
+    const horizonStart = previousMonthStart;
     const horizonEnd = monthBuckets[monthBuckets.length - 1]?.end;
     if (horizonStart && horizonEnd) {
       schedule.forEach((item) => {
@@ -302,6 +317,9 @@ export default function InventoryManagement() {
         if (!model) return;
         if (!modelMap.has(model)) return;
 
+        const productionStatus = normalizeProductionStatus((item as any)?.["Regent Production"]);
+        if (isFinishedProduction(productionStatus)) return;
+
         const forecastRaw =
           (item as any)?.["Forecast Melbourne Factory Start Date"] ??
           (item as any)?.["Forecast Production Date"] ??
@@ -311,9 +329,16 @@ export default function InventoryManagement() {
         const arrivalDate = addDays(forecastDate, 30);
         if (arrivalDate < horizonStart || arrivalDate >= horizonEnd) return;
 
+        const stats = ensureModel(model);
+
+        const isCarryOver = arrivalDate >= previousMonthStart && arrivalDate < currentMonthStart;
+        if (isCarryOver) {
+          stats.incoming[0] += 1;
+          return;
+        }
+
         const monthIndex = monthBuckets.findIndex((bucket) => arrivalDate >= bucket.start && arrivalDate < bucket.end);
         if (monthIndex >= 0) {
-          const stats = ensureModel(model);
           stats.incoming[monthIndex] += 1;
         }
       });
@@ -335,7 +360,19 @@ export default function InventoryManagement() {
     };
 
     return rows.sort(sorter[sortKey]);
-  }, [analysisByModel, dealerSlug, handoverRecords, monthBuckets, pgiRecords, schedule, scheduleByChassis, sortKey, yardStock]);
+  }, [
+    analysisByModel,
+    currentMonthStart,
+    dealerSlug,
+    handoverRecords,
+    monthBuckets,
+    pgiRecords,
+    previousMonthStart,
+    schedule,
+    scheduleByChassis,
+    sortKey,
+    yardStock,
+  ]);
 
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const sidebarOrders = useMemo(() => schedule.filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug), [schedule, dealerSlug]);
@@ -729,7 +766,7 @@ export default function InventoryManagement() {
                   </TableRow>
                   <TableRow className="border-b border-slate-200">
                     <TableHead className="w-[84px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
-                    <TableHead className="w-[120px] max-w-[160px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
+                    <TableHead className="w-[160px] max-w-[160px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
                     <TableHead className="w-[120px] text-right text-xs uppercase tracking-wide text-slate-600">Standard Price</TableHead>
                     <TableHead className="w-[128px] border-l border-slate-200 text-right text-xs uppercase tracking-wide text-slate-600">
                       Current Yard Stock
