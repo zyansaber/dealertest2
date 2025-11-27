@@ -139,7 +139,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`relative h-full border-r border-slate-200 bg-white text-slate-900 transition-all duration-300 ease-in-out ${
+      className={`sticky top-0 left-0 z-20 flex h-screen flex-shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-gradient-to-b from-white to-slate-50 text-slate-900 transition-all duration-300 ease-in-out ${
         isCollapsed ? "w-20" : "w-72"
       }`}
     >
@@ -186,7 +186,7 @@ export default function Sidebar({
                   >
                     <item.icon className="h-5 w-5" />
                     {!isCollapsed && <span>{item.label}</span>}
-                    {isCollapsed && <span className="text-[10px] uppercase tracking-wide">{item.label}</span>}
+                    {isCollapsed && <span className="sr-only">{item.label}</span>}
                   </Button>
                 )}
               </NavLink>
