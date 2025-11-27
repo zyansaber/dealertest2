@@ -1,6 +1,3 @@
-+709
--0
-
 // src/pages/InventoryManagement.tsx
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
