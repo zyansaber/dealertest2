@@ -25,6 +25,7 @@ type ModelStats = {
   recentHandover: number;
   incoming: number[]; // six months
   tier?: string;
+  standardPrice?: number;
 };
 
 type MonthBucket = {
@@ -42,6 +43,10 @@ type EmptySlot = {
 const monthFormatter = new Intl.DateTimeFormat("en-AU", { month: "short", year: "numeric" });
 
 const toStr = (v: unknown) => String(v ?? "");
+const toNumber = (value: unknown) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+};
 const slugifyDealerName = (name?: string) =>
   toStr(name)
     .toLowerCase()
@@ -72,6 +77,17 @@ const normalizeModelLabel = (label?: string) => {
 const isUnknownModel = (model: string) => {
   const name = toStr(model).trim().toLowerCase();
   return !name || name === "unknown" || name === "unknown model";
+};
+
+const formatStandardPrice = (value?: number) => {
+  if (value == null || Number.isNaN(value)) return "—";
+  const thousands = value / 1000;
+  const formatter = new Intl.NumberFormat("en-AU", {
+    maximumSignificantDigits: 3,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+  return `${formatter.format(thousands)}k`;
 };
 
 function parseDate(value?: string | null): Date | null {
@@ -281,10 +297,12 @@ export default function InventoryManagement() {
     }
 
     const rows = Array.from(modelMap.entries()).map(([model, stats]) => {
-      const tier = normalizeTierCode(
-        analysisByModel[model.toLowerCase()]?.tier || analysisByModel[model.toLowerCase()]?.Tier
+      const analysis = analysisByModel[model.toLowerCase()];
+      const tier = normalizeTierCode(analysis?.tier || analysis?.Tier);
+      const standardPrice = toNumber(
+        (analysis as any)?.standard_price || (analysis as any)?.standardPrice || (analysis as any)?.StandardPrice
       );
-      return { model, ...stats, tier };
+      return { model, ...stats, tier, standardPrice };
     });
 
     const sorter: Record<typeof sortKey, (a: ModelStats & { model: string }, b: ModelStats & { model: string }) => number> = {
@@ -667,16 +685,20 @@ export default function InventoryManagement() {
               </div>
             </CardHeader>
             <CardContent className="overflow-auto">
-              <Table className="min-w-[980px] text-sm">
+              <Table className="min-w-[1100px] text-sm">
                 <TableHeader className="bg-slate-100/80">
                   <TableRow className="border-b border-slate-200">
-                    <TableHead className="w-[90px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
-                    <TableHead className="w-[200px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
-                    <TableHead className="w-[140px] text-right text-xs uppercase tracking-wide text-slate-600">Current Yard Stock</TableHead>
-                    <TableHead className="w-[150px] text-right text-xs uppercase tracking-wide text-red-600">Handover (Last 3 Months)</TableHead>
-                    <TableHead className="w-[150px] text-right text-xs uppercase tracking-wide text-slate-600">Factory PGI (Last 3 Months)</TableHead>
+                    <TableHead className="w-[84px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
+                    <TableHead className="w-[190px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
+                    <TableHead className="w-[120px] text-right text-xs uppercase tracking-wide text-slate-600">Standard Price</TableHead>
+                    <TableHead className="w-[128px] text-right text-xs uppercase tracking-wide text-slate-600">Current Yard Stock</TableHead>
+                    <TableHead className="w-[142px] text-right text-xs uppercase tracking-wide text-red-600">Handover (Last 3 Months)</TableHead>
+                    <TableHead className="w-[142px] text-right text-xs uppercase tracking-wide text-slate-600">Factory PGI (Last 3 Months)</TableHead>
                     {monthBuckets.map((bucket) => (
-                      <TableHead key={bucket.label} className="text-right text-xs uppercase tracking-wide text-slate-600">
+                      <TableHead
+                        key={bucket.label}
+                        className="w-[86px] text-right text-xs uppercase tracking-wide text-slate-600"
+                      >
                         {bucket.label}
                       </TableHead>
                     ))}
@@ -685,7 +707,7 @@ export default function InventoryManagement() {
                 <TableBody>
                   {modelRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5 + monthBuckets.length}>
+                      <TableCell colSpan={6 + monthBuckets.length}>
                         <div className="py-6 text-center text-slate-500">No stock models in yard inventory.</div>
                       </TableCell>
                     </TableRow>
@@ -705,6 +727,9 @@ export default function InventoryManagement() {
                             )}
                           </TableCell>
                           <TableCell className={`font-semibold text-slate-900 ${colors.text}`}>{row.model}</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">
+                            {formatStandardPrice(row.standardPrice)}
+                          </TableCell>
                           <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.currentStock}</TableCell>
                           <TableCell className="text-right font-semibold text-red-600 tabular-nums">{row.recentHandover}</TableCell>
                           <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.recentPgi}</TableCell>
