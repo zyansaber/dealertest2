@@ -311,8 +311,6 @@ export default function InventoryManagement() {
       schedule.forEach((item) => {
         const dealerMatches = slugifyDealerName((item as any)?.Dealer) === dealerSlug || !dealerSlug;
         if (!dealerMatches) return;
-        const customer = (item as any)?.Customer;
-        if (isStockCustomer(customer)) return;
         const model = primaryLabel(toStr((item as any)?.Model || "").trim());
         if (!model) return;
         if (!modelMap.has(model)) return;
@@ -326,7 +324,7 @@ export default function InventoryManagement() {
           (item as any)?.["Forecast production date"];
         const forecastDate = parseDate(forecastRaw);
         if (!forecastDate) return;
-        const arrivalDate = addDays(forecastDate, 30);
+        const arrivalDate = addDays(forecastDate, 40);
         if (arrivalDate < horizonStart || arrivalDate >= horizonEnd) return;
 
         const stats = ensureModel(model);
@@ -396,6 +394,8 @@ export default function InventoryManagement() {
       : Object.values((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>);
 
     const entries = values
+      .map((entry) => {
+        const tier = normalizeTierCode((entry as any)?.tier || (entry as any)?.Tier);
       .map((entry) => {
         const tier = normalizeTierCode((entry as any)?.tier || (entry as any)?.Tier);
         return { entry, tier };
