@@ -68,10 +68,20 @@ const hasKey = (obj: any, key: string) => Object.prototype.hasOwnProperty.call(o
 const normalizeModelLabel = (label?: string) => {
   const text = toStr(label).trim();
   if (!text) return ["Unknown Model"];
+
+  const normalized = new Set<string>();
+
   if (/^SRC22F\s*\(2\/3\s*bunks\)$/i.test(text)) {
-    return ["SRC22F 2 bunks", "SRC22F 3 bunks"];
+    normalized.add("SRC22F");
+    normalized.add("SRC22F 2 bunks");
+    normalized.add("SRC22F 3 bunks");
+  } else {
+    const base = text.split(/\s+/)[0];
+    if (base) normalized.add(base);
+    normalized.add(text);
   }
-  return [text];
+
+  return Array.from(normalized);
 };
 
 const isUnknownModel = (model: string) => {
@@ -219,6 +229,8 @@ export default function InventoryManagement() {
   const modelRows = useMemo(() => {
     const modelMap = new Map<string, ModelStats>();
 
+    const primaryLabel = (model: string) => normalizeModelLabel(model)[0];
+
     const ensureModel = (model: string) => {
       if (!modelMap.has(model)) {
         modelMap.set(model, { currentStock: 0, recentPgi: 0, recentHandover: 0, incoming: Array(6).fill(0) });
@@ -240,7 +252,7 @@ export default function InventoryManagement() {
       })();
       if (inferredType !== "Stock") return;
 
-      const model = toStr((rec.model ?? (scheduleMatch as any)?.Model) ?? "").trim();
+      const model = primaryLabel(toStr((rec.model ?? (scheduleMatch as any)?.Model) ?? "").trim());
       if (isUnknownModel(model)) return;
       const stats = ensureModel(model);
       stats.currentStock += 1;
@@ -257,7 +269,7 @@ export default function InventoryManagement() {
         parseDate((rec as any)?.PgiDate);
       if (!date || date < threeMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
-      const model = toStr(((rec as any)?.model ?? (scheduleMatch as any)?.Model) ?? "").trim();
+      const model = primaryLabel(toStr(((rec as any)?.model ?? (scheduleMatch as any)?.Model) ?? "").trim());
       if (isUnknownModel(model)) return;
       const stats = ensureModel(model);
       stats.recentPgi += 1;
@@ -270,7 +282,9 @@ export default function InventoryManagement() {
       const date = parseDate((rec as any)?.handoverAt) || parseDate((rec as any)?.createdAt);
       if (!date || date < threeMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
-      const model = toStr((rec as any)?.model ?? (scheduleMatch as any)?.Model ?? (scheduleMatch as any)?.model ?? "").trim();
+      const model = primaryLabel(
+        toStr((rec as any)?.model ?? (scheduleMatch as any)?.Model ?? (scheduleMatch as any)?.model ?? "").trim()
+      );
       if (isUnknownModel(model)) return;
       const stats = ensureModel(model);
       stats.recentHandover += 1;
@@ -284,7 +298,7 @@ export default function InventoryManagement() {
         if (!dealerMatches) return;
         const customer = (item as any)?.Customer;
         if (isStockCustomer(customer)) return;
-        const model = toStr((item as any)?.Model || "").trim();
+        const model = primaryLabel(toStr((item as any)?.Model || "").trim());
         if (!model) return;
         if (!modelMap.has(model)) return;
 
