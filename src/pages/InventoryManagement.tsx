@@ -1,3 +1,6 @@
++709
+-0
+
 // src/pages/InventoryManagement.tsx
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
@@ -31,6 +34,12 @@ type MonthBucket = {
   label: string;
   start: Date;
   end: Date;
+};
+
+type EmptySlot = {
+  item: ScheduleItem;
+  forecastDate: Date;
+  deliveryDate: Date;
 };
 
 const monthFormatter = new Intl.DateTimeFormat("en-AU", { month: "short", year: "numeric" });
@@ -347,14 +356,24 @@ export default function InventoryManagement() {
     return totals;
   }, [modelRows, monthBuckets.length]);
 
-  const emptySlots = useMemo(() => {
+  const emptySlots = useMemo<EmptySlot[]>(() => {
     return schedule
       .filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug)
       .filter((item) => {
         const hasDealer = toStr((item as any)?.Dealer).trim() !== "";
         const lacksChassis = !hasKey(item, "Chassis");
         return hasDealer && lacksChassis;
-      });
+      })
+      .map((item) => {
+        const forecastRaw =
+          (item as any)?.["Forecast Production Date"] ||
+          (item as any)?.["Forecast production date"] ||
+          (item as any)?.["Forecast Production date"];
+        const forecastDate = parseDate(forecastRaw);
+        if (!forecastDate) return null;
+        return { item, forecastDate, deliveryDate: addDays(forecastDate, 40) };
+      })
+      .filter(Boolean) as EmptySlot[];
   }, [dealerSlug, schedule]);
 
   const emptySlotRecommendations = useMemo(() => {
@@ -362,11 +381,9 @@ export default function InventoryManagement() {
 
     const slotsByMonth = monthBuckets.map(() => 0);
     emptySlots.forEach((slot) => {
-      const forecastRaw =
-        (slot as any)?.["Forecast Production Date"] || (slot as any)?.["Forecast production date"] || (slot as any)?.["Forecast Production date"];
-      const forecastDate = parseDate(forecastRaw);
-      if (!forecastDate) return;
-      const monthIndex = monthBuckets.findIndex((bucket) => forecastDate >= bucket.start && forecastDate < bucket.end);
+      const monthIndex = monthBuckets.findIndex(
+        (bucket) => slot.deliveryDate >= bucket.start && slot.deliveryDate < bucket.end
+      );
       if (monthIndex >= 0) slotsByMonth[monthIndex] += 1;
     });
 
