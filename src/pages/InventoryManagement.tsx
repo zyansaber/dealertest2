@@ -345,73 +345,79 @@ export default function InventoryManagement() {
           {prioritizedTierModels.length > 0 && (
             <Card className="shadow-sm border-slate-200">
               <CardHeader className="border-b border-slate-200 pb-4">
-                <CardTitle className="text-lg font-semibold text-slate-900">Product Inventory Tiers</CardTitle>
+                <CardTitle className="text-lg font-semibold text-slate-900">Product Inventory Tier Advisory</CardTitle>
                 <p className="text-sm text-slate-600">
-                  A1+, A1, A2, and B1 tiers displayed together. Click a model to view its functional layout, key strengths, and
+                  A1+, A1, A2, and B1 tiers are grouped together. Click a model to view its functional layout, key strengths, and
                   strategic role.
                 </p>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-                  <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 pb-3">
-                    {prioritizedTierModels.map(({ tier }) => {
-                      const colors = tierColor(tier);
-                      return (
-                        <span key={tier} className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>
-                          {tier}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                    {prioritizedTierModels.flatMap(({ tier, models }) => {
-                      const colors = tierColor(tier);
-                      return models.map((entry) => {
-                        const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
-                        const isOpen = expandedModel === modelLabel;
-                        return (
-                          <div key={`${tier}-${modelLabel}`} className="flex-1 min-w-[220px]">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedModel(isOpen ? null : modelLabel)}
-                              className={`w-full rounded-lg border ${colors.border} bg-white px-3 py-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div>
-                                  <div className="text-sm font-semibold text-slate-900">{modelLabel}</div>
-                                  <div className="text-xs text-slate-600">Tier {tier}</div>
-                                </div>
-                                {isOpen ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+              <CardContent className="space-y-3">
+                {prioritizedTierModels.map(({ tier, models }) => {
+                  const colors = tierColor(tier);
+                  return (
+                    <div
+                      key={tier}
+                      className={`rounded-2xl border ${colors.border} bg-white shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition hover:shadow-[0_6px_24px_rgba(15,23,42,0.08)]`}
+                    >
+                      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>Tier {tier}</span>
+                          <span className="text-xs uppercase tracking-wide text-slate-500">Priority Inventory</span>
+                        </div>
+                        <div className="h-4 w-px bg-slate-200" aria-hidden />
+                        <span className="text-sm text-slate-600">按 Tier 横向展示车型，点击查看要点</span>
+                      </div>
+
+                      <div className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          {models.map((entry) => {
+                            const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
+                            const key = `${tier}-${modelLabel}`;
+                            const isOpen = expandedModel === key;
+                            return (
+                              <div key={key} className="min-w-[160px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedModel(isOpen ? null : key)}
+                                  className={`group inline-flex w-full items-center justify-between gap-2 rounded-full border ${colors.border} bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300`}
+                                >
+                                  <span className="truncate">{modelLabel}</span>
+                                  {isOpen ? (
+                                    <ChevronUp className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
+                                  )}
+                                </button>
+                                {isOpen && (
+                                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 shadow-inner">
+                                    {entry.function_layout && (
+                                      <div className="mb-2">
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Functional Layout</div>
+                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.function_layout}</p>
+                                      </div>
+                                    )}
+                                    {entry.key_strengths && (
+                                      <div className="mb-2">
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Key Strengths</div>
+                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.key_strengths}</p>
+                                      </div>
+                                    )}
+                                    {entry.strategic_role && (
+                                      <div>
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Strategic Role</div>
+                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.strategic_role}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                            </button>
-                            {isOpen && (
-                              <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm">
-                                {entry.function_layout && (
-                                  <div className="mb-2">
-                                    <div className="font-semibold text-slate-900">Functional Layout</div>
-                                    <p className="leading-relaxed">{entry.function_layout}</p>
-                                  </div>
-                                )}
-                                {entry.key_strengths && (
-                                  <div className="mb-2">
-                                    <div className="font-semibold text-slate-900">Key Strengths</div>
-                                    <p className="leading-relaxed">{entry.key_strengths}</p>
-                                  </div>
-                                )}
-                                {entry.strategic_role && (
-                                  <div>
-                                    <div className="font-semibold text-slate-900">Strategic Role</div>
-                                    <p className="leading-relaxed">{entry.strategic_role}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      });
-                    })}
-                  </div>
-                </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           )}
@@ -421,16 +427,16 @@ export default function InventoryManagement() {
               <CardTitle className="text-lg font-semibold text-slate-900">Stock Model Outlook</CardTitle>
             </CardHeader>
             <CardContent className="overflow-auto">
-              <Table className="min-w-[920px] text-sm table-fixed">
-                <TableHeader className="bg-slate-50">
-                  <TableRow>
-                    <TableHead className="w-[80px] font-semibold text-slate-700">Tier</TableHead>
-                    <TableHead className="w-[180px] font-semibold text-slate-700">Stock Model</TableHead>
-                    <TableHead className="w-[140px] text-right font-semibold text-slate-700">Current Yard Stock</TableHead>
-                    <TableHead className="w-[160px] text-right font-semibold text-red-600">Handover (Last 3 Months)</TableHead>
-                    <TableHead className="w-[160px] text-right font-semibold text-slate-700">Factory PGI (Last 3 Months)</TableHead>
+              <Table className="min-w-[980px] text-sm">
+                <TableHeader className="bg-slate-100/80">
+                  <TableRow className="border-b border-slate-200">
+                    <TableHead className="w-[90px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
+                    <TableHead className="w-[200px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
+                    <TableHead className="w-[140px] text-right text-xs uppercase tracking-wide text-slate-600">Current Yard Stock</TableHead>
+                    <TableHead className="w-[150px] text-right text-xs uppercase tracking-wide text-red-600">Handover (Last 3 Months)</TableHead>
+                    <TableHead className="w-[150px] text-right text-xs uppercase tracking-wide text-slate-600">Factory PGI (Last 3 Months)</TableHead>
                     {monthBuckets.map((bucket) => (
-                      <TableHead key={bucket.label} className="text-right font-semibold text-slate-700">
+                      <TableHead key={bucket.label} className="text-right text-xs uppercase tracking-wide text-slate-600">
                         {bucket.label}
                       </TableHead>
                     ))}
@@ -444,24 +450,30 @@ export default function InventoryManagement() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    modelRows.map((row) => {
+                    modelRows.map((row, idx) => {
                       const colors = tierColor(row.tier);
                       return (
-                        <TableRow key={row.model} className={`hover:bg-slate-50/80 ${colors.bg}`}>
-                          <TableCell className="font-medium text-slate-900">
+                        <TableRow
+                          key={row.model}
+                          className={`border-b border-slate-200/70 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"} hover:bg-slate-50 ${colors.bg}`}
+                        >
+                          <TableCell className="align-middle">
                             {row.tier ? (
                               <span className={`rounded-full px-2 py-1 text-xs font-semibold ${colors.pill}`}>{row.tier}</span>
                             ) : (
                               <span className="text-xs text-slate-500">—</span>
                             )}
                           </TableCell>
-                          <TableCell className={`font-medium ${colors.text}`}>{row.model}</TableCell>
-                          <TableCell className="text-right text-slate-800">{row.currentStock}</TableCell>
-                          <TableCell className="text-right font-semibold text-red-600">{row.recentHandover}</TableCell>
-                          <TableCell className="text-right text-slate-800">{row.recentPgi}</TableCell>
-                          {monthBuckets.map((_, idx) => (
-                            <TableCell key={`${row.model}-${idx}`} className="text-right text-slate-800">
-                              {row.incoming[idx] ?? 0}
+                          <TableCell className={`font-semibold text-slate-900 ${colors.text}`}>{row.model}</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.currentStock}</TableCell>
+                          <TableCell className="text-right font-semibold text-red-600 tabular-nums">{row.recentHandover}</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.recentPgi}</TableCell>
+                          {monthBuckets.map((_, monthIdx) => (
+                            <TableCell
+                              key={`${row.model}-${monthIdx}`}
+                              className="text-right font-medium text-slate-800 tabular-nums"
+                            >
+                              {row.incoming[monthIdx] ?? 0}
                             </TableCell>
                           ))}
                         </TableRow>
