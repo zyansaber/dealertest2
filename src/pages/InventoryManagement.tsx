@@ -403,6 +403,50 @@ export default function InventoryManagement() {
     return suggestions;
   }, [emptySlots, monthBuckets, tierAggregates, tierTargets]);
 
+  const aiControlInsights = useMemo(() => {
+    const insights: string[] = [];
+
+    const emptySlotTotal = emptySlots.length;
+    if (emptySlotTotal > 0) {
+      insights.push(
+        `${emptySlotTotal} empty production slot${emptySlotTotal === 1 ? " is" : "s are"} available—fill them with the highest-priority shortfalls below.`
+      );
+    }
+
+    Object.entries(tierTargets).forEach(([tier, meta]) => {
+      const aggregates = tierAggregates[tier] || { stock: 0, incoming: Array(monthBuckets.length).fill(0) };
+      const nearInbound = aggregates.incoming.slice(0, 2).reduce((sum, v) => sum + (v || 0), 0);
+      const coverNext60 = aggregates.stock + nearInbound;
+      const min = meta.minimum ?? 0;
+
+      if (coverNext60 < min) {
+        insights.push(
+          `Tier ${tier} ${meta.label}: short ${min - coverNext60} over the next 60 days—allocate earliest slots to restore yard coverage.`
+        );
+        return;
+      }
+
+      if (meta.ceiling !== undefined && coverNext60 > meta.ceiling) {
+        insights.push(
+          `Tier ${tier} ${meta.label}: tracking ${coverNext60 - meta.ceiling} above the ceiling—slow future allocations and rotate ageing stock first.`
+        );
+        return;
+      }
+
+      const thirdMonthInbound = aggregates.incoming[2] || 0;
+      if (thirdMonthInbound === 0 && coverNext60 === min) {
+        insights.push(
+          `Tier ${tier} ${meta.label}: just on the minimum with no third-month cover—secure at least one slot in month three to avoid gaps.`
+        );
+        return;
+      }
+
+      insights.push(`Tier ${tier} ${meta.label}: balanced—keep demo rotation and monitor month-three arrivals.`);
+    });
+
+    return insights;
+  }, [emptySlots.length, monthBuckets.length, tierAggregates, tierTargets]);
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
@@ -560,6 +604,24 @@ export default function InventoryManagement() {
                     ))}
                   </ul>
                 )}
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-indigo-200 bg-white p-4 text-sm text-slate-700 shadow-inner">
+                <div className="flex items-center gap-2 font-semibold text-slate-900">
+                  <AlertCircle className="h-4 w-4 text-indigo-500" />
+                  AI control insights
+                </div>
+                <p className="text-slate-600">
+                  Slow down and sanity-check the inbound plan: the assistant highlights where coverage is thin, balanced, or over-supplied
+                  based on stock on hand and the next three months of arrivals.
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-slate-800">
+                  {aiControlInsights.map((line) => (
+                    <li key={line} className="leading-relaxed">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </CardContent>
           </Card>
