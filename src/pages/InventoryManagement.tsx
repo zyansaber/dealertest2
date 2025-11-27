@@ -176,9 +176,14 @@ export default function InventoryManagement() {
 
     values.forEach((entry) => {
       if (!entry) return;
-      const model = toStr((entry as any)?.model || (entry as any)?.Model).trim();
-      if (!model) return;
-      map[model.toLowerCase()] = entry;
+      const raw = toStr((entry as any)?.model || (entry as any)?.Model).trim();
+      if (!raw) return;
+      const labels = normalizeModelLabel(raw);
+      labels.forEach((label) => {
+        const key = label.toLowerCase();
+        if (!key) return;
+        map[key] = entry;
+      });
     });
 
     return map;
