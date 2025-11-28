@@ -12,6 +12,7 @@ import {
   subscribeToPGIRecords,
   subscribeToSchedule,
   subscribeToYardStock,
+  subscribeToYardSizes,
   type ModelAnalysisRecord,
 } from "@/lib/firebase";
 import { normalizeDealerSlug, prettifyDealerName } from "@/lib/dealerUtils";
@@ -46,6 +47,13 @@ const toStr = (v: unknown) => String(v ?? "");
 const toNumber = (value: unknown) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : undefined;
+};
+const pickNumber = (source: AnyRecord, keys: string[]) => {
+  for (const key of keys) {
+    const val = toNumber(source?.[key]);
+    if (val !== undefined) return val;
+  }
+  return undefined;
 };
 const slugifyDealerName = (name?: string) =>
   toStr(name)
@@ -155,6 +163,7 @@ export default function InventoryManagement() {
   );
 
   const [yardStock, setYardStock] = useState<Record<string, AnyRecord>>({});
+  const [yardSizes, setYardSizes] = useState<Record<string, AnyRecord>>({});
   const [pgiRecords, setPgiRecords] = useState<Record<string, AnyRecord>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
@@ -172,11 +181,13 @@ export default function InventoryManagement() {
     let unsubYard: (() => void) | undefined;
     let unsubHandover: (() => void) | undefined;
     let unsubModelAnalysis: (() => void) | undefined;
+    let unsubYardSize: (() => void) | undefined;
     if (dealerSlug) {
       unsubYard = subscribeToYardStock(dealerSlug, (data) => setYardStock(data || {}));
       unsubHandover = subscribeToHandover(dealerSlug, (data) => setHandoverRecords(data || {}));
     }
     unsubModelAnalysis = subscribeToModelAnalysis((data) => setModelAnalysis(data || {}));
+    unsubYardSize = subscribeToYardSizes((data) => setYardSizes(data || {}));
     const unsubPgi = subscribeToPGIRecords((data) => setPgiRecords(data || {}));
     const unsubSchedule = subscribeToSchedule(
       (data) => setSchedule(Array.isArray(data) ? data : []),
@@ -187,6 +198,7 @@ export default function InventoryManagement() {
       unsubYard?.();
       unsubHandover?.();
       unsubModelAnalysis?.();
+      unsubYardSize?.();
       unsubPgi?.();
       unsubSchedule?.();
     };
@@ -488,6 +500,70 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
     return base;
   }, [filteredRows, monthBuckets.length]);
 
+  const yardCapacityStats = useMemo(() => {
+    const entries = Object.entries(yardSizes || {});
+    const normalized = (value: unknown) => normalizeDealerSlug(toStr(value));
+
+    const matchedEntry =
+      entries.find(([key]) => normalized(key) === dealerSlug) ||
+      entries.find(([, value]) =>
+        normalized(
+          (value as AnyRecord)?.dealer ||
+            (value as AnyRecord)?.dealerName ||
+            (value as AnyRecord)?.name ||
+            (value as AnyRecord)?.yard
+        ) === dealerSlug
+      );
+
+    const record = (matchedEntry?.[1] as AnyRecord) || {};
+    const maxCapacity = pickNumber(record, [
+      "Max Yard Capacity",
+      "max_yard_capacity",
+      "maxyardcapacity",
+      "maxYardCapacity",
+      "yard_capacity",
+      "max_yardcapacity",
+      "max_capacity",
+      "maxCapacity",
+      "Max",
+      "MAX",
+      "max",
+    ]);
+    const minVanVolume = pickNumber(record, [
+      "Min Van Volumn",
+      "Min Van Volume",
+      "min_van_volumn",
+      "min_van_volume",
+      "minVanVolume",
+      "minVanVolumn",
+      "min_van",
+      "minimum_van_volume",
+      "Min",
+      "MIN",
+      "min",
+    ]);
+    const label = toStr(
+      (record as AnyRecord)?.dealer ||
+        (record as AnyRecord)?.dealerName ||
+        (record as AnyRecord)?.yard ||
+        (record as AnyRecord)?.name ||
+        matchedEntry?.[0] ||
+        dealerDisplayName
+    );
+
+    return { maxCapacity, minVanVolume, label, record, found: Boolean(matchedEntry) };
+  }, [dealerDisplayName, dealerSlug, yardSizes]);
+
+  const currentStockTotal = totalsRow.currentStock;
+  const capacityPercent =
+    yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0
+      ? Math.min(200, Math.round((currentStockTotal / yardCapacityStats.maxCapacity) * 1000) / 10)
+      : null;
+  const remainingCapacity =
+    yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0
+      ? yardCapacityStats.maxCapacity - currentStockTotal
+      : null;
+
   const emptySlots = useMemo<EmptySlot[]>(() => {
     return schedule
       .filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug)
@@ -600,6 +676,94 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
               </p>
             </div>
           </div>
+
+          <Card className="relative overflow-hidden border-none bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.28),transparent_32%),radial-gradient(circle_at_85%_15%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_45%_80%,rgba(255,255,255,0.16),transparent_32%)]" />
+            <CardHeader className="relative pb-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-200/80">Yard Capacity Pulse</p>
+                  <CardTitle className="text-2xl font-semibold text-white">{yardCapacityStats.label}</CardTitle>
+                  <p className="text-sm text-slate-200/80">Live snapshot from yardsize with current yard stock totals.</p>
+                </div>
+                <div className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-50 shadow-lg">
+                  Updated live
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="relative space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
+                  <p className="text-xs uppercase tracking-wide text-slate-200/80">Max Yard Capacity</p>
+                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
+                    <span>{yardCapacityStats.maxCapacity ?? "—"}</span>
+                    <span className="text-sm font-medium text-slate-200/70">vans</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-200/70">From yardsize for this dealer.</p>
+                </div>
+                <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
+                  <p className="text-xs uppercase tracking-wide text-slate-200/80">Min Van Volume</p>
+                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
+                    <span>{yardCapacityStats.minVanVolume ?? "—"}</span>
+                    <span className="text-sm font-medium text-slate-200/70">vans</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-200/70">Minimum viable stock to keep the yard healthy.</p>
+                </div>
+                <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
+                  <p className="text-xs uppercase tracking-wide text-slate-200/80">Current Inventory</p>
+                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
+                    <span>{currentStockTotal}</span>
+                    <span className="text-sm font-medium text-slate-200/70">stock units</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-200/70">Sum of "Current Yard Stock" in Stock Model Outlook.</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
+                <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-100">
+                  <div className="flex flex-col">
+                    <span className="text-xs uppercase tracking-wide text-slate-200/80">Yard Fill</span>
+                    {capacityPercent != null ? (
+                      <span className="text-lg font-semibold">{capacityPercent}% utilised</span>
+                    ) : (
+                      <span className="text-lg font-semibold">Capacity data not set</span>
+                    )}
+                  </div>
+                  {remainingCapacity != null && (
+                    <div className="rounded-full border border-emerald-200/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-50 shadow-sm">
+                      {remainingCapacity >= 0 ? `${remainingCapacity} slots free` : `${Math.abs(remainingCapacity)} over capacity`}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3 h-3 w-full overflow-hidden rounded-full border border-white/20 bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-300 via-emerald-300 to-sky-300 shadow-[0_0_12px_rgba(255,255,255,0.45)]"
+                    style={{ width: capacityPercent != null ? `${Math.min(100, capacityPercent)}%` : "0%" }}
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-200/80">
+                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 font-semibold">
+                    Current: {currentStockTotal}
+                  </span>
+                  {yardCapacityStats.maxCapacity && (
+                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 font-semibold">
+                      Target Max: {yardCapacityStats.maxCapacity}
+                    </span>
+                  )}
+                  {yardCapacityStats.minVanVolume && (
+                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 font-semibold">
+                      Target Min: {yardCapacityStats.minVanVolume}
+                    </span>
+                  )}
+                </div>
+                {!yardCapacityStats.found && (
+                  <p className="mt-2 text-xs italic text-amber-100/90">
+                    No yardsize entry matched this dealer yet. Add Max/Min volumes in the yardsize feed to unlock full insights.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
           {prioritizedTierModels.length > 0 && (
             <Card className="shadow-sm border-slate-200">
