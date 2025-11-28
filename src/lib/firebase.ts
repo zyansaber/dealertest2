@@ -35,6 +35,18 @@ const database = getDatabase(app);
 
 export { database };
 
+export type YardSizeRecord = {
+  dealer?: string;
+  dealerName?: string;
+  name?: string;
+  yard?: string;
+  max_yard_capacity?: number | string;
+  min_van_volume?: number | string;
+  max?: number | string;
+  min?: number | string;
+  [key: string]: unknown;
+};
+
 /** -------------------- schedule -------------------- */
 export const subscribeToSchedule = (
   callback: (data: ScheduleItem[]) => void,
@@ -182,6 +194,19 @@ export function generateRandomCode(): string {
 export function dealerNameToSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
+
+/** -------------------- yard size -------------------- */
+export const subscribeToYardSizes = (callback: (data: Record<string, YardSizeRecord>) => void) => {
+  const yardRef = ref(database, "yardsize");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const val = snapshot.exists() ? snapshot.val() : {};
+    callback((val as Record<string, YardSizeRecord>) || {});
+  };
+
+  onValue(yardRef, handler);
+  return () => off(yardRef, "value", handler);
+};
 
 /** -------------------- modelanalysis -------------------- */
 export type ModelAnalysisRecord = {
