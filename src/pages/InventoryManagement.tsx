@@ -24,7 +24,7 @@ type ModelStats = {
   currentStock: number;
   recentPgi: number;
   recentHandover: number;
-  incoming: number[]; // six months
+  incoming: number[]; // rolling planning horizon
   tier?: string;
   standardPrice?: number;
 };
@@ -240,8 +240,10 @@ export default function InventoryManagement() {
     return map;
   }, [schedule]);
 
-const monthBuckets = useMemo<MonthBucket[]>(() => {
-    return Array.from({ length: 7 }, (_, i) => {
+  const planningHorizonMonths = 12;
+
+  const monthBuckets = useMemo<MonthBucket[]>(() => {
+    return Array.from({ length: planningHorizonMonths }, (_, i) => {
       const bucketStart = startOfMonth(addMonths(currentMonthStart, i));
       const end = startOfMonth(addMonths(bucketStart, 1));
       return {
@@ -250,7 +252,7 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
         label: monthFormatter.format(bucketStart),
       };
     });
-  }, [currentMonthStart]);
+  }, [currentMonthStart, planningHorizonMonths]);
 
   const modelRows = useMemo(() => {
     const modelMap = new Map<string, ModelStats>();
@@ -701,7 +703,7 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
     yardCapacityStats.maxCapacity,
     yardCapacityStats.minVanVolume,
   ]);
-  
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
@@ -719,7 +721,7 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
             <div>
               <h2 className="text-xl font-semibold">Inventory Management</h2>
               <p className="text-sm text-slate-600">
-                Yard stock strategy overview by model, PGI trend, and six-month inbound outlook.
+                Yard stock strategy overview by model, PGI trend, and twelve-month inbound outlook.
               </p>
             </div>
           </div>
