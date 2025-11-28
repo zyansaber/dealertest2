@@ -587,65 +587,90 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
   const emptySlotRecommendations = useMemo(() => {
     if (monthBuckets.length === 0) return [] as string[];
 
-    const slotCounts = monthBuckets.map(() => 0);
-    emptySlots.forEach((slot) => {
+    const shareTargets: Record<string, number> = { A1: 0.4, "A1+": 0.3, A2: 0.2, B1: 0.1 };
+    const capacityBaseline =
+      (yardCapacityStats.maxCapacity || 0) + (yardCapacityStats.minVanVolume || 0) || currentStockTotal;
+    const tierGoals: Record<string, number> = Object.fromEntries(
+      Object.entries(shareTargets).map(([tier, pct]) => [tier, Math.max(1, Math.round(capacityBaseline * pct))])
+    );
+
+    const prioritizedTiers = ["A1", "A1+", "A2", "B1"] as const;
+    const tierIncoming: Record<string, number[]> = {};
+    prioritizedTiers.forEach((tier) => {
+      tierIncoming[tier] = [...(tierAggregates[tier]?.incoming || Array(monthBuckets.length).fill(0))];
+    });
+
+    const modelAssignments = new Map<string, number>();
+    const slots = [...emptySlots]
+      .sort((a, b) => a.deliveryDate.getTime() - b.deliveryDate.getTime())
+      .slice(0, 10);
+
+    const recentCount = (tier: string, monthIndex: number) => {
+      const buffer = tierIncoming[tier] || [];
+      return [monthIndex - 1, monthIndex]
+        .filter((idx) => idx >= 0 && idx < buffer.length)
+        .reduce((sum, idx) => sum + (buffer[idx] || 0), 0);
+    };
+
+    const selectTier = (monthIndex: number) => {
+      const n1 = recentCount("A1", monthIndex);
+      const n2 = recentCount("A1+", monthIndex);
+      const n3 = recentCount("A2", monthIndex);
+      const n4 = recentCount("B1", monthIndex);
+
+      if (n1 < tierGoals["A1"]) return "A1";
+      if (n2 < tierGoals["A1+"]) return "A1+";
+      if (n3 < tierGoals["A2"]) return "A2";
+      if (n4 < tierGoals["B1"]) return "B1";
+      if (n1 > tierGoals["A1"]) return n2 <= n3 ? "A1+" : "A2";
+      if (n3 > tierGoals["A2"]) return n1 <= n2 ? "A1" : "A1+";
+      return "A1";
+    };
+
+    const pickModel = (tier: string, monthIndex: number) => {
+      const candidates = modelRows.filter((row) => normalizeTierCode(row.tier) === tier);
+      if (candidates.length === 0) return null;
+
+      const scored = candidates
+        .map((row) => {
+          const inboundThroughMonth = row.incoming
+            .slice(0, monthIndex + 1)
+            .reduce((sum, v) => sum + (v || 0), 0);
+          const coverage = row.currentStock + inboundThroughMonth;
+          const assigned = modelAssignments.get(row.model) || 0;
+          return { row, coverage, assigned };
+        })
+        .sort((a, b) => a.assigned - b.assigned || a.coverage - b.coverage || a.row.model.localeCompare(b.row.model));
+
+      const choice = scored[0]?.row;
+      if (choice) {
+        modelAssignments.set(choice.model, (modelAssignments.get(choice.model) || 0) + 1);
+      }
+      return choice;
+    };
+
+    const suggestions: string[] = [];
+    slots.forEach((slot, idx) => {
       const monthIndex = monthBuckets.findIndex(
         (bucket) => slot.deliveryDate >= bucket.start && slot.deliveryDate < bucket.end
       );
-      if (monthIndex >= 0) slotCounts[monthIndex] += 1;
-    });
+      if (monthIndex < 0) return;
 
-    const priorities = ["A1", "A1+", "A2", "B1"] as const;
-    const suggestions: string[] = [];
+      const tier = selectTier(monthIndex);
+      const model = pickModel(tier, monthIndex);
 
-    slotCounts.forEach((count, idx) => {
-      if (count === 0) return;
+      tierIncoming[tier][monthIndex] = (tierIncoming[tier][monthIndex] || 0) + 1;
 
-      const tierCoverage: Record<string, number> = {};
-      priorities.forEach((tier) => {
-        const totals = tierAggregates[tier] || { stock: 0, incoming: [] };
-        const inboundThroughMonth = (totals.incoming || []).slice(0, idx + 1).reduce((sum, v) => sum + (v || 0), 0);
-        tierCoverage[tier] = totals.stock + inboundThroughMonth;
-      });
+      const recent = recentCount(tier, monthIndex);
+      const goal = tierGoals[tier];
+      const etaLabel = monthBuckets[monthIndex]?.label || "Upcoming";
+      const tag = model ? `${model.model} (Tier ${tier})` : `Tier ${tier}`;
 
-      const prioritizedModels = modelRows.filter((row) => priorities.includes(normalizeTierCode(row.tier) as any));
-
-      const assignments: { model: string; tier: string }[] = [];
-      for (let i = 0; i < count; i += 1) {
-        const shortageTier = priorities.find(
-          (tier) => tierCoverage[tier] < (tierTargets[tier]?.minimum ?? 0)
-        );
-        const targetTier = shortageTier || "A1";
-
-        const candidates = prioritizedModels
-          .filter((row) => normalizeTierCode(row.tier) === targetTier)
-          .map((row) => {
-            const inboundThroughMonth = row.incoming.slice(0, idx + 1).reduce((sum, v) => sum + (v || 0), 0);
-            const coverage = row.currentStock + inboundThroughMonth;
-            return { model: row.model, tier: targetTier, coverage };
-          })
-          .sort((a, b) => a.coverage - b.coverage || a.model.localeCompare(b.model));
-
-        const chosen = candidates[0];
-        if (chosen) {
-          assignments.push({ model: chosen.model, tier: chosen.tier });
-          tierCoverage[targetTier] += 1;
-        }
-      }
-
-      const grouped = assignments.reduce<Record<string, number>>((acc, { model, tier }) => {
-        const key = `${model} (Tier ${tier})`;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
-
-      const parts = Object.entries(grouped)
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([label, qty]) => `${qty} × ${label}`);
-
-      if (parts.length > 0) {
-        suggestions.push(`${monthBuckets[idx].label}: allocate ${parts.join(", ")} to capture empty slots.`);
-      }
+      suggestions.push(
+        `${idx + 1}. ${etaLabel} empty slot → 交付 ETA ${monthFormatter.format(slot.deliveryDate)}：优先 ${tag}（近两个月已排 ${recent}/${goal}，目标占比 ${
+          shareTargets[tier] * 100
+        }%）。`
+      );
     });
 
     if (suggestions.length === 0 && emptySlots.length > 0) {
@@ -653,8 +678,16 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
     }
 
     return suggestions;
-  }, [emptySlots, modelRows, monthBuckets, tierAggregates, tierTargets]);
-
+  }, [
+    currentStockTotal,
+    emptySlots,
+    modelRows,
+    monthBuckets,
+    tierAggregates,
+    yardCapacityStats.maxCapacity,
+    yardCapacityStats.minVanVolume,
+  ]);
+  
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
