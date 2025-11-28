@@ -590,8 +590,13 @@ export default function InventoryManagement() {
     if (monthBuckets.length === 0) return [] as string[];
 
     const shareTargets: Record<string, number> = { A1: 0.4, "A1+": 0.3, A2: 0.2, B1: 0.1 };
-    const capacityBaseline =
-      (yardCapacityStats.maxCapacity || 0) + (yardCapacityStats.minVanVolume || 0) || currentStockTotal;
+    const capacityBaseline = (() => {
+      const { maxCapacity, minVanVolume } = yardCapacityStats;
+      if (maxCapacity && minVanVolume) return Math.round((maxCapacity + minVanVolume) / 2);
+      if (maxCapacity) return maxCapacity;
+      if (minVanVolume) return minVanVolume;
+      return currentStockTotal;
+    })();
     const tierGoals: Record<string, number> = Object.fromEntries(
       Object.entries(shareTargets).map(([tier, pct]) => [tier, Math.max(1, Math.round(capacityBaseline * pct))])
     );
@@ -676,18 +681,21 @@ export default function InventoryManagement() {
       const goal = tierGoals[tier];
       const etaLabel = monthBuckets[monthIndex]?.label || "Upcoming";
       const tag = model ? `${model.model} (Tier ${tier})` : `Tier ${tier}`;
+      const deficit = Math.max(goal - recent, 0);
 
       suggestions.push(
-        `${idx + 1}. ${etaLabel} empty slot → 交付 ETA ${monthFormatter.format(slot.deliveryDate)}：优先 ${tag}（近两个月已排 ${recent}/${goal}，目标占比 ${
+        `${idx + 1}. ${etaLabel} empty slot → delivery ETA ${monthFormatter.format(
+          slot.deliveryDate
+        )}: prioritise ${tag}. Last 60 days for this tier: ${recent}/${goal} target (deficit ${deficit}, ${
           shareTargets[tier] * 100
-        }%）。`
+        }% share goal).`
       );
     });
 
     if (suggestions.length === 0 && emptySlots.length > 0) {
       const horizonLabelStart = monthBuckets[0]?.label;
       const horizonLabelEnd = monthBuckets[monthBuckets.length - 1]?.label;
-      const horizonLabel = horizonLabelStart && horizonLabelEnd ? `${horizonLabelStart}–${horizonLabelEnd}` : "规划窗口";
+      const horizonLabel = horizonLabelStart && horizonLabelEnd ? `${horizonLabelStart}–${horizonLabelEnd}` : "planning window";
       suggestions.push(
         `Empty slots exist but none fall inside the ${horizonLabel} planning window—update forecast dates or extend the horizon.`
       );
@@ -746,14 +754,6 @@ export default function InventoryManagement() {
                   <p className="text-xs uppercase tracking-wide text-slate-200/80">Max Yard Capacity</p>
                   <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
                     <span>{yardCapacityStats.maxCapacity ?? "—"}</span>
-                    <span className="text-sm font-medium text-slate-200/70">vans</span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-200/70">From yardsize for this dealer.</p>
-                </div>
-                <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
-                  <p className="text-xs uppercase tracking-wide text-slate-200/80">Min Van Volume</p>
-                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
-                    <span>{yardCapacityStats.minVanVolume ?? "—"}</span>
                     <span className="text-sm font-medium text-slate-200/70">vans</span>
                   </div>
                   <p className="mt-1 text-xs text-slate-200/70">Minimum viable stock to keep the yard healthy.</p>
