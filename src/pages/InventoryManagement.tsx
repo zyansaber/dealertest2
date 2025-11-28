@@ -601,6 +601,7 @@ export default function InventoryManagement() {
     const tierGoals: Record<string, number> = Object.fromEntries(
       Object.entries(shareTargets).map(([tier, pct]) => [tier, Math.max(1, Math.floor(capacityBaseline * pct))])
     );
+    const tierOrder = ["A1", "A1+", "A2", "B1"];
 
     const horizonStart = monthBuckets[0]?.start;
     const horizonEnd = monthBuckets[monthBuckets.length - 1]?.end;
@@ -619,6 +620,14 @@ export default function InventoryManagement() {
       if (!tier) return;
       tierModels[tier] = tierModels[tier] || [];
       tierModels[tier].push(row.model);
+    });
+    const perModelGoals: Record<string, number> = {};
+    Object.entries(tierModels).forEach(([tier, models]) => {
+      const goal = tierGoals[tier] || 0;
+      const target = models.length > 0 ? Math.max(1, Math.floor(goal / models.length)) : 0;
+      models.forEach((model) => {
+        perModelGoals[model.toLowerCase()] = target;
+      });
     });
 
     const initialOrders: { tier: string; model: string; forecastDate: Date }[] = [];
@@ -652,11 +661,33 @@ export default function InventoryManagement() {
     const countModelInWindow = (model: string, referenceDate: Date) => {
       const windowStart = addDays(referenceDate, -rollingWindowDays);
       return plannedOrders.filter(
-        (order) => order.model.toLowerCase() === model.toLowerCase() && order.forecastDate >= windowStart && order.forecastDate < referenceDate
+        (order) =>
+          order.model.toLowerCase() === model.toLowerCase() &&
+          order.forecastDate >= windowStart &&
+          order.forecastDate < referenceDate
       ).length;
     };
 
-    const pickTier = (referenceDate: Date) => {
+    const pickModelWithLargestDeficit = (referenceDate: Date) => {
+      const scored = Object.entries(tierModels)
+        .flatMap(([tier, models]) => models.map((model) => ({ tier, model })))
+        .map(({ tier, model }) => {
+          const goal = perModelGoals[model.toLowerCase()] || 0;
+          const tally = countModelInWindow(model, referenceDate);
+          return { tier, model, goal, tally, deficit: goal - tally };
+        })
+        .sort((a, b) => {
+          if (b.deficit !== a.deficit) return b.deficit - a.deficit;
+          const tierRankA = tierOrder.indexOf(a.tier);
+          const tierRankB = tierOrder.indexOf(b.tier);
+          if (tierRankA !== tierRankB) return tierRankA - tierRankB;
+          return a.model.localeCompare(b.model);
+        });
+
+      return scored[0];
+    };
+
+    const pickFallbackTier = (referenceDate: Date) => {
       const deficits = Object.entries(tierGoals).map(([tier, goal]) => {
         const tally = countInWindow(tier, referenceDate);
         return { tier, goal, tally, deficit: goal - tally };
@@ -664,51 +695,45 @@ export default function InventoryManagement() {
 
       const positive = deficits.filter((d) => d.deficit > 0);
       if (positive.length > 0) {
-        return positive.sort((a, b) => b.deficit - a.deficit || shareTargets[b.tier] - shareTargets[a.tier])[0];
+        return positive.sort((a, b) => b.deficit - a.deficit || tierOrder.indexOf(a.tier) - tierOrder.indexOf(b.tier))[0];
       }
 
-      const fallback = deficits.sort((a, b) => b.goal - a.goal)[0];
+      const fallback = deficits.sort((a, b) => tierOrder.indexOf(a.tier) - tierOrder.indexOf(b.tier))[0];
       return fallback;
-    };
-
-    const pickModel = (tier: string, referenceDate: Date) => {
-      const candidates = (tierModels[tier] || []).sort((a, b) => a.localeCompare(b));
-      if (candidates.length === 0) return null;
-
-      const tierGoal = tierGoals[tier];
-      const perModelTarget = Math.max(1, Math.floor(tierGoal / candidates.length));
-
-      const scored = candidates
-        .map((model) => {
-          const tally = countModelInWindow(model, referenceDate);
-          const deficit = perModelTarget - tally;
-          const row = modelRows.find((r) => r.model === model);
-          const inboundThroughReference = row?.incoming
-            .filter((_, idx) => idx < monthBuckets.length)
-            .reduce((sum, v) => sum + (v || 0), 0);
-          const coverage = (row?.currentStock || 0) + (inboundThroughReference || 0);
-          return { model, tally, deficit, coverage };
-        })
-        .sort((a, b) => b.deficit - a.deficit || a.coverage - b.coverage || a.model.localeCompare(b.model));
-
-      return scored[0];
     };
 
     const suggestions: string[] = [];
     slots.forEach((slot, idx) => {
-      const tierPick = pickTier(slot.forecastDate);
-      const tier = tierPick?.tier || "A1";
-      const tierGoal = tierGoals[tier] || 0;
-      const tierTally = countInWindow(tier, slot.forecastDate);
-      const tierDeficit = Math.max(tierGoal - tierTally, 0);
+      const modelPick = pickModelWithLargestDeficit(slot.forecastDate);
+      const hasModelDeficit = modelPick && modelPick.deficit > 0;
 
-      const modelPick = pickModel(tier, slot.forecastDate);
-      if (modelPick) {
-        plannedOrders.push({ tier, model: modelPick.model, forecastDate: slot.forecastDate });
+      let tier = modelPick?.tier || "A1";
+      let tierGoal = tierGoals[tier] || 0;
+      let tierTally = countInWindow(tier, slot.forecastDate);
+      let tierDeficit = Math.max(tierGoal - tierTally, 0);
+
+      let selectedModel = modelPick?.model || null;
+      let perModelTarget = selectedModel ? perModelGoals[selectedModel.toLowerCase()] || 0 : 0;
+      let modelTally = selectedModel ? countModelInWindow(selectedModel, slot.forecastDate) : 0;
+      let modelDeficit = Math.max(perModelTarget - modelTally, 0);
+
+      if (!hasModelDeficit) {
+        const fallbackTier = pickFallbackTier(slot.forecastDate);
+        tier = fallbackTier?.tier || tier;
+        tierGoal = fallbackTier?.goal || tierGoal;
+        tierTally = countInWindow(tier, slot.forecastDate);
+        tierDeficit = Math.max(tierGoal - tierTally, 0);
+
+        const candidates = (tierModels[tier] || []).sort((a, b) => a.localeCompare(b));
+        selectedModel = candidates[0] || null;
+        perModelTarget = selectedModel ? perModelGoals[selectedModel.toLowerCase()] || 0 : 0;
+        modelTally = selectedModel ? countModelInWindow(selectedModel, slot.forecastDate) : 0;
+        modelDeficit = Math.max(perModelTarget - modelTally, 0);
       }
 
-      const perModelTarget = Math.max(1, Math.floor((tierGoals[tier] || 1) / (tierModels[tier]?.length || 1)));
-      const modelDeficit = modelPick ? Math.max(perModelTarget - modelPick.tally, 0) : 0;
+      if (selectedModel) {
+        plannedOrders.push({ tier, model: selectedModel, forecastDate: slot.forecastDate });
+      }
 
       const forecastLabel = slot.forecastDate
         ? slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
@@ -719,11 +744,11 @@ export default function InventoryManagement() {
       const tierReason = `Rolling ${rollingWindowDays}-day orders for Tier ${tier}: ${tierTally}/${tierGoal} (deficit ${tierDeficit}) vs ${
         sharePct * 100
       }% of capacity baseline ${capacityBaseline}.`;
-      const modelReason = modelPick
-        ? `Within Tier ${tier}, model ${modelPick.model} is short ${modelDeficit} of its ${perModelTarget}-unit ${rollingWindowDays}-day target (${modelPick.tally} booked).`
+      const modelReason = selectedModel
+        ? `Within Tier ${tier}, model ${selectedModel} is short ${modelDeficit} of its ${perModelTarget}-unit ${rollingWindowDays}-day target (${modelTally} booked).`
         : `No mapped model found for Tier ${tier}; update tier assignments to unlock per-model balancing.`;
 
-      const tag = modelPick ? `${modelPick.model} (Tier ${tier})` : `Tier ${tier}`;
+      const tag = selectedModel ? `${selectedModel} (Tier ${tier})` : `Tier ${tier}`;
       suggestions.push(
         `${idx + 1}. Forecast production ${forecastLabel} (delivery ETA ${deliveryLabel}) → order ${tag}. ${tierReason} ${modelReason}`
       );
