@@ -712,8 +712,6 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
 
           <Card className="relative overflow-hidden border-none bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.28),transparent_32%),radial-gradient(circle_at_85%_15%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_45%_80%,rgba(255,255,255,0.16),transparent_32%)]" />
-255,255,255,0.2),transparent_30%),radial-gradient(circle_at_45%_80%,rgba(255,255,255,0.16),transparent_32%)]" />
-            <CardHeader className="relative pb-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-xs uppercase tracking-[0.25em] text-slate-200/80">Yard Capacity Pulse</p>
