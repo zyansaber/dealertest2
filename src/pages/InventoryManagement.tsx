@@ -601,9 +601,23 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
     });
 
     const modelAssignments = new Map<string, number>();
+    const horizonStart = monthBuckets[0]?.start;
+    const horizonEnd = monthBuckets[monthBuckets.length - 1]?.end;
+
     const slots = [...emptySlots]
+      .filter((slot) => {
+        if (!horizonStart || !horizonEnd) return true;
+        return slot.deliveryDate >= horizonStart && slot.deliveryDate < horizonEnd;
+      })
       .sort((a, b) => a.deliveryDate.getTime() - b.deliveryDate.getTime())
-      .slice(0, 10);
+      .slice(0, 10)
+      .map((slot) => {
+        const monthIndex = monthBuckets.findIndex(
+          (bucket) => slot.deliveryDate >= bucket.start && slot.deliveryDate < bucket.end
+        );
+        return { slot, monthIndex };
+      })
+      .filter(({ monthIndex }) => monthIndex >= 0);
 
     const recentCount = (tier: string, monthIndex: number) => {
       const buffer = tierIncoming[tier] || [];
@@ -650,12 +664,7 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
     };
 
     const suggestions: string[] = [];
-    slots.forEach((slot, idx) => {
-      const monthIndex = monthBuckets.findIndex(
-        (bucket) => slot.deliveryDate >= bucket.start && slot.deliveryDate < bucket.end
-      );
-      if (monthIndex < 0) return;
-
+    slots.forEach(({ slot, monthIndex }, idx) => {
       const tier = selectTier(monthIndex);
       const model = pickModel(tier, monthIndex);
 
@@ -674,7 +683,12 @@ const monthBuckets = useMemo<MonthBucket[]>(() => {
     });
 
     if (suggestions.length === 0 && emptySlots.length > 0) {
-      suggestions.push("Empty slots detected but no tier-mapped models were available—review tier assignments.");
+      const horizonLabelStart = monthBuckets[0]?.label;
+      const horizonLabelEnd = monthBuckets[monthBuckets.length - 1]?.label;
+      const horizonLabel = horizonLabelStart && horizonLabelEnd ? `${horizonLabelStart}–${horizonLabelEnd}` : "规划窗口";
+      suggestions.push(
+        `Empty slots exist but none fall inside the ${horizonLabel} planning window—update forecast dates or extend the horizon.`
+      );
     }
 
     return suggestions;
