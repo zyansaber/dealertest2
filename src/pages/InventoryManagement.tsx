@@ -743,16 +743,20 @@ export default function InventoryManagement() {
       const windowLabel = `${windowStart.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })} to ${
         slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
       }`;
-      const ordersDetail =
-        ordersInWindow.length === 0
-          ? "No booked orders in the prior 90-day window."
-          : ordersInWindow
-              .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
+      const modelOrdersInWindow = selectedModel
+        ? ordersInWindow
+            .filter((order) => order.model.toLowerCase() === selectedModel.toLowerCase())
+            .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
+        : [];
+      const modelOrdersDetail =
+        (selectedModel && modelOrdersInWindow.length === 0)
+          ? `No ${selectedModel} orders booked in the prior 90-day window.`
+          : modelOrdersInWindow
               .map((order) => {
                 const dateLabel = order.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
-                return `${dateLabel}: ${order.model} (Tier ${order.tier})`;
+                return `${dateLabel}`;
               })
-              .join("; ");
+              .join(", ");
 
       if (selectedModel) {
         plannedOrders.push({ tier, model: selectedModel, forecastDate: slot.forecastDate });
@@ -768,7 +772,9 @@ export default function InventoryManagement() {
 
       const tag = selectedModel ? `${selectedModel} (Tier ${tier})` : `Tier ${tier}`;
       suggestions.push(
-        `${idx + 1}. Forecast production ${forecastLabel} (delivery ETA ${deliveryLabel}) → order ${tag}. Window ${windowLabel}. ${ordersDetail} ${tierReason} ${modelReason}`
+        `${idx + 1}. Forecast production ${forecastLabel} (delivery ETA ${deliveryLabel}) → order ${tag}. Window ${windowLabel}. Model 90-day target ${perModelTarget}, booked ${modelTally} so far${
+          selectedModel ? ` for ${selectedModel}` : ""
+        }${modelOrdersDetail ? ` (dates: ${modelOrdersDetail})` : ""}. ${tierReason} ${modelReason}`
       );
     });
 
@@ -841,7 +847,6 @@ export default function InventoryManagement() {
                   <p className="mt-1 text-xs text-slate-200/70">Sum of "Current Yard Stock" in Stock Model Outlook.</p>
                 </div>
               </div>
-
               <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
                 <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-100">
                   <div className="flex flex-col">
