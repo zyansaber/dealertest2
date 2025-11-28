@@ -663,9 +663,9 @@ export default function InventoryManagement() {
         })
         .sort((a, b) => a.assigned - b.assigned || a.coverage - b.coverage || a.row.model.localeCompare(b.row.model));
 
-      const choice = scored[0]?.row;
+      const choice = scored[0];
       if (choice) {
-        modelAssignments.set(choice.model, (modelAssignments.get(choice.model) || 0) + 1);
+        modelAssignments.set(choice.row.model, (modelAssignments.get(choice.row.model) || 0) + 1);
       }
       return choice;
     };
@@ -673,22 +673,29 @@ export default function InventoryManagement() {
     const suggestions: string[] = [];
     slots.forEach(({ slot, monthIndex }, idx) => {
       const tier = selectTier(monthIndex);
+      const priorRecent = recentCount(tier, monthIndex);
       const model = pickModel(tier, monthIndex);
 
       tierIncoming[tier][monthIndex] = (tierIncoming[tier][monthIndex] || 0) + 1;
 
-      const recent = recentCount(tier, monthIndex);
       const goal = tierGoals[tier];
       const etaLabel = monthBuckets[monthIndex]?.label || "Upcoming";
-      const tag = model ? `${model.model} (Tier ${tier})` : `Tier ${tier}`;
-      const deficit = Math.max(goal - recent, 0);
+      const tag = model ? `${model.row.model} (Tier ${tier})` : `Tier ${tier}`;
+      const deficit = Math.max(goal - priorRecent, 0);
+      const coverageReason = model
+        ? `Chosen model ${model.row.model} has the lowest coverage in this tier (stock + inbound to ${etaLabel}: ${model.coverage}, ` +
+          `${model.assigned} prior allocations).`
+        : "No mapped model for this tier; update tier mapping.";
+      const forecastLabel = slot.forecastDate
+        ? slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
+        : "Unknown forecast";
 
       suggestions.push(
-        `${idx + 1}. ${etaLabel} empty slot → delivery ETA ${monthFormatter.format(
+        `${idx + 1}. Forecast production ${forecastLabel} (delivery ETA ${monthFormatter.format(
           slot.deliveryDate
-        )}: prioritise ${tag}. Last 60 days for this tier: ${recent}/${goal} target (deficit ${deficit}, ${
-          shareTargets[tier] * 100
-        }% share goal).`
+        )}) → order ${tag}. Reason: 60-day count before this slot ${priorRecent}/${goal} (deficit ${deficit}) ` +
+          `vs ${shareTargets[tier] * 100}% share of capacity baseline ${capacityBaseline}; ` +
+          `${coverageReason}`
       );
     });
 
@@ -755,14 +762,6 @@ export default function InventoryManagement() {
                   <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
                     <span>{yardCapacityStats.maxCapacity ?? "—"}</span>
                     <span className="text-sm font-medium text-slate-200/70">vans</span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-200/70">Minimum viable stock to keep the yard healthy.</p>
-                </div>
-                <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
-                  <p className="text-xs uppercase tracking-wide text-slate-200/80">Current Inventory</p>
-                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
-                    <span>{currentStockTotal}</span>
-                    <span className="text-sm font-medium text-slate-200/70">stock units</span>
                   </div>
                   <p className="mt-1 text-xs text-slate-200/70">Sum of "Current Yard Stock" in Stock Model Outlook.</p>
                 </div>
