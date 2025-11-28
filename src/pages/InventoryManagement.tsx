@@ -704,6 +704,11 @@ export default function InventoryManagement() {
 
     const suggestions: string[] = [];
     slots.forEach((slot, idx) => {
+      const windowStart = addDays(slot.forecastDate, -rollingWindowDays);
+      const ordersInWindow = plannedOrders.filter(
+        (order) => order.forecastDate >= windowStart && order.forecastDate < slot.forecastDate
+      );
+
       const modelPick = pickModelWithLargestDeficit(slot.forecastDate);
       const hasModelDeficit = modelPick && modelPick.deficit > 0;
 
@@ -731,14 +736,27 @@ export default function InventoryManagement() {
         modelDeficit = Math.max(perModelTarget - modelTally, 0);
       }
 
-      if (selectedModel) {
-        plannedOrders.push({ tier, model: selectedModel, forecastDate: slot.forecastDate });
-      }
-
       const forecastLabel = slot.forecastDate
         ? slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
         : "Unknown forecast";
       const deliveryLabel = monthFormatter.format(slot.deliveryDate);
+      const windowLabel = `${windowStart.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })} to ${
+        slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
+      }`;
+      const ordersDetail =
+        ordersInWindow.length === 0
+          ? "No booked orders in the prior 90-day window."
+          : ordersInWindow
+              .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
+              .map((order) => {
+                const dateLabel = order.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
+                return `${dateLabel}: ${order.model} (Tier ${order.tier})`;
+              })
+              .join("; ");
+
+      if (selectedModel) {
+        plannedOrders.push({ tier, model: selectedModel, forecastDate: slot.forecastDate });
+      }
 
       const sharePct = shareTargets[tier] ?? 0;
       const tierReason = `Rolling ${rollingWindowDays}-day orders for Tier ${tier}: ${tierTally}/${tierGoal} (deficit ${tierDeficit}) vs ${
@@ -750,7 +768,7 @@ export default function InventoryManagement() {
 
       const tag = selectedModel ? `${selectedModel} (Tier ${tier})` : `Tier ${tier}`;
       suggestions.push(
-        `${idx + 1}. Forecast production ${forecastLabel} (delivery ETA ${deliveryLabel}) → order ${tag}. ${tierReason} ${modelReason}`
+        `${idx + 1}. Forecast production ${forecastLabel} (delivery ETA ${deliveryLabel}) → order ${tag}. Window ${windowLabel}. ${ordersDetail} ${tierReason} ${modelReason}`
       );
     });
 
