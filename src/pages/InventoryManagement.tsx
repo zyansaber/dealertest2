@@ -590,7 +590,7 @@ export default function InventoryManagement() {
     if (monthBuckets.length === 0) return [] as string[];
 
     const shareTargets: Record<string, number> = { A1: 0.4, "A1+": 0.3, A2: 0.2, B1: 0.1 };
-    const rollingWindowDays = 60;
+    const rollingWindowDays = 90;
     const capacityBaseline = (() => {
       const { maxCapacity, minVanVolume } = yardCapacityStats;
       if (maxCapacity && minVanVolume) return Math.round((maxCapacity + minVanVolume) / 2);
@@ -599,7 +599,7 @@ export default function InventoryManagement() {
       return currentStockTotal;
     })();
     const tierGoals: Record<string, number> = Object.fromEntries(
-      Object.entries(shareTargets).map(([tier, pct]) => [tier, Math.max(1, Math.round(capacityBaseline * pct))])
+      Object.entries(shareTargets).map(([tier, pct]) => [tier, Math.max(1, Math.floor(capacityBaseline * pct))])
     );
 
     const horizonStart = monthBuckets[0]?.start;
@@ -676,7 +676,7 @@ export default function InventoryManagement() {
       if (candidates.length === 0) return null;
 
       const tierGoal = tierGoals[tier];
-      const perModelTarget = Math.max(1, Math.round(tierGoal / candidates.length));
+      const perModelTarget = Math.max(1, Math.floor(tierGoal / candidates.length));
 
       const scored = candidates
         .map((model) => {
@@ -707,7 +707,7 @@ export default function InventoryManagement() {
         plannedOrders.push({ tier, model: modelPick.model, forecastDate: slot.forecastDate });
       }
 
-      const perModelTarget = Math.max(1, Math.round((tierGoals[tier] || 1) / (tierModels[tier]?.length || 1)));
+      const perModelTarget = Math.max(1, Math.floor((tierGoals[tier] || 1) / (tierModels[tier]?.length || 1)));
       const modelDeficit = modelPick ? Math.max(perModelTarget - modelPick.tally, 0) : 0;
 
       const forecastLabel = slot.forecastDate
