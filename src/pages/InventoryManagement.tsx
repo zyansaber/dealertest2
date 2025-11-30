@@ -1233,7 +1233,7 @@ export default function InventoryManagement() {
                       colSpan={6}
                       className="text-right text-[11px] font-semibold uppercase tracking-wide text-amber-800"
                     >
-                      Show markers
+                      Shows
                     </TableHead>
                     {monthBuckets.map((bucket, idx) => (
                       <TableHead
@@ -1272,19 +1272,14 @@ export default function InventoryManagement() {
                     {monthBuckets.map((bucket, idx) => (
                       <TableHead
                         key={bucket.label}
-                        className={`w-[90px] text-right text-[13px] uppercase tracking-wide text-slate-700 ${idx === 0 ? "border-l border-slate-200" : ""}`}
+                        className={`w-[78px] text-right text-xs uppercase tracking-wide text-slate-600 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                       >
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-xs font-semibold text-slate-800">{bucket.label}</span>
-                          {monthShowMarkers[idx].length > 0 && (
-                            <div className="flex flex-wrap justify-end gap-1">
-                              {monthShowMarkers[idx].map((marker) => (
-                                <span
-                                  key={`${bucket.label}-${marker}`}
-                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200 shadow-sm"
-                                >
-                                  {toSuperscript(marker)}
-                                </span>
+                        <span className="inline-flex items-center gap-1">
+                          {bucket.label}
+                          {monthShowMarkers[idx] && (
+                            <span className="text-amber-700 font-semibold">{monthShowMarkers[idx]}</span>
+                          )}
+                        </span>
                               ))}
                             </div>
                           )}
