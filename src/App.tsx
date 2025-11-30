@@ -18,6 +18,7 @@ import ProtectedMainRoute from "./components/ProtectedMainRoute";
 import ProtectedDealerRoute from "./components/ProtectedDealerRoute";
 import ProtectedDealerGroupRoute from "./components/ProtectedDealerGroupRoute";
 import FinanceReport from "./pages/FinanceReport";
+import ShowDealerships from "./pages/ShowDealerships";
 
 // Dealer Group pages
 import DealerGroupPortal from "./pages/DealerGroupPortal";
@@ -49,6 +50,16 @@ const App = () => (
               <Index />
             </ProtectedMainRoute>
           } />
+
+          {/* Show dealership mapping page */}
+          <Route
+            path="/show-dealerships"
+            element={
+              <ProtectedMainRoute>
+                <ShowDealerships />
+              </ProtectedMainRoute>
+            }
+          />
           
           {/* 管理员相关路由 */}
           <Route path="/admin-login" element={<AdminLogin />} />
