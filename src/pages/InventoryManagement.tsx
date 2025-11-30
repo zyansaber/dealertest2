@@ -275,7 +275,7 @@ export default function InventoryManagement() {
     return map;
   }, [schedule]);
 
-  const planningHorizonMonths = 12;
+  const planningHorizonMonths = 8;
 
   const monthBuckets = useMemo<MonthBucket[]>(() => {
     return Array.from({ length: planningHorizonMonths }, (_, i) => {
@@ -460,10 +460,10 @@ export default function InventoryManagement() {
   }, [dealerShows, monthBuckets]);
 
   const monthShowMarkers = useMemo(() => {
-    const markers = Array(monthBuckets.length).fill("");
+    const markers = Array.from({ length: monthBuckets.length }, () => [] as number[]);
     showFootnotes.forEach(({ index, monthIndex }) => {
       if (monthIndex >= 0 && monthIndex < markers.length) {
-        markers[monthIndex] += toSuperscript(index);
+        markers[monthIndex].push(index);
       }
     });
     return markers;
@@ -1191,14 +1191,22 @@ export default function InventoryManagement() {
             </CardHeader>
             <CardContent className="overflow-auto">
               {showFootnotes.length > 0 && (
-                <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                  {showFootnotes.map(({ index, show }) => (
-                    <span key={`${show.id}-${index}`} className="inline-flex items-center gap-1">
-                      <span className="font-semibold text-amber-700">{toSuperscript(index)}</span>
-                      <span className="font-semibold text-slate-800">{show.name || "Show"}</span>
-                      <span className="text-slate-500">({formatShowDate(show.startDate)})</span>
-                    </span>
-                  ))}
+                <div className="mb-4 space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Show activations</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {showFootnotes.map(({ index, show }) => (
+                      <span
+                        key={`${show.id}-${index}`}
+                        className="inline-flex items-center gap-2 rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-900 shadow-sm"
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-600 text-xs font-bold text-white shadow-inner">
+                          {index}
+                        </span>
+                        <span className="font-semibold text-amber-900">{show.name || "Show"}</span>
+                        <span className="text-xs text-amber-800">{formatShowDate(show.startDate)}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               <Table className="min-w-[1150px] text-sm">
@@ -1232,14 +1240,23 @@ export default function InventoryManagement() {
                     {monthBuckets.map((bucket, idx) => (
                       <TableHead
                         key={bucket.label}
-                        className={`w-[78px] text-right text-xs uppercase tracking-wide text-slate-600 ${idx === 0 ? "border-l border-slate-200" : ""}`}
+                        className={`w-[90px] text-right text-[13px] uppercase tracking-wide text-slate-700 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                       >
-                        <span className="inline-flex items-center gap-1">
-                          {bucket.label}
-                          {monthShowMarkers[idx] && (
-                            <span className="text-amber-700 font-semibold">{monthShowMarkers[idx]}</span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-xs font-semibold text-slate-800">{bucket.label}</span>
+                          {monthShowMarkers[idx].length > 0 && (
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {monthShowMarkers[idx].map((marker) => (
+                                <span
+                                  key={`${bucket.label}-${marker}`}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200 shadow-sm"
+                                >
+                                  {toSuperscript(marker)}
+                                </span>
+                              ))}
+                            </div>
                           )}
-                        </span>
+                        </div>
                       </TableHead>
                     ))}
                     <TableHead className="w-[90px] text-right text-xs uppercase tracking-wide text-slate-700">Total</TableHead>
