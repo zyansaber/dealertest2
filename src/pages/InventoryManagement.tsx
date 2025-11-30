@@ -139,26 +139,6 @@ const addDays = (date: Date, count: number) => {
   return d;
 };
 
-const superscriptDigits: Record<string, string> = {
-  "0": "⁰",
-  "1": "¹",
-  "2": "²",
-  "3": "³",
-  "4": "⁴",
-  "5": "⁵",
-  "6": "⁶",
-  "7": "⁷",
-  "8": "⁸",
-  "9": "⁹",
-};
-
-const toSuperscript = (value: number) =>
-  value
-    .toString()
-    .split("")
-    .map((ch) => superscriptDigits[ch] || ch)
-    .join("");
-
 const startOfMonth = (date: Date) => {
   const d = new Date(date);
   d.setDate(1);
@@ -1231,9 +1211,9 @@ export default function InventoryManagement() {
                   <TableRow className="border-b border-amber-200/80 bg-amber-50/60">
                     <TableHead
                       colSpan={6}
-                      className="text-right text-[11px] font-semibold uppercase tracking-wide text-amber-800"
+                      className="pl-3 text-left text-[11px] font-semibold uppercase tracking-wide text-amber-800"
                     >
-                      Shows
+                      Show markers
                     </TableHead>
                     {monthBuckets.map((bucket, idx) => (
                       <TableHead
@@ -1241,11 +1221,11 @@ export default function InventoryManagement() {
                         className={`text-right ${idx === 0 ? "border-l border-amber-200/80" : ""}`}
                       >
                         {monthShowMarkers[idx].length > 0 ? (
-                          <div className="flex flex-wrap justify-end gap-1.5">
+                          <div className="flex flex-wrap justify-end gap-2">
                             {monthShowMarkers[idx].map((marker) => (
                               <span
                                 key={`${bucket.label}-marker-${marker}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-200 text-sm font-bold text-amber-900 shadow-[0_0_0_1px_rgba(217,119,6,0.45)]"
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-200 text-base font-extrabold text-amber-900 shadow-[0_0_0_1px_rgba(217,119,6,0.45)]"
                               >
                                 {marker}
                               </span>
@@ -1272,18 +1252,9 @@ export default function InventoryManagement() {
                     {monthBuckets.map((bucket, idx) => (
                       <TableHead
                         key={bucket.label}
-                        className={`w-[78px] text-right text-xs uppercase tracking-wide text-slate-600 ${idx === 0 ? "border-l border-slate-200" : ""}`}
+                        className={`w-[90px] text-right text-[13px] uppercase tracking-wide text-slate-700 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                       >
-                        <span className="inline-flex items-center gap-1">
-                          {bucket.label}
-                          {monthShowMarkers[idx] && (
-                            <span className="text-amber-700 font-semibold">{monthShowMarkers[idx]}</span>
-                          )}
-                        </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                        <span className="block text-right text-xs font-semibold text-slate-800">{bucket.label}</span>
                       </TableHead>
                     ))}
                     <TableHead className="w-[90px] text-right text-xs uppercase tracking-wide text-slate-700">Total</TableHead>
