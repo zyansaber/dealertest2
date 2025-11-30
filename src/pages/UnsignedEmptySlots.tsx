@@ -8,8 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Sidebar from "@/components/Sidebar";
-import { subscribeToSchedule } from "@/lib/firebase";
+import { subscribeShowDealerMappings, subscribeToSchedule } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
+import { parseFlexibleDateToDate, subscribeToShows } from "@/lib/showDatabase";
+import type { ShowRecord } from "@/types/show";
+import type { ShowDealerMapping } from "@/lib/firebase";
 import * as XLSX from "xlsx";
 
 /** ---- 安全工具函数 ---- */
@@ -76,6 +79,8 @@ export default function UnsignedEmptySlots() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<"unsigned" | "empty">("unsigned");
+  const [shows, setShows] = useState<ShowRecord[]>([]);
+  const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
 
   /** 仅此页面放开过滤（允许 无Chassis / 无Customer / 包含 Finished） */
   useEffect(() => {
@@ -90,6 +95,15 @@ export default function UnsignedEmptySlots() {
     return () => { unsubSchedule?.(); };
   }, []);
 
+  useEffect(() => {
+    const unsubShows = subscribeToShows((data) => setShows(data || []));
+    const unsubMappings = subscribeShowDealerMappings((data) => setShowMappings(data || {}));
+    return () => {
+      unsubShows?.();
+      unsubMappings?.();
+    };
+  }, []);
+  
   /** 只取当前 dealer 的订单（安全 slug 化） */
   const dealerOrders = useMemo(() => {
     if (!dealerSlug) return [];
@@ -162,12 +176,40 @@ export default function UnsignedEmptySlots() {
     return fromOrder.trim().length > 0 ? fromOrder : prettifyDealerName(dealerSlug);
   }, [dealerOrders, dealerSlug]);
 
+  const dealerShowMapping = useMemo(() => {
+    return Object.values(showMappings || {}).find(
+      (item) => normalizeDealerSlug(item?.dealerSlug) === dealerSlug
+    );
+  }, [dealerSlug, showMappings]);
+
+  const dealerShows = useMemo(() => {
+    if (!dealerShowMapping) return [];
+    return shows.filter((show) => show.dealership === dealerShowMapping.dealership);
+  }, [dealerShowMapping, shows]);
+
+  const addDays = (date: Date, count: number) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + count);
+    return d;
+  };
+
+  const forecastDeliveryDate = (raw?: string) => {
+    const parsed = parseFlexibleDateToDate(raw);
+    if (!parsed) return null;
+    return addDays(parsed, 40);
+  };
+
   /** 导出 Excel */
   const exportToExcel = () => {
     if (searchFilteredOrders.length === 0) return;
     const excelData = searchFilteredOrders.map((order) => {
+      const deliveryDate = forecastDeliveryDate(order?.["Forecast Production Date"]);
+      const deliveryLabel = deliveryDate
+        ? deliveryDate.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" })
+        : "";
       const baseData = {
         "Forecast Production Date": toStr(order?.["Forecast Production Date"]),
+        "Forecast Delivery Date": deliveryLabel,
         Dealer: toStr(order?.Dealer),
       };
       if (activeTab === "unsigned") {
@@ -313,6 +355,7 @@ export default function UnsignedEmptySlots() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="font-semibold">Forecast Production Date</TableHead>
+                    <TableHead className="font-semibold">Forecast Delivery Date</TableHead>
                     <TableHead className="font-semibold">Dealer</TableHead>
                     {activeTab === "unsigned" ? (
                       <>
@@ -336,6 +379,10 @@ export default function UnsignedEmptySlots() {
                     const spr = lower(order?.["Signed Plans Received"]);
                     const orderReceived = toStr(order?.["Order Received Date"]);
                     const daysEscaped = calculateDaysEscaped(orderReceived);
+                    const deliveryDate = forecastDeliveryDate(order?.["Forecast Production Date"]);
+                    const deliveryLabel = deliveryDate
+                      ? deliveryDate.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" })
+                      : "-";
 
                     // 仅 Empty tab 判定 Red Slots
                     let emptySlotTag = "";
@@ -344,9 +391,23 @@ export default function UnsignedEmptySlots() {
                       if (wk !== null && wk < 22) emptySlotTag = "Red Slots";
                     }
 
+                    const showBadges = (() => {
+                      if (activeTab !== "empty" || !deliveryDate || dealerShows.length === 0) return [] as ShowRecord[];
+                      const matches = dealerShows.filter((show) => {
+                        const start = parseFlexibleDateToDate(show.startDate);
+                        if (!start) return false;
+                        const startMinusWeek = addDays(start, -7);
+                        return deliveryDate >= startMinusWeek && deliveryDate < start;
+                      });
+                      return matches;
+                    })();
+
+                    const highlightRow = activeTab === "empty" && showBadges.length > 0;
+
                     return (
-                      <TableRow key={key}>
+                      <TableRow key={key} className={highlightRow ? "bg-amber-50" : ""}>
                         <TableCell className="font-medium">{toStr(order?.["Forecast Production Date"]) || "-"}</TableCell>
+                        <TableCell className="font-medium">{deliveryLabel}</TableCell>
                         <TableCell className="font-medium">{toStr(order?.Dealer) || "-"}</TableCell>
 
                         {activeTab === "unsigned" ? (
@@ -370,7 +431,18 @@ export default function UnsignedEmptySlots() {
                           </>
                         ) : (
                           <TableCell className={emptySlotTag ? "text-red-600 font-semibold" : ""}>
-                            {emptySlotTag || ""}
+                            {showBadges.length > 0 ? (
+                              <div className="space-y-1">
+                                {showBadges.map((show) => (
+                                  <div key={show.id} className="text-amber-700 font-semibold">
+                                    {show.name || "Show"}
+                                  </div>
+                                ))}
+                                {emptySlotTag && <div className="text-xs text-red-600">{emptySlotTag}</div>}
+                              </div>
+                            ) : (
+                              emptySlotTag || ""
+                            )}
                           </TableCell>
                         )}
                       </TableRow>
