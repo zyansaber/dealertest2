@@ -1228,6 +1228,38 @@ export default function InventoryManagement() {
                       Inbound Schedule
                     </TableHead>
                   </TableRow>
+                  <TableRow className="border-b border-amber-200/80 bg-amber-50/60">
+                    <TableHead
+                      colSpan={6}
+                      className="text-right text-[11px] font-semibold uppercase tracking-wide text-amber-800"
+                    >
+                      Show markers
+                    </TableHead>
+                    {monthBuckets.map((bucket, idx) => (
+                      <TableHead
+                        key={`markers-${bucket.label}`}
+                        className={`text-right ${idx === 0 ? "border-l border-amber-200/80" : ""}`}
+                      >
+                        {monthShowMarkers[idx].length > 0 ? (
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            {monthShowMarkers[idx].map((marker) => (
+                              <span
+                                key={`${bucket.label}-marker-${marker}`}
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-200 text-sm font-bold text-amber-900 shadow-[0_0_0_1px_rgba(217,119,6,0.45)]"
+                              >
+                                {marker}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-amber-300">—</span>
+                        )}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+                      Total
+                    </TableHead>
+                  </TableRow>
                   <TableRow className="border-b border-slate-200">
                     <TableHead className="w-[72px] text-xs uppercase tracking-wide text-slate-600">Tier</TableHead>
                     <TableHead className="w-[140px] max-w-[140px] text-xs uppercase tracking-wide text-slate-600">Stock Model</TableHead>
