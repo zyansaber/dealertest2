@@ -18,7 +18,7 @@ import ProtectedMainRoute from "./components/ProtectedMainRoute";
 import ProtectedDealerRoute from "./components/ProtectedDealerRoute";
 import ProtectedDealerGroupRoute from "./components/ProtectedDealerGroupRoute";
 import FinanceReport from "./pages/FinanceReport";
-import ShowDealerships from "./pages/ShowDealerships";
+import ShowDealerships from "@/pages/ShowDealerships";
 
 // Dealer Group pages
 import DealerGroupPortal from "./pages/DealerGroupPortal";
