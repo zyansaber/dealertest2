@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -22,10 +24,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { subscribeAllDealerConfigs } from "@/lib/firebase";
+import {
+  dealerNameToSlug,
+  setShowDealerMapping,
+  subscribeAllDealerConfigs,
+  subscribeShowDealerMappings,
+} from "@/lib/firebase";
 import { formatShowDate, subscribeToShows } from "@/lib/showDatabase";
 import type { ShowRecord } from "@/types/show";
 import type { DealerConfigs } from "@/types/dealer";
+import type { ShowDealerMapping } from "@/lib/firebase";
 
 const ShowDealerships = () => {
   const [shows, setShows] = useState<ShowRecord[]>([]);
@@ -33,6 +41,8 @@ const ShowDealerships = () => {
   const [selectedDealerSlug, setSelectedDealerSlug] = useState<string>("");
   const [dealerConfigs, setDealerConfigs] = useState<DealerConfigs>({});
   const [loadingShows, setLoadingShows] = useState(true);
+  const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToShows((data) => {
@@ -45,6 +55,11 @@ const ShowDealerships = () => {
 
   useEffect(() => {
     const unsubscribe = subscribeAllDealerConfigs((data) => setDealerConfigs(data || {}));
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeShowDealerMappings((data) => setShowMappings(data || {}));
     return unsubscribe;
   }, []);
 
@@ -74,6 +89,28 @@ const ShowDealerships = () => {
     () => shows.filter((show) => (selectedDealership ? show.dealership === selectedDealership : true)),
     [shows, selectedDealership]
   );
+
+  const savedSlug = useMemo(() => {
+    const key = selectedDealership ? dealerNameToSlug(selectedDealership) : "";
+    return key && showMappings[key]?.dealerSlug ? showMappings[key].dealerSlug : "";
+  }, [selectedDealership, showMappings]);
+
+  const handleSaveMapping = async () => {
+    if (!selectedDealership || !selectedDealerSlug) {
+      toast.error("请选择 dealership 并匹配一个 dealer slug 后再保存。");
+      return;
+    }
+    setSaving(true);
+    try {
+      await setShowDealerMapping(selectedDealership, selectedDealerSlug);
+      toast.success("配对已写回数据库，后续页面会自动引用。");
+    } catch (error) {
+      console.error(error);
+      toast.error("保存配对失败，请稍后再试。");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
@@ -158,7 +195,7 @@ const ShowDealerships = () => {
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
-                仅用于页面内配对展示，不会写回数据库。
+                选择后点击确认可以写回数据库，后续页面会自动使用该映射。
               </p>
             </div>
 
@@ -168,7 +205,13 @@ const ShowDealerships = () => {
                 <div className="rounded-lg border bg-white p-3 text-sm text-slate-700">
                   <div className="font-medium">{selectedDealership || "未选择 dealership"}</div>
                   <div className="text-slate-600">匹配到：{selectedDealerSlug}</div>
+                  {savedSlug && (
+                    <div className="text-xs text-emerald-600">数据库记录：{savedSlug}</div>
+                  )}
                 </div>
+                <Button onClick={handleSaveMapping} disabled={saving} className="w-full">
+                  {saving ? "正在保存..." : "确认并写回数据库"}
+                </Button>
               </div>
             )}
           </CardContent>
