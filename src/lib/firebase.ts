@@ -35,6 +35,12 @@ const database = getDatabase(app);
 
 export { database };
 
+export type ShowDealerMapping = {
+  dealership: string;
+  dealerSlug: string;
+  updatedAt: string;
+};
+
 export type YardSizeRecord = {
   dealer?: string;
   dealerName?: string;
@@ -180,6 +186,38 @@ export const getPowerbiUrl = async (dealerSlug: string): Promise<string | null> 
   const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
   const snapshot = await get(urlRef);
   return snapshot.exists() ? snapshot.val() : null;
+};
+
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+export const subscribeShowDealerMappings = (
+  callback: (data: Record<string, ShowDealerMapping>) => void
+) => {
+  const mappingRef = ref(database, "showDealerMappings");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const data = snapshot.val();
+    callback((data || {}) as Record<string, ShowDealerMapping>);
+  };
+
+  onValue(mappingRef, handler);
+  return () => off(mappingRef, "value", handler);
+};
+
+export const setShowDealerMapping = async (dealership: string, dealerSlug: string) => {
+  const key = slugify(dealership || dealerSlug || "unknown-dealership");
+  const mappingRef = ref(database, `showDealerMappings/${key}`);
+  const payload: ShowDealerMapping = {
+    dealership,
+    dealerSlug,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await set(mappingRef, payload);
 };
 
 export function generateRandomCode(): string {
