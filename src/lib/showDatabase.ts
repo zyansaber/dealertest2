@@ -22,10 +22,10 @@ const ensureShowApp = () => {
 const showApp = ensureShowApp();
 const showDatabase = getDatabase(showApp);
 
-const parseFlexibleDate = (value?: string | null): string => {
-  if (!value) return "";
+export const parseFlexibleDateToDate = (value?: string | null): Date | null => {
+  if (!value) return null;
   const trimmed = value.trim();
-  if (!trimmed) return "";
+  if (!trimmed) return null;
 
   const slashMatch = trimmed.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})$/);
   if (slashMatch) {
@@ -33,9 +33,7 @@ const parseFlexibleDate = (value?: string | null): string => {
     const month = parseInt(slashMatch[2], 10) - 1;
     const year = parseInt(slashMatch[3], 10);
     const parsed = new Date(year < 100 ? 2000 + year : year, month, day);
-    return isNaN(parsed.getTime())
-      ? trimmed
-      : parsed.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" });
+    return isNaN(parsed.getTime()) ? null : parsed;
   }
 
   const hyphenMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -44,15 +42,17 @@ const parseFlexibleDate = (value?: string | null): string => {
     const month = parseInt(hyphenMatch[2], 10) - 1;
     const day = parseInt(hyphenMatch[3], 10);
     const parsed = new Date(year, month, day);
-    return isNaN(parsed.getTime())
-      ? trimmed
-      : parsed.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" });
+    return isNaN(parsed.getTime()) ? null : parsed;
   }
 
   const parsed = new Date(trimmed);
-  return isNaN(parsed.getTime())
-    ? trimmed
-    : parsed.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" });
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const parseFlexibleDate = (value?: string | null): string => {
+  const parsed = parseFlexibleDateToDate(value);
+  if (!parsed) return "";
+  return parsed.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" });
 };
 
 export const formatShowDate = (value?: string | null): string => {
