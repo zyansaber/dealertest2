@@ -14,9 +14,13 @@ import {
   subscribeToYardStock,
   subscribeToYardSizes,
   type ModelAnalysisRecord,
+  subscribeShowDealerMappings,
 } from "@/lib/firebase";
 import { normalizeDealerSlug, prettifyDealerName } from "@/lib/dealerUtils";
 import type { ScheduleItem } from "@/types";
+import { formatShowDate, parseFlexibleDateToDate, subscribeToShows } from "@/lib/showDatabase";
+import type { ShowDealerMapping } from "@/lib/firebase";
+import type { ShowRecord } from "@/types/show";
 
 type AnyRecord = Record<string, any>;
 
@@ -135,6 +139,26 @@ const addDays = (date: Date, count: number) => {
   return d;
 };
 
+const superscriptDigits: Record<string, string> = {
+  "0": "⁰",
+  "1": "¹",
+  "2": "²",
+  "3": "³",
+  "4": "⁴",
+  "5": "⁵",
+  "6": "⁶",
+  "7": "⁷",
+  "8": "⁸",
+  "9": "⁹",
+};
+
+const toSuperscript = (value: number) =>
+  value
+    .toString()
+    .split("")
+    .map((ch) => superscriptDigits[ch] || ch)
+    .join("");
+
 const startOfMonth = (date: Date) => {
   const d = new Date(date);
   d.setDate(1);
@@ -173,6 +197,9 @@ export default function InventoryManagement() {
   const [modelRangeFilter, setModelRangeFilter] = useState<string>("");
   const [modelFilter, setModelFilter] = useState<string>("");
 
+  const [shows, setShows] = useState<ShowRecord[]>([]);
+  const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
+
   const today = useMemo(() => new Date(), []);
   const currentMonthStart = useMemo(() => startOfMonth(today), [today]);
   const previousMonthStart = useMemo(() => startOfMonth(addMonths(today, -1)), [today]);
@@ -204,6 +231,14 @@ export default function InventoryManagement() {
     };
   }, [dealerSlug]);
 
+  useEffect(() => {
+    const unsubShows = subscribeToShows((data) => setShows(data || []));
+    const unsubMappings = subscribeShowDealerMappings((data) => setShowMappings(data || {}));
+    return () => {
+      unsubShows?.();
+      unsubMappings?.();
+    };
+  }, []);
 
   const analysisByModel = useMemo(() => {
     const map: Record<string, ModelAnalysisRecord> = {};
@@ -394,6 +429,46 @@ export default function InventoryManagement() {
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const sidebarOrders = useMemo(() => schedule.filter((item) => slugifyDealerName((item as any)?.Dealer) === dealerSlug), [schedule, dealerSlug]);
 
+  const dealerShowMapping = useMemo(() => {
+    return Object.values(showMappings || {}).find(
+      (item) => normalizeDealerSlug(item?.dealerSlug) === dealerSlug
+    );
+  }, [dealerSlug, showMappings]);
+
+  const dealerShows = useMemo(() => {
+    if (!dealerShowMapping) return [];
+    return shows.filter((show) => show.dealership === dealerShowMapping.dealership);
+  }, [dealerShowMapping, shows]);
+
+  const showFootnotes = useMemo(() => {
+    if (!dealerShows.length) return [] as Array<{ index: number; monthIndex: number; show: ShowRecord; startDate: Date }>;
+    const enriched = dealerShows
+      .map((show) => ({ show, startDate: parseFlexibleDateToDate(show.startDate) }))
+      .filter((entry) => entry.startDate) as Array<{ show: ShowRecord; startDate: Date }>;
+
+    const sorted = enriched.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+    const result: Array<{ index: number; monthIndex: number; show: ShowRecord; startDate: Date }> = [];
+
+    sorted.forEach((entry, idx) => {
+      const monthIndex = monthBuckets.findIndex((bucket) => entry.startDate >= bucket.start && entry.startDate < bucket.end);
+      if (monthIndex >= 0) {
+        result.push({ index: idx + 1, monthIndex, show: entry.show, startDate: entry.startDate });
+      }
+    });
+
+    return result;
+  }, [dealerShows, monthBuckets]);
+
+  const monthShowMarkers = useMemo(() => {
+    const markers = Array(monthBuckets.length).fill("");
+    showFootnotes.forEach(({ index, monthIndex }) => {
+      if (monthIndex >= 0 && monthIndex < markers.length) {
+        markers[monthIndex] += toSuperscript(index);
+      }
+    });
+    return markers;
+  }, [monthBuckets.length, showFootnotes]);
+  
   const tierColor = (tier?: string) => {
     const key = normalizeTierCode(tier);
     const palette: Record<string, { bg: string; border: string; text: string; pill: string }> = {
@@ -1115,6 +1190,17 @@ export default function InventoryManagement() {
               </div>
             </CardHeader>
             <CardContent className="overflow-auto">
+              {showFootnotes.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                  {showFootnotes.map(({ index, show }) => (
+                    <span key={`${show.id}-${index}`} className="inline-flex items-center gap-1">
+                      <span className="font-semibold text-amber-700">{toSuperscript(index)}</span>
+                      <span className="font-semibold text-slate-800">{show.name || "Show"}</span>
+                      <span className="text-slate-500">({formatShowDate(show.startDate)})</span>
+                    </span>
+                  ))}
+                </div>
+              )}
               <Table className="min-w-[1150px] text-sm">
                 <TableHeader className="bg-slate-100/80">
                   <TableRow className="border-b border-slate-200">
@@ -1148,7 +1234,12 @@ export default function InventoryManagement() {
                         key={bucket.label}
                         className={`w-[78px] text-right text-xs uppercase tracking-wide text-slate-600 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                       >
-                        {bucket.label}
+                        <span className="inline-flex items-center gap-1">
+                          {bucket.label}
+                          {monthShowMarkers[idx] && (
+                            <span className="text-amber-700 font-semibold">{monthShowMarkers[idx]}</span>
+                          )}
+                        </span>
                       </TableHead>
                     ))}
                     <TableHead className="w-[90px] text-right text-xs uppercase tracking-wide text-slate-700">Total</TableHead>
