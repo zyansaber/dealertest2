@@ -29,6 +29,7 @@ import DealerYard from "./pages/DealerYard";
 import DealerGroupYard from "./pages/DealerGroupYard";
 import AIFloatingAssistant from "./components/AIFloatingAssistant";
 import InventoryManagement from "./pages/InventoryManagement";
+import TierConfigEditor from "@/pages/TierConfigEditor";
 
 const queryClient = new QueryClient();
 
@@ -57,6 +58,15 @@ const App = () => (
             element={
               <ProtectedMainRoute>
                 <ShowDealerships />
+              </ProtectedMainRoute>
+            }
+          />
+          
+          <Route
+            path="/tier-config"
+            element={
+              <ProtectedMainRoute>
+                <TierConfigEditor />
               </ProtectedMainRoute>
             }
           />
