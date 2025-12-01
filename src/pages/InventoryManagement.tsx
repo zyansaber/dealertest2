@@ -637,9 +637,7 @@ export default function InventoryManagement() {
       .filter((item) => {
         const hasDealer = toStr((item as any)?.Dealer).trim() !== "";
         const lacksChassis = !hasKey(item, "Chassis");
-        const customer = toStr((item as any)?.Customer);
-        const isStock = customer ? isStockCustomer(customer) : false;
-        return hasDealer && lacksChassis && isStock;
+        return hasDealer && lacksChassis;
       })
       .map((item) => {
         const forecastRaw =
@@ -732,7 +730,7 @@ export default function InventoryManagement() {
     };
 
     const countModelInWindow = (model: string, referenceDate: Date) => {
-      const windowStart = addDays(referenceDate, -rollingWindowDays);
+      const windowStart = addDays(referenceDate, -rollingWindowDays)
       return plannedOrders.filter(
         (order) =>
           order.model.toLowerCase() === model.toLowerCase() &&
