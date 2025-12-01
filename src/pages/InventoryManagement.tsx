@@ -870,12 +870,8 @@ export default function InventoryManagement() {
             <CardHeader className="relative pb-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <p className="text-xs uppercase tracking-[0.25em] text-slate-200/80">Yard Capacity Pulse</p>
                   <CardTitle className="text-2xl font-semibold text-white">{yardCapacityStats.label}</CardTitle>
-                  <p className="text-sm text-slate-200/80">Live snapshot from yardsize with current yard stock totals.</p>
                 </div>
-                <div className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-50 shadow-lg">
-                  Updated live
                 </div>
               </div>
             </CardHeader>
