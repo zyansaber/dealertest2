@@ -19,7 +19,7 @@ import type {
   NewSaleRecord,
   StockToCustomerRecord,
 } from "@/types";
-import type { TierConfig } from "@/types/tierConfig";
+import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig } from "@/types/tierConfig";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBcczqGj5X1_w9aCX1lOK4-kgz49Oi03Bg",
@@ -190,23 +190,103 @@ export const getPowerbiUrl = async (dealerSlug: string): Promise<string | null> 
 };
 
 /** -------------------- Tier Config -------------------- */
+const withTimestamp = <T extends Record<string, any>>(payload: T) => ({ ...payload, updatedAt: new Date().toISOString() });
+
 export const subscribeTierConfig = (callback: (data: TierConfig | null) => void) => {
-  const configRef = ref(database, "tierConfig");
-  const handler = (snapshot: DataSnapshot) => {
-    const data = snapshot.exists() ? (snapshot.val() as TierConfig) : null;
+  const settingsRef = ref(database, "tierConfig/settings");
+  const legacyRef = ref(database, "tierConfig");
+
+  let hasEmitted = false;
+
+  const emit = (data: TierConfig | null) => {
     callback(data);
+    hasEmitted = true;
   };
 
-  onValue(configRef, handler);
-  return () => off(configRef, "value", handler);
+  const settingsHandler = (snapshot: DataSnapshot) => {
+    if (snapshot.exists()) {
+      emit(snapshot.val() as TierConfig);
+    } else if (!hasEmitted) {
+      // Fallback to legacy path once if settings are not present yet
+      get(legacyRef).then((legacySnap) => {
+        if (legacySnap.exists()) {
+          emit(legacySnap.val() as TierConfig);
+        } else {
+          emit(null);
+        }
+      });
+    }
+  };
+
+  onValue(settingsRef, settingsHandler);
+  return () => off(settingsRef, "value", settingsHandler);
 };
 
 export const setTierConfig = async (config: TierConfig) => {
-  const configRef = ref(database, "tierConfig");
-  await set(configRef, {
-    ...config,
-    updatedAt: new Date().toISOString(),
-  });
+  const settingsRef = ref(database, "tierConfig/settings");
+  const existingSnap = await get(settingsRef);
+  const existing = existingSnap.exists() ? (existingSnap.val() as TierConfig) : {};
+
+  await set(settingsRef, withTimestamp({ ...existing, ...config }));
+};
+
+export const subscribeDefaultTierLayout = (callback: (layout: DealerTierLayout | null) => void) => {
+  const defaultRef = ref(database, "tierConfig/defaultLayout");
+  const handler = (snapshot: DataSnapshot) => {
+    callback(snapshot.exists() ? (snapshot.val() as DealerTierLayout) : null);
+  };
+  onValue(defaultRef, handler);
+  return () => off(defaultRef, "value", handler);
+};
+
+export const subscribeDealerTierLayout = (
+  dealerSlug: string,
+  callback: (data: DealerLayoutSnapshot) => void
+) => {
+  const dealerRef = ref(database, `tierConfig/dealerLayouts/${dealerSlug}`);
+  const defaultRef = ref(database, "tierConfig/defaultLayout");
+
+  let dealerLayout: DealerTierLayout | null = null;
+  let defaultLayout: DealerTierLayout | null = null;
+
+  const emit = () => {
+    if (!dealerSlug) return;
+    const layout = dealerLayout || defaultLayout || null;
+    const source: DealerLayoutSnapshot["source"] = dealerLayout
+      ? "dealer"
+      : defaultLayout
+        ? "default"
+        : "none";
+    callback({ layout, defaultLayout, source });
+  };
+
+  const dealerHandler = (snapshot: DataSnapshot) => {
+    dealerLayout = snapshot.exists() ? (snapshot.val() as DealerTierLayout) : null;
+    emit();
+  };
+
+  const defaultHandler = (snapshot: DataSnapshot) => {
+    defaultLayout = snapshot.exists() ? (snapshot.val() as DealerTierLayout) : null;
+    emit();
+  };
+
+  onValue(dealerRef, dealerHandler);
+  onValue(defaultRef, defaultHandler);
+  return () => {
+    off(dealerRef, "value", dealerHandler);
+    off(defaultRef, "value", defaultHandler);
+  };
+};
+
+export const setDealerTierLayout = async (dealerSlug: string, layout: DealerTierLayout) => {
+  if (!dealerSlug) return;
+  const dealerRef = ref(database, `tierConfig/dealerLayouts/${dealerSlug}`);
+  await set(dealerRef, withTimestamp({ ...layout, slug: dealerSlug }));
+};
+
+export const setDefaultTierLayout = async (layout: DealerTierLayout) => {
+  const defaultRef = ref(database, "tierConfig/defaultLayout");
+  await set(defaultRef, withTimestamp(layout));
 };
 
 const slugify = (value: string) =>
