@@ -951,88 +951,6 @@ export default function InventoryManagement() {
             </CardContent>
           </Card>
 
-          {prioritizedTierModels.length > 0 && (
-            <Card className="shadow-sm border-slate-200">
-              <CardHeader className="border-b border-slate-200 pb-4">
-                <CardTitle className="text-lg font-semibold text-slate-900">Priority Inventory</CardTitle>
-                <p className="text-sm text-slate-600">
-                  Tiers A1, A1+, A2, and B1 appear together so the core range, flagship showcase, supporting structures, and niche
-                  bets stay aligned with strategy.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {prioritizedTierModels.map(({ tier, models }) => {
-                  const colors = tierColor(tier);
-                  const tierMeta = tierTargets[tier];
-                  return (
-                    <div
-                      key={tier}
-                      className={`rounded-2xl border ${colors.border} bg-white shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition hover:shadow-[0_6px_24px_rgba(15,23,42,0.08)]`}
-                    >
-                      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>Tier {tier}</span>
-                          {tierMeta && (
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tierMeta.label}</span>
-                          )}
-                        </div>
-                        {tierMeta?.role && <span className="text-sm text-slate-600">{tierMeta.role}</span>}
-                      </div>
-
-                      <div className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {models.map((entry) => {
-                            const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
-                            const key = `${tier}-${modelLabel}`;
-                            const isOpen = expandedModel === key;
-                            return (
-                              <div key={key} className="min-w-[180px]">
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedModel(isOpen ? null : key)}
-                                  className={`group inline-flex w-full items-center justify-between gap-2 rounded-full border ${colors.border} bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300`}
-                                >
-                                  <span className="truncate">{modelLabel}</span>
-                                  {isOpen ? (
-                                    <ChevronUp className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
-                                  ) : (
-                                    <ChevronDown className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
-                                  )}
-                                </button>
-                                {isOpen && (
-                                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 shadow-inner">
-                                    {entry.function_layout && (
-                                      <div className="mb-2">
-                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Functional Layout</div>
-                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.function_layout}</p>
-                                      </div>
-                                    )}
-                                    {entry.key_strengths && (
-                                      <div className="mb-2">
-                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Key Strengths</div>
-                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.key_strengths}</p>
-                                      </div>
-                                    )}
-                                    {entry.strategic_role && (
-                                      <div>
-                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Strategic Role</div>
-                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.strategic_role}</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          )}
-
           <Card className="shadow-sm border-slate-200">
             <CardHeader className="border-b border-slate-200 pb-4">
               <CardTitle className="text-lg font-semibold text-slate-900">Restock Guidance</CardTitle>
@@ -1272,47 +1190,128 @@ export default function InventoryManagement() {
                         </TableCell>
                       </TableRow>
                       {filteredRows.map((row, idx) => {
-                      const colors = tierColor(row.tier);
-                      const inboundTotal = row.incoming.reduce((sum, v) => sum + (v || 0), 0);
-                      return (
-                        <TableRow
-                          key={row.model}
-                          className={`border-b border-slate-200/70 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"} hover:bg-slate-50 ${colors.bg}`}
-                        >
-                          <TableCell className="align-middle">
-                            {row.tier ? (
-                              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${colors.pill}`}>{row.tier}</span>
-                            ) : (
-                              <span className="text-xs text-slate-500">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className={`max-w-[140px] whitespace-normal font-semibold leading-tight text-slate-900 ${colors.text}`}>
-                            {row.model}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">
-                            {formatStandardPrice(row.standardPrice)}
-                          </TableCell>
-                          <TableCell className="border-l border-slate-200 text-right font-semibold text-slate-900 tabular-nums">{row.currentStock}</TableCell>
-                          <TableCell className="text-right font-semibold text-red-600 tabular-nums">{row.recentHandover}</TableCell>
-                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.recentPgi}</TableCell>
-                          {monthBuckets.map((_, monthIdx) => (
-                            <TableCell
-                              key={`${row.model}-${monthIdx}`}
-                              className={`text-right font-medium text-slate-800 tabular-nums ${monthIdx === 0 ? "border-l border-slate-200" : ""}`}
-                            >
-                              {row.incoming[monthIdx] ?? 0}
+                        const colors = tierColor(row.tier);
+                        const inboundTotal = row.incoming.reduce((sum, v) => sum + (v || 0), 0);
+                        return (
+                          <TableRow
+                            key={row.model}
+                            className={`border-b border-slate-200/70 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"} hover:bg-slate-50 ${colors.bg}`}
+                          >
+                            <TableCell className="align-middle">
+                              {row.tier ? (
+                                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${colors.pill}`}>{row.tier}</span>
+                              ) : (
+                                <span className="text-xs text-slate-500">—</span>
+                              )}
                             </TableCell>
-                          ))}
-                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{inboundTotal}</TableCell>
-                        </TableRow>
-                      );
-                    })}
+                            <TableCell className={`max-w-[140px] whitespace-normal font-semibold leading-tight text-slate-900 ${colors.text}`}>
+                              {row.model}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold text-slate-900 tabular-nums">
+                              {formatStandardPrice(row.standardPrice)}
+                            </TableCell>
+                            <TableCell className="border-l border-slate-200 text-right font-semibold text-slate-900 tabular-nums">{row.currentStock}</TableCell>
+                            <TableCell className="text-right font-semibold text-red-600 tabular-nums">{row.recentHandover}</TableCell>
+                            <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.recentPgi}</TableCell>
+                            {monthBuckets.map((_, monthIdx) => (
+                              <TableCell
+                                key={`${row.model}-${monthIdx}`}
+                                className={`text-right font-medium text-slate-800 tabular-nums ${monthIdx === 0 ? "border-l border-slate-200" : ""}`}
+                              >
+                                {row.incoming[monthIdx] ?? 0}
+                              </TableCell>
+                            ))}
+                            <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{inboundTotal}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </>
                   )}
                 </TableBody>
               </Table>
             </CardContent>
-          </Card>
+            </Card>
+            {prioritizedTierModels.length > 0 && (
+              <Card className="shadow-sm border-slate-200">
+              <CardHeader className="border-b border-slate-200 pb-4">
+                <CardTitle className="text-lg font-semibold text-slate-900">Priority Inventory</CardTitle>
+                <p className="text-sm text-slate-600">
+                  Tiers A1, A1+, A2, and B1 appear together so the core range, flagship showcase, supporting structures, and niche
+                  bets stay aligned with strategy.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {prioritizedTierModels.map(({ tier, models }) => {
+                  const colors = tierColor(tier);
+                  const tierMeta = tierTargets[tier];
+                  return (
+                    <div
+                      key={tier}
+                      className={`rounded-2xl border ${colors.border} bg-white shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition hover:shadow-[0_6px_24px_rgba(15,23,42,0.08)]`}
+                    >
+                      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>Tier {tier}</span>
+                          {tierMeta && (
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tierMeta.label}</span>
+                          )}
+                        </div>
+                        {tierMeta?.role && <span className="text-sm text-slate-600">{tierMeta.role}</span>}
+                      </div>
+
+                      <div className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          {models.map((entry) => {
+                            const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
+                            const key = `${tier}-${modelLabel}`;
+                            const isOpen = expandedModel === key;
+                            return (
+                              <div key={key} className="min-w-[180px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedModel(isOpen ? null : key)}
+                                  className={`group inline-flex w-full items-center justify-between gap-2 rounded-full border ${colors.border} bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300`}
+                                >
+                                  <span className="truncate">{modelLabel}</span>
+                                  {isOpen ? (
+                                    <ChevronUp className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
+                                  )}
+                                </button>
+                                {isOpen && (
+                                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 shadow-inner">
+                                    {entry.function_layout && (
+                                      <div className="mb-2">
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Functional Layout</div>
+                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.function_layout}</p>
+                                      </div>
+                                    )}
+                                    {entry.key_strengths && (
+                                      <div className="mb-2">
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Key Strengths</div>
+                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.key_strengths}</p>
+                                      </div>
+                                    )}
+                                    {entry.strategic_role && (
+                                      <div>
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Strategic Role</div>
+                                        <p className="mt-1 leading-relaxed text-slate-800">{entry.strategic_role}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
