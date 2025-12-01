@@ -570,7 +570,6 @@ export default function TierConfigEditor() {
                         {option.label || option.slug}
                       </SelectItem>
                     ))}
-                    ))}
                   </SelectContent>
                 </Select>
               </div>
