@@ -7,12 +7,18 @@ import {
   setTierConfig,
   subscribeToYardSizes,
   dealerNameToSlug,
+  subscribeDealerTierLayout,
+  setDealerTierLayout,
+  setDefaultTierLayout,
+  subscribeToModelAnalysis,
 } from "@/lib/firebase";
-import type { TierConfig, TierTarget } from "@/types/tierConfig";
-import { defaultShareTargets, defaultTierTargets } from "@/config/tierDefaults";
-import type { YardSizeRecord } from "@/lib/firebase";
+import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig, TierTarget } from "@/types/tierConfig";
+import { defaultDealerTierLayout, defaultShareTargets, defaultTierTargets } from "@/config/tierDefaults";
+import type { YardSizeRecord, ModelAnalysisRecord } from "@/lib/firebase";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 
 const toNumber = (value: string) => {
   const num = Number(value);
@@ -39,6 +45,13 @@ export default function TierConfigEditor() {
   const [message, setMessage] = useState<string | null>(null);
   const [yardSizes, setYardSizes] = useState<Record<string, YardSizeRecord>>({});
   const [selectedDealerSlug, setSelectedDealerSlug] = useState<string>("");
+  const [dealerLayout, setDealerLayout] = useState<DealerTierLayout>(defaultDealerTierLayout);
+  const [defaultLayout, setDefaultLayout] = useState<DealerTierLayout>(defaultDealerTierLayout);
+  const [layoutSource, setLayoutSource] = useState<DealerLayoutSnapshot["source"]>("default");
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutMessage, setLayoutMessage] = useState<string | null>(null);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [tierModelInputs, setTierModelInputs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const unsub = subscribeTierConfig((data) => {
@@ -49,6 +62,39 @@ export default function TierConfigEditor() {
 
   useEffect(() => {
     const unsub = subscribeToYardSizes((data) => setYardSizes(data || {}));
+    return () => unsub?.();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedDealerSlug) return;
+    const unsub = subscribeDealerTierLayout(selectedDealerSlug, ({ layout, defaultLayout, source }) => {
+      setDealerLayout(layout || defaultLayout || defaultDealerTierLayout);
+      setDefaultLayout(defaultLayout || defaultDealerTierLayout);
+      setLayoutSource(source);
+    });
+    return () => unsub?.();
+  }, [selectedDealerSlug]);
+
+  useEffect(() => {
+    const unsub = subscribeToModelAnalysis((data) => {
+      const list: string[] = [];
+      const register = (value?: string) => {
+        const label = (value || "").trim();
+        if (label) list.push(label);
+      };
+
+      if (Array.isArray(data)) {
+        (data as ModelAnalysisRecord[]).forEach((item) => register((item as any)?.model || (item as any)?.Model));
+      } else {
+        Object.entries(data || {}).forEach(([key, value]) => {
+          register(key);
+          register((value as any)?.model || (value as any)?.Model);
+        });
+      }
+
+      const unique = Array.from(new Set(list.map((item) => item.trim()))).sort((a, b) => a.localeCompare(b));
+      setModelOptions(unique);
+    });
     return () => unsub?.();
   }, []);
 
@@ -177,6 +223,121 @@ export default function TierConfigEditor() {
     }
   };
 
+  const normalizeLayout = (layout: DealerTierLayout | null): DealerTierLayout => {
+    const tiers = (layout?.tiers?.length ? layout.tiers : defaultDealerTierLayout.tiers).map((tier, idx) => {
+      const models = Array.from(new Set((tier.models || []).map((m) => m.trim()).filter(Boolean)));
+      const sortOrder = Number.isFinite(tier.sortOrder) ? Number(tier.sortOrder) : idx + 1;
+      const code = tier.code?.trim() || `T${idx + 1}`;
+      const name = tier.name?.trim() || `Tier ${code}`;
+      return { ...tier, code, name, sortOrder, models };
+    });
+
+    return { ...(layout || {}), tiers } as DealerTierLayout;
+  };
+
+  const handleAddTier = () => {
+    setDealerLayout((prev) => {
+      const base = normalizeLayout(prev);
+      const nextIndex = (base.tiers?.length || 0) + 1;
+      const tiers = [...(base.tiers || [])];
+      tiers.push({ code: `T${nextIndex}`, name: `Tier ${nextIndex}`, description: "", models: [], sortOrder: nextIndex });
+      return { ...base, tiers } as DealerTierLayout;
+    });
+  };
+
+  const handleRemoveTier = (index: number) => {
+    setDealerLayout((prev) => {
+      const base = normalizeLayout(prev);
+      const tiers = [...(base.tiers || [])];
+      tiers.splice(index, 1);
+      return { ...base, tiers } as DealerTierLayout;
+    });
+  };
+
+  const handleTierFieldChange = (index: number, field: keyof DealerTierLayout["tiers"][number], value: string) => {
+    setDealerLayout((prev) => {
+      const base = normalizeLayout(prev);
+      const tiers = [...(base.tiers || [])];
+      const current = tiers[index];
+      if (!current) return base;
+      const next: DealerTierLayout["tiers"][number] = { ...current };
+      if (field === "sortOrder") {
+        next.sortOrder = Number(value) || 0;
+      } else if (field === "models") {
+        next.models = value
+          .split(",")
+          .map((m) => m.trim())
+          .filter(Boolean);
+      } else if (field === "description") {
+        next.description = value;
+      } else if (field === "name") {
+        next.name = value;
+      } else {
+        next.code = value;
+      }
+      tiers[index] = next;
+      return { ...base, tiers } as DealerTierLayout;
+    });
+  };
+
+  const handleRemoveModel = (index: number, model: string) => {
+    setDealerLayout((prev) => {
+      const base = normalizeLayout(prev);
+      const tiers = [...(base.tiers || [])];
+      const current = tiers[index];
+      if (!current) return base;
+      const models = (current.models || []).filter((m) => m !== model);
+      tiers[index] = { ...current, models };
+      return { ...base, tiers } as DealerTierLayout;
+    });
+  };
+
+  const handleAddModel = (index: number, model: string) => {
+    const trimmed = model.trim();
+    if (!trimmed) return;
+    setDealerLayout((prev) => {
+      const base = normalizeLayout(prev);
+      const tiers = [...(base.tiers || [])];
+      const current = tiers[index];
+      if (!current) return base;
+      const models = Array.from(new Set([...(current.models || []), trimmed]));
+      tiers[index] = { ...current, models };
+      return { ...base, tiers } as DealerTierLayout;
+    });
+    setTierModelInputs((prev) => ({ ...prev, [index]: "" }));
+  };
+
+  const handleCopyDefault = () => setDealerLayout(defaultLayout || defaultDealerTierLayout);
+
+  const handleLayoutSave = async () => {
+    if (!selectedDealerSlug) return;
+    setLayoutSaving(true);
+    setLayoutMessage(null);
+    try {
+      const payload = normalizeLayout(dealerLayout);
+      await setDealerTierLayout(selectedDealerSlug, payload);
+      setLayoutMessage("Saved dealer-specific tier layout.");
+    } catch (err) {
+      setLayoutMessage(`Save failed: ${(err as Error)?.message || "Unknown error"}`);
+    } finally {
+      setLayoutSaving(false);
+    }
+  };
+
+  const handleDefaultLayoutSave = async () => {
+    setLayoutSaving(true);
+    setLayoutMessage(null);
+    try {
+      const payload = normalizeLayout(dealerLayout);
+      await setDefaultTierLayout(payload);
+      setLayoutMessage("Saved as the default tier layout template.");
+    } catch (err) {
+      setLayoutMessage(`Save failed: ${(err as Error)?.message || "Unknown error"}`);
+    } finally {
+      setLayoutSaving(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
@@ -251,6 +412,139 @@ export default function TierConfigEditor() {
           </CardContent>
         </Card>
 
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="border-b border-slate-200">
+            <CardTitle className="text-lg font-semibold text-slate-900">Dealer tier layout</CardTitle>
+            <p className="text-sm text-slate-600">
+              Assign specific models into each tier for the selected dealer. Save to push directly to Firebase; defaults stay
+              available to reuse.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
+              <Button onClick={handleLayoutSave} disabled={!selectedDealerSlug || layoutSaving}>
+                {layoutSaving ? "Saving..." : "Save dealer layout"}
+              </Button>
+              <Button variant="outline" onClick={handleCopyDefault} disabled={layoutSaving}>
+                Use default template
+              </Button>
+              <Button variant="ghost" onClick={handleDefaultLayoutSave} disabled={layoutSaving}>
+                Save as default template
+              </Button>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Source: {layoutSource}
+              </span>
+              {layoutMessage && <span className="text-xs text-slate-700">{layoutMessage}</span>}
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {normalizeLayout(dealerLayout).tiers.map((tier, index) => (
+                <div key={`${tier.code}-${index}`} className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <span>Tier {tier.code}</span>
+                        <Badge variant="secondary">Sort {tier.sortOrder ?? index + 1}</Badge>
+                      </div>
+                      <p className="text-xs text-slate-600">Customize label, description, order, and model assignments.</p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => handleRemoveTier(index)}>
+                      Remove
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1 text-sm text-slate-700">
+                      <span className="text-xs text-slate-500">Tier code</span>
+                      <Input value={tier.code} onChange={(e) => handleTierFieldChange(index, "code", e.target.value)} />
+                    </label>
+                    <label className="space-y-1 text-sm text-slate-700">
+                      <span className="text-xs text-slate-500">Display name</span>
+                      <Input value={tier.name} onChange={(e) => handleTierFieldChange(index, "name", e.target.value)} />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1 text-sm text-slate-700">
+                      <span className="text-xs text-slate-500">Description</span>
+                      <Textarea
+                        value={tier.description || ""}
+                        onChange={(e) => handleTierFieldChange(index, "description", e.target.value)}
+                        rows={3}
+                      />
+                    </label>
+                    <label className="space-y-1 text-sm text-slate-700">
+                      <span className="text-xs text-slate-500">Sort order</span>
+                      <Input
+                        type="number"
+                        value={tier.sortOrder ?? index + 1}
+                        onChange={(e) => handleTierFieldChange(index, "sortOrder", e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {(tier.models || []).map((model) => (
+                        <Badge
+                          key={`${tier.code}-${model}`}
+                          variant="outline"
+                          className="gap-2 rounded-full bg-slate-50 px-3 py-1 text-slate-800"
+                        >
+                          <span>{model}</span>
+                          <button
+                            type="button"
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                            onClick={() => handleRemoveModel(index, model)}
+                          >
+                            ×
+                          </button>
+                        </Badge>
+                      ))}
+                      {(tier.models || []).length === 0 && (
+                        <span className="text-xs text-slate-500">No models assigned yet.</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        list="model-options"
+                        placeholder="Add model"
+                        value={tierModelInputs[index] || ""}
+                        onChange={(e) => setTierModelInputs((prev) => ({ ...prev, [index]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddModel(index, tierModelInputs[index] || "");
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={() => handleAddModel(index, tierModelInputs[index] || "")}
+                        disabled={layoutSaving}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" onClick={handleAddTier} disabled={layoutSaving}>
+                Add another tier
+              </Button>
+            </div>
+
+            <datalist id="model-options">
+              {modelOptions.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
+          </CardContent>
+        </Card>
+
         <div className="flex items-center gap-3">
           <Button onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save to Firebase"}
@@ -275,6 +569,7 @@ export default function TierConfigEditor() {
                       <SelectItem key={option.slug} value={option.slug}>
                         {option.label || option.slug}
                       </SelectItem>
+                    ))}
                     ))}
                   </SelectContent>
                 </Select>
