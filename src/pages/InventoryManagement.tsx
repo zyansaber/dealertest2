@@ -866,7 +866,7 @@ export default function InventoryManagement() {
             <CardHeader className="relative pb-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <CardTitle className="text-2xl font-semibold text-slate-900">Current stock level</CardTitle>
+                  <CardTitle className="text-3xl font-semibold text-slate-900">{dealerDisplayName}</CardTitle>
                   <p className="text-sm text-slate-600">{yardCapacityStats.label}</p>
                 </div>
               </div>
