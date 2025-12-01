@@ -1,3 +1,6 @@
++313
+-0
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -133,10 +136,41 @@ export default function TierConfigEditor() {
     setSaving(true);
     setMessage(null);
     try {
-      const payload: TierConfig = {
-        shareTargets: config.shareTargets,
-        tierTargets: config.tierTargets,
-      };
+      const cleanedShareTargets = Object.fromEntries(
+        Object.entries(config.shareTargets || {}).filter(([, value]) => Number.isFinite(value))
+      );
+
+      const cleanedTierTargets = Object.fromEntries(
+        Object.entries(config.tierTargets || {})
+          .map(([tier, target]) => {
+            const merged = { ...defaultTierTargets[tier], ...target } as TierTarget;
+            const minimum = Number.isFinite(merged.minimum) ? merged.minimum : undefined;
+
+            if (minimum == null) return null;
+
+            const payload: TierTarget = {
+              label: merged.label,
+              role: merged.role,
+              minimum,
+            };
+
+            if (Number.isFinite(merged.ceiling)) {
+              payload.ceiling = merged.ceiling;
+            }
+
+            return [tier, payload];
+          })
+          .filter(Boolean) as Array<[string, TierTarget]>
+      );
+
+      const payload: TierConfig = {};
+      if (Object.keys(cleanedShareTargets).length > 0) {
+        payload.shareTargets = cleanedShareTargets;
+      }
+      if (Object.keys(cleanedTierTargets).length > 0) {
+        payload.tierTargets = cleanedTierTargets;
+      }
+
       await setTierConfig(payload);
       setMessage("Saved to Firebase.");
     } catch (err) {
