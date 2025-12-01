@@ -659,17 +659,10 @@ export default function InventoryManagement() {
   }, [dealerSlug, schedule]);
 
   const prioritizedEmptySlots = useMemo(() => {
-    const horizonStart = monthBuckets[0]?.start;
-    const horizonEnd = monthBuckets[monthBuckets.length - 1]?.end;
-
     return [...emptySlots]
-      .filter((slot) => {
-        if (!horizonStart || !horizonEnd) return true;
-        return slot.deliveryDate >= horizonStart && slot.deliveryDate < horizonEnd;
-      })
       .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
       .slice(0, 10);
-  }, [emptySlots, monthBuckets]);
+  }, [emptySlots]);
 
   const emptySlotPlans = useMemo<SlotPlan[]>(() => {
     if (monthBuckets.length === 0) return [] as SlotPlan[];
