@@ -1,6 +1,6 @@
 // src/pages/InventoryManagement.tsx
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useParams } from "react-router-dom";
 
 import Sidebar from "@/components/Sidebar";
@@ -46,6 +46,21 @@ type EmptySlot = {
   item: ScheduleItem;
   forecastDate: Date;
   deliveryDate: Date;
+};
+
+type SlotPlan = {
+  id: string;
+  forecastDate: Date;
+  deliveryDate: Date;
+  windowStart: Date;
+  tier: string;
+  tierGoal: number;
+  tierBooked: number;
+  model: string | null;
+  modelTarget: number;
+  modelBooked: number;
+  recommendation: string;
+  projectedModelCount: number;
 };
 
 const monthFormatter = new Intl.DateTimeFormat("en-AU", { month: "short", year: "numeric" });
@@ -161,7 +176,6 @@ const isFinishedProduction = (value?: unknown) => {
   return status === "finished" || status === "finish";
 };
 
-
 export default function InventoryManagement() {
   const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
 
@@ -183,6 +197,7 @@ export default function InventoryManagement() {
 
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
+  const [tierConfig, setTierConfig] = useState<TierConfig | null>(null);
   const [tierConfig, setTierConfig] = useState<TierConfig | null>(null);
 
   const today = useMemo(() => new Date(), []);
@@ -351,7 +366,7 @@ export default function InventoryManagement() {
       schedule.forEach((item) => {
         const dealerMatches = slugifyDealerName((item as any)?.Dealer) === dealerSlug || !dealerSlug;
         if (!dealerMatches) return;
-        if (!isStockCustomer((item as any)?.Customer)) return;
+       if (!isStockCustomer((item as any)?.Customer)) return;
         const model = primaryLabel(toStr((item as any)?.Model || "").trim());
         if (!model) return;
         if (!modelMap.has(model)) return;
@@ -512,24 +527,6 @@ export default function InventoryManagement() {
 
   const shareTargets = useMemo(() => ({ ...defaultShareTargets, ...(tierConfig?.shareTargets || {}) }), [tierConfig]);
 
-  const tierAggregates = useMemo(() => {
-    const totals: Record<string, { stock: number; incoming: number[] }> = {};
-    Object.keys(tierTargets).forEach((tier) => {
-      totals[tier] = { stock: 0, incoming: Array(monthBuckets.length).fill(0) };
-    });
-
-    modelRows.forEach((row) => {
-      const tier = normalizeTierCode(row.tier);
-      if (!tier || !totals[tier]) return;
-      totals[tier].stock += row.currentStock;
-      row.incoming.forEach((val, idx) => {
-        totals[tier].incoming[idx] = (totals[tier].incoming[idx] || 0) + (val || 0);
-      });
-    });
-
-    return totals;
-  }, [modelRows, monthBuckets.length]);
-
   const filteredRows = useMemo(() => {
     return modelRows.filter((row) => {
       const tierMatches = tierFilter ? normalizeTierCode(row.tier) === normalizeTierCode(tierFilter) : true;
@@ -670,8 +667,8 @@ export default function InventoryManagement() {
       .slice(0, 10);
   }, [emptySlots, monthBuckets]);
 
-  const emptySlotRecommendations = useMemo(() => {
-    if (monthBuckets.length === 0) return [] as string[];
+  const emptySlotPlans = useMemo<SlotPlan[]>(() => {
+    if (monthBuckets.length === 0) return [] as SlotPlan[];
     const rollingWindowDays = 90;
     const capacityBaseline = (() => {
       const { maxCapacity, minVanVolume } = yardCapacityStats;
@@ -779,12 +776,9 @@ export default function InventoryManagement() {
       return fallback;
     };
 
-    const suggestions: string[] = [];
+    const plans: SlotPlan[] = [];
     slots.forEach((slot, idx) => {
       const windowStart = addDays(slot.forecastDate, -rollingWindowDays);
-      const ordersInWindow = plannedOrders.filter(
-        (order) => order.forecastDate >= windowStart && order.forecastDate < slot.forecastDate
-      );
 
       const modelPick = pickModelWithLargestDeficit(slot.forecastDate);
       const hasModelDeficit = modelPick && modelPick.deficit > 0;
@@ -813,58 +807,35 @@ export default function InventoryManagement() {
         modelDeficit = Math.max(perModelTarget - modelTally, 0);
       }
 
-      const forecastLabel = slot.forecastDate
-        ? slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
-        : "Unknown forecast";
-      const deliveryLabel = monthFormatter.format(slot.deliveryDate);
-      const windowLabel = `${windowStart.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })} to ${
-        slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })
-      }`;
-      const modelOrdersInWindow = selectedModel
-        ? ordersInWindow
-            .filter((order) => order.model.toLowerCase() === selectedModel.toLowerCase())
-            .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
-        : [];
-      const modelOrdersDetail =
-        (selectedModel && modelOrdersInWindow.length === 0)
-          ? `No ${selectedModel} orders booked in the prior 90-day window.`
-          : modelOrdersInWindow
-              .map((order) => {
-                const dateLabel = order.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
-                return `${dateLabel}`;
-              })
-              .join(", ");
-
       if (selectedModel) {
         plannedOrders.push({ tier, model: selectedModel, forecastDate: slot.forecastDate });
       }
 
       const sharePct = shareTargets[tier] ?? 0;
-      const tierReason = `Rolling ${rollingWindowDays}-day orders for Tier ${tier}: ${tierTally}/${tierGoal} (deficit ${tierDeficit}) vs ${
-        sharePct * 100
-      }% of capacity baseline ${capacityBaseline}.`;
-      const modelReason = selectedModel
-        ? `Within Tier ${tier}, model ${selectedModel} is short ${modelDeficit} of its ${perModelTarget}-unit ${rollingWindowDays}-day target (${modelTally} booked).`
-        : `No mapped model found for Tier ${tier}; update tier assignments to unlock per-model balancing.`;
+      const recommendation = selectedModel
+        ? `Tier ${tier} target ${tierGoal} over ${rollingWindowDays} days; booked ${tierTally} (deficit ${tierDeficit}). Per-model target ${perModelTarget} (evenly split), booked ${modelTally}; order ${selectedModel} to close ${Math.max(
+            modelDeficit,
+            tierDeficit
+          )}. Share target ${Math.round(sharePct * 100)}% of baseline ${capacityBaseline}.`
+        : `Tier ${tier} target ${tierGoal} over ${rollingWindowDays} days; booked ${tierTally}. Assign a mapped model to meet the split target.`;
 
-      const tag = selectedModel ? `${selectedModel} (Tier ${tier})` : `Tier ${tier}`;
-      suggestions.push(
-        `${idx + 1}. Forecast production ${forecastLabel} (delivery ETA ${deliveryLabel}) → order ${tag}. Window ${windowLabel}. Model 90-day target ${perModelTarget}, booked ${modelTally} so far${
-          selectedModel ? ` for ${selectedModel}` : ""
-        }${modelOrdersDetail ? ` (dates: ${modelOrdersDetail})` : ""}. ${tierReason} ${modelReason}`
-      );
+      plans.push({
+        id: `${slot.item?.id || idx}-${slot.forecastDate.toISOString()}`,
+        forecastDate: slot.forecastDate,
+        deliveryDate: slot.deliveryDate,
+        windowStart,
+        tier,
+        tierGoal,
+        tierBooked: tierTally,
+        model: selectedModel,
+        modelTarget: perModelTarget,
+        modelBooked: modelTally,
+        recommendation,
+        projectedModelCount: modelTally + (selectedModel ? 1 : 0),
+      });
     });
 
-    if (suggestions.length === 0 && emptySlots.length > 0) {
-      const horizonLabelStart = monthBuckets[0]?.label;
-      const horizonLabelEnd = monthBuckets[monthBuckets.length - 1]?.label;
-      const horizonLabel = horizonLabelStart && horizonLabelEnd ? `${horizonLabelStart}–${horizonLabelEnd}` : "planning window";
-      suggestions.push(
-        `Empty slots exist but none fall inside the ${horizonLabel} planning window—update forecast dates or extend the horizon.`
-      );
-    }
-
-    return suggestions;
+    return plans;
   }, [
     analysisByModel,
     currentStockTotal,
@@ -1057,91 +1028,65 @@ export default function InventoryManagement() {
             <CardHeader className="border-b border-slate-200 pb-4">
               <CardTitle className="text-lg font-semibold text-slate-900">Restock Guidance</CardTitle>
               <p className="text-sm text-slate-600">
-                Draft capture advice based on current yard stock, inbound builds, and the empty slots timeline.
+                Empty-slot ordering plan that balances tier targets (from Tier Config) over the prior 90 days.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-2">
-                {Object.entries(tierTargets).map(([tier, meta]) => {
-                  const colors = tierColor(tier);
-                  const aggregates = tierAggregates[tier] || { stock: 0, incoming: Array(monthBuckets.length).fill(0) };
-                  const nearTermInbound = aggregates.incoming.slice(0, 2).reduce((sum, v) => sum + (v || 0), 0);
-                  return (
-                    <div
-                      key={tier}
-                      className={`flex items-start gap-3 rounded-xl border ${colors.border} bg-white/70 px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.08)]`}
-                    >
-                      <div className={`mt-0.5 h-8 w-8 flex items-center justify-center rounded-full ${colors.pill} font-bold`}>
-                        {tier}
-                      </div>
-                      <div className="space-y-1 text-sm text-slate-700">
-                        <div className="flex items-center gap-2 font-semibold text-slate-900">
-                          <span>{meta.label}</span>
-                          <span className="text-xs font-medium text-slate-500">Min {meta.minimum}{meta.ceiling !== undefined ? ` • Max ${meta.ceiling}` : ""}</span>
-                        </div>
-                        <p className="text-slate-600 leading-relaxed">{meta.role}</p>
-                        <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-                          <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-800">Stock now: {aggregates.stock}</span>
-                          <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-800">Inbound (next 2 mo): {nearTermInbound}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                <div className="flex items-center gap-2 font-semibold text-slate-900">
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
-                  Empty slot capture suggestions
+              <p className="text-sm text-slate-700">
+                Upcoming empty stock slots and the orders needed to keep each tier on track over the previous 90 days.
+              </p>
+              {emptySlotPlans.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  No empty slots within the planning window.
                 </div>
-                {prioritizedEmptySlots.length > 0 && (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
-                    <div className="mb-1 font-semibold text-slate-900">Next 10 empty slots</div>
-                    <ol className="list-decimal space-y-1 pl-4">
-                      {prioritizedEmptySlots.map((slot, idx) => (
-                        <li key={`${slot.item?.id || idx}-${slot.forecastDate.toISOString()}`}>
-                          Forecast {slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
-                          {" "}
-                          → delivery ETA {monthFormatter.format(slot.deliveryDate)}
-                        </li>
+              ) : (
+                <div className="overflow-auto">
+                  <Table className="min-w-[980px] text-sm">
+                    <TableHeader className="bg-slate-100/80">
+                      <TableRow className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                        <TableHead className="text-left">Forecast Production</TableHead>
+                        <TableHead className="text-left">Forecast Delivery</TableHead>
+                        <TableHead className="text-left">90-day Requirement & Order</TableHead>
+                        <TableHead className="text-left">Tier</TableHead>
+                        <TableHead className="text-right">Post-order 90d Model Count</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {emptySlotPlans.map((slot) => (
+                        <TableRow key={slot.id} className="border-b last:border-0">
+                          <TableCell className="font-semibold text-slate-900">
+                            {slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                            <div className="text-xs text-slate-500">
+                              Window: {slot.windowStart.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })} –
+                              {" "}
+                              {slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-slate-900">
+                            {monthFormatter.format(slot.deliveryDate)}
+                          </TableCell>
+                          <TableCell className="max-w-md space-y-1 text-slate-800">
+                            <div className="font-semibold text-slate-900">
+                              {slot.model || "Assign a tier model"}
+                            </div>
+                            <div className="text-xs text-slate-600">
+                              Tier target {slot.tierGoal}, booked {slot.tierBooked}; per-model target {slot.modelTarget}, booked {slot.modelBooked}.
+                            </div>
+                            <div className="text-xs leading-relaxed text-slate-600">{slot.recommendation}</div>
+                          </TableCell>
+                          <TableCell className="font-semibold text-slate-900">{slot.tier}</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-900">
+                            {slot.projectedModelCount}
+                            <div className="text-xs font-medium text-slate-500">
+                              After order (current {slot.modelBooked})
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </ol>
-                  </div>
-                )}
-                {emptySlotRecommendations.length === 0 ? (
-                  <p className="text-slate-600">No empty slots on the horizon; keep monitoring the schedule.</p>
-                ) : (
-                  <ul className="list-disc space-y-1 pl-5">
-                    {emptySlotRecommendations.map((item) => (
-                      <li key={item} className="leading-relaxed text-slate-800">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-700">
-                  <div className="font-semibold text-slate-900">How refill plans are built</div>
-                  <ol className="mt-1 list-decimal space-y-1 pl-4">
-                    <li>
-                      Identify empty production slots: use the unsigned/empty-slot logic (schedule rows with dealer slug, no
-                      chassis) and treat forecast production date + 40 days as the delivery month.
-                    </li>
-                    <li>
-                      Count coverage before each delivery month: current stock plus inbound schedule for the same tier up to
-                      that month.
-                    </li>
-                    <li>
-                      Allocate models per slot: pick the lowest-coverage tier (A1→A1+→A2→B1) and choose the model in that tier
-                      with the thinnest coverage to assign to the slot.
-                    </li>
-                    <li>
-                      Summarise per month: group the assigned models and surface the suggested quantities for each delivery
-                      month so dealers can action orders.
-                    </li>
-                  </ol>
+                    </TableBody>
+                  </Table>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
