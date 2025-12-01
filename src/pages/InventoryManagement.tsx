@@ -1037,13 +1037,15 @@ export default function InventoryManagement() {
                     )}
 
                     {yardCapacityStats.minVanVolume && minMarkerPercent != null && (
-                      <div
-                        className="pointer-events-none absolute inset-[6px]"
-                        style={{ left: `${minMarkerPercent}%` }}
-                      >
-                        <div className="absolute inset-y-0 -translate-x-1/2 w-[3px] rounded-full bg-rose-500 shadow-[0_0_0_1px_rgba(244,63,94,0.35)]" />
-                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
-                          Target Min: {yardCapacityStats.minVanVolume}
+                      <div className="pointer-events-none absolute inset-[6px]">
+                        <div
+                          className="absolute inset-y-0"
+                          style={{ left: `${minMarkerPercent}%` }}
+                        >
+                          <div className="absolute inset-y-0 -translate-x-1/2 w-[3px] rounded-full bg-rose-500 shadow-[0_0_0_1px_rgba(244,63,94,0.35)]" />
+                          <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
+                            Target Min: {yardCapacityStats.minVanVolume}
+                          </div>
                         </div>
                       </div>
                     )}
