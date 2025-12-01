@@ -198,7 +198,6 @@ export default function InventoryManagement() {
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
   const [tierConfig, setTierConfig] = useState<TierConfig | null>(null);
-  const [tierConfig, setTierConfig] = useState<TierConfig | null>(null);
 
   const today = useMemo(() => new Date(), []);
   const currentMonthStart = useMemo(() => startOfMonth(today), [today]);
