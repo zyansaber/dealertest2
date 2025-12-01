@@ -16,14 +16,15 @@ import {
   type ModelAnalysisRecord,
   subscribeShowDealerMappings,
   subscribeTierConfig,
+  subscribeDealerTierLayout,
 } from "@/lib/firebase";
 import { normalizeDealerSlug, prettifyDealerName } from "@/lib/dealerUtils";
 import type { ScheduleItem } from "@/types";
 import { formatShowDate, parseFlexibleDateToDate, subscribeToShows } from "@/lib/showDatabase";
 import type { ShowDealerMapping } from "@/lib/firebase";
 import type { ShowRecord } from "@/types/show";
-import type { TierConfig, TierTarget } from "@/types/tierConfig";
-import { defaultShareTargets, defaultTierTargets } from "@/config/tierDefaults";
+import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig, TierTarget } from "@/types/tierConfig";
+import { defaultDealerTierLayout, defaultShareTargets, defaultTierTargets } from "@/config/tierDefaults";
 
 type AnyRecord = Record<string, any>;
 
@@ -198,6 +199,8 @@ export default function InventoryManagement() {
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
   const [tierConfig, setTierConfig] = useState<TierConfig | null>(null);
+  const [dealerTierLayout, setDealerTierLayout] = useState<DealerTierLayout | null>(null);
+  const [layoutSource, setLayoutSource] = useState<DealerLayoutSnapshot["source"]>("none");
 
   const today = useMemo(() => new Date(), []);
   const currentMonthStart = useMemo(() => startOfMonth(today), [today]);
@@ -234,6 +237,15 @@ export default function InventoryManagement() {
       unsubPgi?.();
       unsubSchedule?.();
     };
+  }, [dealerSlug]);
+
+  useEffect(() => {
+    if (!dealerSlug) return;
+    const unsub = subscribeDealerTierLayout(dealerSlug, ({ layout, defaultLayout, source }) => {
+      setDealerTierLayout(layout || defaultLayout || defaultDealerTierLayout);
+      setLayoutSource(source);
+    });
+    return () => unsub?.();
   }, [dealerSlug]);
 
   useEffect(() => {
@@ -406,7 +418,7 @@ export default function InventoryManagement() {
 
     const rows = Array.from(modelMap.entries()).map(([model, stats]) => {
       const analysis = analysisByModel[model.toLowerCase()];
-      const tier = normalizeTierCode(analysis?.tier || analysis?.Tier);
+      const tier = dealerTierLookup[model.toLowerCase()] || normalizeTierCode(analysis?.tier || analysis?.Tier);
       const standardPrice = toNumber(
         (analysis as any)?.standard_price || (analysis as any)?.standardPrice || (analysis as any)?.StandardPrice
       );
@@ -431,6 +443,7 @@ export default function InventoryManagement() {
     schedule,
     scheduleByChassis,
     sortKey,
+    dealerTierLookup,
     yardStock,
   ]);
 
@@ -490,32 +503,20 @@ export default function InventoryManagement() {
   };
 
   const prioritizedTierModels = useMemo(() => {
-    const priorities = ["A1", "A1+", "A2", "B1"];
-    const values = Array.isArray(modelAnalysis)
-      ? (modelAnalysis as ModelAnalysisRecord[])
-      : Object.values((modelAnalysis || {}) as Record<string, ModelAnalysisRecord>);
+    const layoutTiers = resolvedTierLayout?.tiers || [];
 
-    const entries = values
-      .map((entry) => {
-        const tier = normalizeTierCode((entry as any)?.tier || (entry as any)?.Tier);
-        return { entry, tier };
-      })
-      .filter(({ tier }) => priorities.includes(tier));
+    const sorted = [...layoutTiers].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
-    return priorities
-      .map((tier) => ({
-        tier,
-        models: entries
-          .filter((item) => item.tier === tier)
-          .flatMap((item) =>
-            normalizeModelLabel((item.entry as any)?.model || (item.entry as any)?.Model).map((label) => ({
-              ...item.entry,
-              model: label,
-            }))
-          ),
-      }))
-      .filter(({ models }) => models.length > 0);
-  }, [modelAnalysis]);
+    return sorted.map((tier) => ({
+      tier: tier.code,
+      name: tier.name,
+      description: tier.description,
+      models: (tier.models || []).map((modelName) => ({
+        ...analysisByModel[modelName.toLowerCase()],
+        model: modelName,
+      })),
+    }));
+  }, [analysisByModel, resolvedTierLayout]);
 
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
 
@@ -531,6 +532,33 @@ export default function InventoryManagement() {
   }, [tierConfig]);
 
   const shareTargets = useMemo(() => ({ ...defaultShareTargets, ...(tierConfig?.shareTargets || {}) }), [tierConfig]);
+
+  const resolvedTierLayout = useMemo(
+    () => (dealerTierLayout?.tiers?.length ? dealerTierLayout : defaultDealerTierLayout),
+    [dealerTierLayout]
+  );
+
+  const layoutSourceLabel = useMemo(() => {
+    if (layoutSource === "dealer") return "Using dealer-specific tier layout";
+    if (layoutSource === "default") return "Using default tier layout (no dealer override yet)";
+    return "No tier layout on file; showing starter template";
+  }, [layoutSource]);
+
+  const shouldShowPriorityCard = (resolvedTierLayout?.tiers?.length || 0) > 0;
+
+  const dealerTierLookup = useMemo(() => {
+    const map: Record<string, string> = {};
+    const tiers = dealerTierLayout?.tiers || [];
+    tiers.forEach((tier) => {
+      (tier.models || []).forEach((model) => {
+        const normalized = normalizeModelLabel(model)[0]?.toLowerCase();
+        if (normalized) {
+          map[normalized] = normalizeTierCode(tier.code);
+        }
+      });
+    });
+    return map;
+  }, [dealerTierLayout]);
 
   const filteredRows = useMemo(() => {
     return modelRows.filter((row) => {
@@ -951,14 +979,21 @@ export default function InventoryManagement() {
             </CardContent>
           </Card>
 
-          {prioritizedTierModels.length > 0 && (
+          {shouldShowPriorityCard && (
             <Card className="shadow-sm border-slate-200">
               <CardHeader className="border-b border-slate-200 pb-4">
-                <CardTitle className="text-lg font-semibold text-slate-900">Priority Inventory</CardTitle>
-                <p className="text-sm text-slate-600">
-                  Tiers A1, A1+, A2, and B1 appear together so the core range, flagship showcase, supporting structures, and niche
-                  bets stay aligned with strategy.
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-lg font-semibold text-slate-900">Priority Inventory</CardTitle>
+                    <p className="text-sm text-slate-600">
+                      Dealer-specific tier layout controls which models sit in each tier. Edit in the Tier Configuration page and
+                      this view will refresh instantly.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 shadow-sm">
+                    {layoutSourceLabel}
+                  </span>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {prioritizedTierModels.map(({ tier, models }) => {
@@ -972,16 +1007,24 @@ export default function InventoryManagement() {
                       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${colors.pill}`}>Tier {tier}</span>
+                          {name && <span className="text-xs font-semibold text-slate-700">{name}</span>}
                           {tierMeta && (
                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">{tierMeta.label}</span>
                           )}
                         </div>
-                        {tierMeta?.role && <span className="text-sm text-slate-600">{tierMeta.role}</span>}
+                        {(tierMeta?.role || description) && (
+                          <span className="text-sm text-slate-600">{tierMeta?.role || description}</span>
+                        )}
                       </div>
 
-                      <div className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {models.map((entry) => {
+                        <div className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {models.length === 0 && (
+                              <span className="rounded-full border border-dashed border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+                                No models assigned to this tier yet
+                              </span>
+                            )}
+                            {models.map((entry) => {
                             const modelLabel = toStr((entry as any)?.model || (entry as any)?.Model || "").trim() || "Unknown Model";
                             const key = `${tier}-${modelLabel}`;
                             const isOpen = expandedModel === key;
