@@ -641,6 +641,7 @@ export default function InventoryManagement() {
       })
       .map((item) => {
         const forecastRaw =
+          (item as any)?.["Forecast Production Date: dd/mm/yyyy"] ||
           (item as any)?.["Forecast Production Date"] ||
           (item as any)?.["Forecast production date"] ||
           (item as any)?.["Forecast Production date"];
