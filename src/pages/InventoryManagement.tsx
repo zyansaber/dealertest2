@@ -1059,14 +1059,14 @@ export default function InventoryManagement() {
                           <TableCell className="text-slate-900">
                             {monthFormatter.format(slot.deliveryDate)}
                           </TableCell>
-                          <TableCell className="max-w-md space-y-1 text-slate-800">
+                          <TableCell className="max-w-md space-y-0.5 text-slate-800">
                             <div className="font-semibold text-slate-900">
                               {slot.model || "Assign a tier model"}
                             </div>
                             <div className="text-xs text-slate-600">
                               Tier target {slot.tierGoal}, booked {slot.tierBooked}; per-model target {slot.modelTarget}, booked {slot.modelBooked}.
                             </div>
-                            <div className="text-xs leading-relaxed text-slate-600">{slot.recommendation}</div>
+                            <div className="text-xs leading-snug text-slate-600">{slot.recommendation}</div>
                           </TableCell>
                           <TableCell className="font-semibold text-slate-900">{slot.tier}</TableCell>
                           <TableCell className="text-right font-semibold text-slate-900">
