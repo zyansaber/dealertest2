@@ -83,7 +83,18 @@ const slugifyDealerName = (name?: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
-const isStockCustomer = (customer?: string) => toStr(customer).toLowerCase().endsWith("stock");
+const isStockCustomer = (customer?: string) => /stock$/i.test(toStr(customer).trim());
+
+const inferYardType = (record: AnyRecord, scheduleMatch?: AnyRecord) => {
+  const customer = toStr(scheduleMatch?.Customer ?? record?.customer);
+  const rawType = toStr(record?.type ?? record?.Type).trim().toLowerCase();
+
+  if (isStockCustomer(customer)) return "Stock";
+  if (rawType.includes("stock")) return "Stock";
+  if (rawType.includes("customer") || rawType.includes("retail")) return "Customer";
+  if (rawType) return "Customer";
+  return "Customer";
+};
 
 const normalizeTierCode = (tier?: string) => {
   const text = toStr(tier).trim();
@@ -322,15 +333,8 @@ export default function InventoryManagement() {
     const yardEntries = Object.entries(yardStock || {}).filter(([chassis]) => chassis !== "dealer-chassis");
     yardEntries.forEach(([chassis, payload]) => {
       const rec = payload || {};
-      const rawType = toStr(rec.type ?? rec.Type).toLowerCase();
       const scheduleMatch = scheduleByChassis[chassis];
-      const customerFromSchedule = toStr((scheduleMatch as any)?.Customer);
-      const inferredType = (() => {
-        if (rawType.includes("stock")) return "Stock";
-        if (rawType.includes("customer") || rawType.includes("retail")) return "Customer";
-        if (isStockCustomer(customerFromSchedule)) return "Stock";
-        return "Customer";
-      })();
+      const inferredType = inferYardType(rec, scheduleMatch);
       if (inferredType !== "Stock") return;
 
       const model = primaryLabel(toStr((rec.model ?? (scheduleMatch as any)?.Model) ?? "").trim());
@@ -586,21 +590,11 @@ export default function InventoryManagement() {
 
     entries.forEach(([chassis, payload]) => {
       const rec = payload || {};
-      const rawType = toStr(rec.type ?? rec.Type).toLowerCase();
       const scheduleMatch = scheduleByChassis[chassis];
-      const customerFromSchedule = toStr((scheduleMatch as any)?.Customer);
-      const inferredType = (() => {
-        if (isStockCustomer(customerFromSchedule)) return "Stock";
-        if (rawType.includes("stock")) return "Stock";
-        if (rawType.includes("customer") || rawType.includes("retail")) return "Customer";
-        return "Customer";
-      })();
+      const inferredType = inferYardType(rec, scheduleMatch);
 
-      if (inferredType === "Stock") {
-        stockCount += 1;
-      } else {
-        customerCount += 1;
-      }
+      if (inferredType === "Stock") stockCount += 1;
+      else customerCount += 1;
     });
 
     return { stockCount, customerCount, total: stockCount + customerCount };
@@ -1044,11 +1038,11 @@ export default function InventoryManagement() {
 
                     {yardCapacityStats.minVanVolume && minMarkerPercent != null && (
                       <div
-                        className="absolute top-1/2 -translate-y-1/2"
+                        className="pointer-events-none absolute inset-[6px]"
                         style={{ left: `${minMarkerPercent}%` }}
                       >
-                        <div className="h-8 w-px bg-rose-500/90" />
-                        <div className="absolute left-1/2 top-8 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
+                        <div className="absolute inset-y-0 -translate-x-1/2 w-[3px] rounded-full bg-rose-500 shadow-[0_0_0_1px_rgba(244,63,94,0.35)]" />
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
                           Target Min: {yardCapacityStats.minVanVolume}
                         </div>
                       </div>
