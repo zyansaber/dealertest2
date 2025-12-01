@@ -120,6 +120,12 @@ const isUnknownModel = (model: string) => {
   return !name || name === "unknown" || name === "unknown model";
 };
 
+const getForecastProductionDate = (item: AnyRecord) =>
+  (item as any)?.["Forecast Production Date: dd/mm/yyyy"] ??
+  (item as any)?.["Forecast Production Date"] ??
+  (item as any)?.["Forecast production date"] ??
+  (item as any)?.["Forecast Production date"];
+
 const formatStandardPrice = (value?: number) => {
   if (value == null || Number.isNaN(value)) return "—";
   const thousands = value / 1000;
@@ -573,6 +579,33 @@ export default function InventoryManagement() {
     return base;
   }, [filteredRows, monthBuckets.length]);
 
+  const yardStockBreakdown = useMemo(() => {
+    const entries = Object.entries(yardStock || {}).filter(([chassis]) => chassis !== "dealer-chassis");
+    let stockCount = 0;
+    let customerCount = 0;
+
+    entries.forEach(([chassis, payload]) => {
+      const rec = payload || {};
+      const rawType = toStr(rec.type ?? rec.Type).toLowerCase();
+      const scheduleMatch = scheduleByChassis[chassis];
+      const customerFromSchedule = toStr((scheduleMatch as any)?.Customer);
+      const inferredType = (() => {
+        if (rawType.includes("stock")) return "Stock";
+        if (rawType.includes("customer") || rawType.includes("retail")) return "Customer";
+        if (isStockCustomer(customerFromSchedule)) return "Stock";
+        return "Customer";
+      })();
+
+      if (inferredType === "Stock") {
+        stockCount += 1;
+      } else {
+        customerCount += 1;
+      }
+    });
+
+    return { stockCount, customerCount, total: stockCount + customerCount };
+  }, [scheduleByChassis, yardStock]);
+
   const yardCapacityStats = useMemo(() => {
     const entries = Object.entries(yardSizes || {});
     const normalized = (value: unknown) => normalizeDealerSlug(toStr(value));
@@ -628,14 +661,26 @@ export default function InventoryManagement() {
   }, [dealerDisplayName, dealerSlug, yardSizes]);
 
   const currentStockTotal = totalsRow.currentStock;
+  const yardStockTotal = yardStockBreakdown.total;
   const capacityPercent =
     yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0
-      ? Math.min(200, Math.round((currentStockTotal / yardCapacityStats.maxCapacity) * 1000) / 10)
+      ? Math.min(200, Math.round((yardStockTotal / yardCapacityStats.maxCapacity) * 1000) / 10)
       : null;
   const remainingCapacity =
     yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0
-      ? yardCapacityStats.maxCapacity - currentStockTotal
+      ? yardCapacityStats.maxCapacity - yardStockTotal
       : null;
+  const minMarkerPercent =
+    yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0 && yardCapacityStats.minVanVolume
+      ? Math.min(200, (yardCapacityStats.minVanVolume / yardCapacityStats.maxCapacity) * 100)
+      : null;
+  const barFillPercent =
+    yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0
+      ? Math.min(100, (yardStockTotal / yardCapacityStats.maxCapacity) * 100)
+      : 0;
+  const stockFillPercent =
+    yardStockTotal > 0 ? (barFillPercent * yardStockBreakdown.stockCount) / yardStockTotal : 0;
+  const customerFillPercent = Math.max(0, barFillPercent - stockFillPercent);
 
   const emptySlots = useMemo<EmptySlot[]>(() => {
     return schedule
@@ -646,12 +691,7 @@ export default function InventoryManagement() {
         return hasDealer && lacksChassis;
       })
       .map((item) => {
-        const forecastRaw =
-          (item as any)?.["Forecast Production Date: dd/mm/yyyy"] ||
-          (item as any)?.["Forecast Production Date"] ||
-          (item as any)?.["Forecast production date"] ||
-          (item as any)?.["Forecast Production date"];
-        const forecastDate = parseDate(forecastRaw);
+        const forecastDate = parseDate(getForecastProductionDate(item));
         if (!forecastDate) return null;
         return { item, forecastDate, deliveryDate: addDays(forecastDate, 40) };
       })
@@ -663,6 +703,52 @@ export default function InventoryManagement() {
       .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
       .slice(0, 10);
   }, [emptySlots]);
+
+  const firstEmptySlot = prioritizedEmptySlots[0];
+
+  const emptySlotStockAssessment = useMemo(() => {
+    if (!firstEmptySlot) return null;
+
+    const emptySlotDate = firstEmptySlot.forecastDate;
+    const windowStart = addDays(emptySlotDate, -90);
+    const last30Start = addDays(emptySlotDate, -30);
+    const today = startOfDay(new Date());
+    const futureWindowEnd = addDays(today, 90);
+
+    let past90Stock = 0;
+    let past30Stock = 0;
+    let future90Stock = 0;
+
+    schedule.forEach((item) => {
+      const dealerMatches = slugifyDealerName((item as any)?.Dealer) === dealerSlug || !dealerSlug;
+      if (!dealerMatches) return;
+      if (!isStockCustomer((item as any)?.Customer)) return;
+
+      const forecastDate = parseDate(getForecastProductionDate(item));
+      if (!forecastDate) return;
+      const arrivalDate = addDays(forecastDate, 40);
+
+      if (arrivalDate >= windowStart && arrivalDate < emptySlotDate) past90Stock += 1;
+      if (arrivalDate >= last30Start && arrivalDate < emptySlotDate) past30Stock += 1;
+      if (arrivalDate >= today && arrivalDate <= futureWindowEnd) future90Stock += 1;
+    });
+
+    const minVolume = yardCapacityStats.minVanVolume;
+    const min60Target = minVolume != null ? minVolume * 0.6 : null;
+    const min20Target = minVolume != null ? minVolume * 0.2 : null;
+
+    return {
+      emptySlotDate,
+      past90Stock,
+      past30Stock,
+      future90Stock,
+      min60Target,
+      min20Target,
+      meets90: min60Target != null ? past90Stock >= min60Target : null,
+      meets30: min20Target != null ? past30Stock >= min20Target : null,
+      meetsFuture90: min60Target != null ? future90Stock >= min60Target : null,
+    };
+  }, [dealerSlug, firstEmptySlot, schedule, yardCapacityStats.minVanVolume]);
 
   const emptySlotPlans = useMemo<SlotPlan[]>(() => {
     if (monthBuckets.length === 0) return [] as SlotPlan[];
@@ -914,22 +1000,43 @@ export default function InventoryManagement() {
                   )}
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs font-semibold text-slate-600">
-                  <span>
-                    Min {yardCapacityStats.minVanVolume ?? "—"}
-                  </span>
-                  <span>
-                    Max {yardCapacityStats.maxCapacity ?? "—"}
-                  </span>
+                  <span>Min {yardCapacityStats.minVanVolume ?? "—"}</span>
+                  <span>Max {yardCapacityStats.maxCapacity ?? "—"}</span>
                 </div>
-                <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-300 via-sky-300 to-indigo-300 shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
-                    style={{ width: capacityPercent != null ? `${Math.min(100, capacityPercent)}%` : "0%" }}
-                  />
+                <div className="mt-2">
+                  <div className="relative h-4 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div className="absolute inset-0 flex">
+                      <div
+                        className="h-full rounded-l-full bg-gradient-to-r from-emerald-300 via-sky-300 to-indigo-300 shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
+                        style={{ width: `${stockFillPercent}%` }}
+                      />
+                      <div
+                        className="h-full rounded-r-full bg-amber-300/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+                        style={{ width: `${customerFillPercent}%` }}
+                      />
+                    </div>
+                    {minMarkerPercent != null && (
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2"
+                        style={{ left: `${Math.min(100, minMarkerPercent)}%` }}
+                      >
+                        <div className="h-4 w-px bg-rose-500/80" />
+                        <div className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
+                          Min {yardCapacityStats.minVanVolume}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
                   <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
-                    Current: {currentStockTotal}
+                    Stock: {yardStockBreakdown.stockCount}
+                  </span>
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 font-semibold text-amber-800 shadow-sm">
+                    Customer: {yardStockBreakdown.customerCount}
+                  </span>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
+                    Total: {yardStockTotal}
                   </span>
                   {yardCapacityStats.maxCapacity && (
                     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
@@ -937,7 +1044,7 @@ export default function InventoryManagement() {
                     </span>
                   )}
                   {yardCapacityStats.minVanVolume && (
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
+                    <span className="rounded-full border border-rose-100 bg-rose-50 px-3 py-1 font-semibold text-rose-700 shadow-sm">
                       Target Min: {yardCapacityStats.minVanVolume}
                     </span>
                   )}
@@ -948,6 +1055,105 @@ export default function InventoryManagement() {
                   </p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-slate-200">
+            <CardHeader className="border-b border-slate-200 pb-4">
+              <CardTitle className="text-lg font-semibold text-slate-900">Stock Min Checkpoint</CardTitle>
+              <p className="text-sm text-slate-600">
+                Looks back 90 days before the first empty slot and projects 90 days forward from today to see how stock aligns
+                with yard minimum expectations.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!firstEmptySlot ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  No empty slots within the planning window.
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">First Empty Slot</div>
+                      <div className="text-base font-semibold text-slate-900">
+                        {firstEmptySlot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                      </div>
+                      <div className="text-xs text-slate-600">Expected delivery {monthFormatter.format(firstEmptySlot.deliveryDate)}</div>
+                    </div>
+                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                      Window anchored to production date (arrival +40 days)
+                    </div>
+                  </div>
+
+                  {emptySlotStockAssessment && (
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Past 90 days</div>
+                        <div className="mt-2 text-3xl font-semibold text-slate-900">{emptySlotStockAssessment.past90Stock}</div>
+                        <p className="mt-1 text-sm text-slate-700">Stock arrivals before the empty slot.</p>
+                        <div
+                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                            emptySlotStockAssessment.meets90 == null
+                              ? "border border-slate-200 bg-slate-50 text-slate-700"
+                              : emptySlotStockAssessment.meets90
+                                ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border border-rose-200 bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {emptySlotStockAssessment.meets90 == null
+                            ? "Min target not set"
+                            : emptySlotStockAssessment.meets90
+                              ? `Reached 60% of min (${Math.round(emptySlotStockAssessment.min60Target || 0)})`
+                              : `Below 60% of min (${Math.round(emptySlotStockAssessment.min60Target || 0)})`}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Past 30 days</div>
+                        <div className="mt-2 text-3xl font-semibold text-slate-900">{emptySlotStockAssessment.past30Stock}</div>
+                        <p className="mt-1 text-sm text-slate-700">Recent arrivals leading into the slot.</p>
+                        <div
+                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                            emptySlotStockAssessment.meets30 == null
+                              ? "border border-slate-200 bg-slate-50 text-slate-700"
+                              : emptySlotStockAssessment.meets30
+                                ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border border-rose-200 bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {emptySlotStockAssessment.meets30 == null
+                            ? "Min target not set"
+                            : emptySlotStockAssessment.meets30
+                              ? `Reached 20% of min (${Math.round(emptySlotStockAssessment.min20Target || 0)})`
+                              : `Below 20% of min (${Math.round(emptySlotStockAssessment.min20Target || 0)})`}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Next 90 days (from today)</div>
+                        <div className="mt-2 text-3xl font-semibold text-slate-900">{emptySlotStockAssessment.future90Stock}</div>
+                        <p className="mt-1 text-sm text-slate-700">Upcoming stock that could restore the yard.</p>
+                        <div
+                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                            emptySlotStockAssessment.meetsFuture90 == null
+                              ? "border border-slate-200 bg-slate-50 text-slate-700"
+                              : emptySlotStockAssessment.meetsFuture90
+                                ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border border-rose-200 bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {emptySlotStockAssessment.meetsFuture90 == null
+                            ? "Min target not set"
+                            : emptySlotStockAssessment.meetsFuture90
+                              ? `Future window hits 60% of min (${Math.round(emptySlotStockAssessment.min60Target || 0)})`
+                              : `Future window below 60% of min (${Math.round(emptySlotStockAssessment.min60Target || 0)})`}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
 
