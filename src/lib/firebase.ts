@@ -19,6 +19,7 @@ import type {
   NewSaleRecord,
   StockToCustomerRecord,
 } from "@/types";
+import type { TierConfig } from "@/types/tierConfig";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBcczqGj5X1_w9aCX1lOK4-kgz49Oi03Bg",
@@ -186,6 +187,26 @@ export const getPowerbiUrl = async (dealerSlug: string): Promise<string | null> 
   const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
   const snapshot = await get(urlRef);
   return snapshot.exists() ? snapshot.val() : null;
+};
+
+/** -------------------- Tier Config -------------------- */
+export const subscribeTierConfig = (callback: (data: TierConfig | null) => void) => {
+  const configRef = ref(database, "tierConfig");
+  const handler = (snapshot: DataSnapshot) => {
+    const data = snapshot.exists() ? (snapshot.val() as TierConfig) : null;
+    callback(data);
+  };
+
+  onValue(configRef, handler);
+  return () => off(configRef, "value", handler);
+};
+
+export const setTierConfig = async (config: TierConfig) => {
+  const configRef = ref(database, "tierConfig");
+  await set(configRef, {
+    ...config,
+    updatedAt: new Date().toISOString(),
+  });
 };
 
 const slugify = (value: string) =>
