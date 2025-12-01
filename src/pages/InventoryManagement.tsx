@@ -725,7 +725,7 @@ export default function InventoryManagement() {
     const countInWindow = (tier: string, referenceDate: Date) => {
       const windowStart = addDays(referenceDate, -rollingWindowDays);
       return plannedOrders.filter(
-        (order) => order.tier === tier && order.forecastDate >= windowStart && order.forecastDate < referenceDate
+        (order) => order.tier === tier && order.forecastDate >= windowStart && order.forecastDate <= referenceDate
       ).length;
     };
 
@@ -735,7 +735,7 @@ export default function InventoryManagement() {
         (order) =>
           order.model.toLowerCase() === model.toLowerCase() &&
           order.forecastDate >= windowStart &&
-          order.forecastDate < referenceDate
+          order.forecastDate <= referenceDate
       ).length;
     };
 
