@@ -590,9 +590,9 @@ export default function InventoryManagement() {
       const scheduleMatch = scheduleByChassis[chassis];
       const customerFromSchedule = toStr((scheduleMatch as any)?.Customer);
       const inferredType = (() => {
+        if (isStockCustomer(customerFromSchedule)) return "Stock";
         if (rawType.includes("stock")) return "Stock";
         if (rawType.includes("customer") || rawType.includes("retail")) return "Customer";
-        if (isStockCustomer(customerFromSchedule)) return "Stock";
         return "Customer";
       })();
 
@@ -670,17 +670,17 @@ export default function InventoryManagement() {
     yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0
       ? yardCapacityStats.maxCapacity - yardStockTotal
       : null;
+  const barMaxBase = Math.max(
+    yardCapacityStats.maxCapacity || 0,
+    yardStockTotal || 0,
+    yardCapacityStats.minVanVolume || 0
+  );
+  const barMax = barMaxBase > 0 ? barMaxBase * 1.1 : 0;
+  const stockFillPercent = barMax > 0 ? (yardStockBreakdown.stockCount / barMax) * 100 : 0;
+  const customerFillPercent = barMax > 0 ? (yardStockBreakdown.customerCount / barMax) * 100 : 0;
+  const totalFillPercent = barMax > 0 ? (yardStockTotal / barMax) * 100 : 0;
   const minMarkerPercent =
-    yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0 && yardCapacityStats.minVanVolume
-      ? Math.min(200, (yardCapacityStats.minVanVolume / yardCapacityStats.maxCapacity) * 100)
-      : null;
-  const barFillPercent =
-    yardCapacityStats.maxCapacity && yardCapacityStats.maxCapacity > 0
-      ? Math.min(100, (yardStockTotal / yardCapacityStats.maxCapacity) * 100)
-      : 0;
-  const stockFillPercent =
-    yardStockTotal > 0 ? (barFillPercent * yardStockBreakdown.stockCount) / yardStockTotal : 0;
-  const customerFillPercent = Math.max(0, barFillPercent - stockFillPercent);
+    yardCapacityStats.minVanVolume && barMax > 0 ? (yardCapacityStats.minVanVolume / barMax) * 100 : null;
 
   const emptySlots = useMemo<EmptySlot[]>(() => {
     return schedule
@@ -999,45 +999,65 @@ export default function InventoryManagement() {
                     </div>
                   )}
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs font-semibold text-slate-600">
-                  <span>Min {yardCapacityStats.minVanVolume ?? "—"}</span>
-                  <span>Max {yardCapacityStats.maxCapacity ?? "—"}</span>
+                <div className="mt-3 flex items-center justify-end text-xs font-semibold text-slate-600">
+                  {barMax > 0 && (
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 shadow-sm">Scale to max {Math.ceil(barMax)}</span>
+                  )}
                 </div>
                 <div className="mt-2">
-                  <div className="relative h-4 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="absolute inset-0 flex">
+                  <div className="relative h-12 w-full overflow-visible rounded-full bg-slate-100 shadow-inner">
+                    <div className="absolute inset-y-0 left-0 flex overflow-visible">
                       <div
                         className="h-full rounded-l-full bg-gradient-to-r from-emerald-300 via-sky-300 to-indigo-300 shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
                         style={{ width: `${stockFillPercent}%` }}
                       />
                       <div
-                        className="h-full rounded-r-full bg-amber-300/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
-                        style={{ width: `${customerFillPercent}%` }}
+                        className="absolute left-0 top-0 h-full rounded-r-full bg-amber-300/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+                        style={{ left: `${stockFillPercent}%`, width: `${customerFillPercent}%` }}
                       />
                     </div>
-                    {minMarkerPercent != null && (
+
+                    {yardStockBreakdown.stockCount > 0 && (
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow"
+                        style={{ left: `${stockFillPercent / 2}%` }}
+                      >
+                        Stock: {yardStockBreakdown.stockCount}
+                      </div>
+                    )}
+
+                    {yardStockBreakdown.customerCount > 0 && (
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-amber-900 shadow"
+                        style={{ left: `${stockFillPercent + customerFillPercent / 2}%` }}
+                      >
+                        Customer: {yardStockBreakdown.customerCount}
+                      </div>
+                    )}
+
+                    {yardStockTotal > 0 && (
+                      <div
+                        className="absolute -top-7 -translate-x-1/2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-900 shadow-sm"
+                        style={{ left: `${totalFillPercent}%` }}
+                      >
+                        Total: {yardStockTotal}
+                      </div>
+                    )}
+
+                    {yardCapacityStats.minVanVolume && minMarkerPercent != null && (
                       <div
                         className="absolute top-1/2 -translate-y-1/2"
-                        style={{ left: `${Math.min(100, minMarkerPercent)}%` }}
+                        style={{ left: `${minMarkerPercent}%` }}
                       >
-                        <div className="h-4 w-px bg-rose-500/80" />
-                        <div className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
-                          Min {yardCapacityStats.minVanVolume}
+                        <div className="h-6 w-px bg-rose-500/80" />
+                        <div className="absolute left-1/2 top-6 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
+                          Target Min: {yardCapacityStats.minVanVolume}
                         </div>
                       </div>
                     )}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
-                    Stock: {yardStockBreakdown.stockCount}
-                  </span>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 font-semibold text-amber-800 shadow-sm">
-                    Customer: {yardStockBreakdown.customerCount}
-                  </span>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
-                    Total: {yardStockTotal}
-                  </span>
                   {yardCapacityStats.maxCapacity && (
                     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
                       Target Max: {yardCapacityStats.maxCapacity}
@@ -1062,8 +1082,8 @@ export default function InventoryManagement() {
             <CardHeader className="border-b border-slate-200 pb-4">
               <CardTitle className="text-lg font-semibold text-slate-900">Stock Min Checkpoint</CardTitle>
               <p className="text-sm text-slate-600">
-                Looks back 90 days before the first empty slot and projects 90 days forward from today to see how stock aligns
-                with yard minimum expectations.
+                Anchored to the first empty slot: checks the prior 90/30 days and looks 90 days forward from today against the
+                yard minimum.
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1089,7 +1109,7 @@ export default function InventoryManagement() {
                   {emptySlotStockAssessment && (
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Past 90 days</div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">90 days before first empty</div>
                         <div className="mt-2 text-3xl font-semibold text-slate-900">{emptySlotStockAssessment.past90Stock}</div>
                         <p className="mt-1 text-sm text-slate-700">Stock arrivals before the empty slot.</p>
                         <div
@@ -1110,7 +1130,7 @@ export default function InventoryManagement() {
                       </div>
 
                       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Past 30 days</div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">30 days before first empty</div>
                         <div className="mt-2 text-3xl font-semibold text-slate-900">{emptySlotStockAssessment.past30Stock}</div>
                         <p className="mt-1 text-sm text-slate-700">Recent arrivals leading into the slot.</p>
                         <div
