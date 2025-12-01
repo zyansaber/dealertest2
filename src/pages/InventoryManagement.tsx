@@ -676,11 +676,12 @@ export default function InventoryManagement() {
     yardCapacityStats.minVanVolume || 0
   );
   const barMax = barMaxBase > 0 ? barMaxBase * 1.1 : 0;
-  const stockFillPercent = barMax > 0 ? (yardStockBreakdown.stockCount / barMax) * 100 : 0;
-  const customerFillPercent = barMax > 0 ? (yardStockBreakdown.customerCount / barMax) * 100 : 0;
-  const totalFillPercent = barMax > 0 ? (yardStockTotal / barMax) * 100 : 0;
+  const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
+  const stockFillPercent = clampPercent(barMax > 0 ? (yardStockBreakdown.stockCount / barMax) * 100 : 0);
+  const customerFillPercent = clampPercent(barMax > 0 ? (yardStockBreakdown.customerCount / barMax) * 100 : 0);
+  const totalFillPercent = clampPercent(barMax > 0 ? (yardStockTotal / barMax) * 100 : 0);
   const minMarkerPercent =
-    yardCapacityStats.minVanVolume && barMax > 0 ? (yardCapacityStats.minVanVolume / barMax) * 100 : null;
+    yardCapacityStats.minVanVolume && barMax > 0 ? clampPercent((yardCapacityStats.minVanVolume / barMax) * 100) : null;
 
   const emptySlots = useMemo<EmptySlot[]>(() => {
     return schedule
@@ -999,27 +1000,24 @@ export default function InventoryManagement() {
                     </div>
                   )}
                 </div>
-                <div className="mt-3 flex items-center justify-end text-xs font-semibold text-slate-600">
-                  {barMax > 0 && (
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 shadow-sm">Scale to max {Math.ceil(barMax)}</span>
-                  )}
-                </div>
                 <div className="mt-2">
-                  <div className="relative h-12 w-full overflow-visible rounded-full bg-slate-100 shadow-inner">
-                    <div className="absolute inset-y-0 left-0 flex overflow-visible">
-                      <div
-                        className="h-full rounded-l-full bg-gradient-to-r from-emerald-300 via-sky-300 to-indigo-300 shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
-                        style={{ width: `${stockFillPercent}%` }}
-                      />
-                      <div
-                        className="absolute left-0 top-0 h-full rounded-r-full bg-amber-300/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
-                        style={{ left: `${stockFillPercent}%`, width: `${customerFillPercent}%` }}
-                      />
+                  <div className="relative h-14 w-full overflow-visible rounded-2xl border border-slate-200/80 bg-gradient-to-r from-slate-50 via-slate-100 to-slate-50 shadow-inner">
+                    <div className="absolute inset-[6px] overflow-hidden rounded-xl">
+                      <div className="relative h-full w-full bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100">
+                        <div
+                          className="absolute left-0 top-0 h-full rounded-l-xl bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-300 shadow-[0_6px_12px_rgba(16,185,129,0.25)]"
+                          style={{ width: `${stockFillPercent}%` }}
+                        />
+                        <div
+                          className="absolute top-0 h-full rounded-r-xl bg-gradient-to-r from-amber-400 via-amber-300 to-amber-200 shadow-[0_6px_12px_rgba(245,158,11,0.25)]"
+                          style={{ left: `${stockFillPercent}%`, width: `${customerFillPercent}%` }}
+                        />
+                      </div>
                     </div>
 
                     {yardStockBreakdown.stockCount > 0 && (
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow"
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-emerald-900 shadow-sm ring-1 ring-emerald-200"
                         style={{ left: `${stockFillPercent / 2}%` }}
                       >
                         Stock: {yardStockBreakdown.stockCount}
@@ -1028,7 +1026,7 @@ export default function InventoryManagement() {
 
                     {yardStockBreakdown.customerCount > 0 && (
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-amber-900 shadow"
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-amber-900 shadow-sm ring-1 ring-amber-200"
                         style={{ left: `${stockFillPercent + customerFillPercent / 2}%` }}
                       >
                         Customer: {yardStockBreakdown.customerCount}
@@ -1037,7 +1035,7 @@ export default function InventoryManagement() {
 
                     {yardStockTotal > 0 && (
                       <div
-                        className="absolute -top-7 -translate-x-1/2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-900 shadow-sm"
+                        className="absolute -top-8 -translate-x-1/2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-900 shadow"
                         style={{ left: `${totalFillPercent}%` }}
                       >
                         Total: {yardStockTotal}
@@ -1049,15 +1047,15 @@ export default function InventoryManagement() {
                         className="absolute top-1/2 -translate-y-1/2"
                         style={{ left: `${minMarkerPercent}%` }}
                       >
-                        <div className="h-6 w-px bg-rose-500/80" />
-                        <div className="absolute left-1/2 top-6 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
+                        <div className="h-8 w-px bg-rose-500/90" />
+                        <div className="absolute left-1/2 top-8 -translate-x-1/2 whitespace-nowrap rounded border border-rose-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-rose-600 shadow-sm">
                           Target Min: {yardCapacityStats.minVanVolume}
                         </div>
                       </div>
                     )}
                   </div>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-600">
                   {yardCapacityStats.maxCapacity && (
                     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
                       Target Max: {yardCapacityStats.maxCapacity}
