@@ -859,37 +859,49 @@ export default function InventoryManagement() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold">Inventory Management</h2>
-              <p className="text-sm text-slate-600">
-                Yard stock strategy overview by model, PGI trend, and twelve-month inbound outlook.
-              </p>
             </div>
           </div>
 
-          <Card className="relative overflow-hidden border-none bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white shadow-xl">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.28),transparent_32%),radial-gradient(circle_at_85%_15%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_45%_80%,rgba(255,255,255,0.16),transparent_32%)]" />
+          <Card className="relative overflow-hidden border border-slate-200 bg-gradient-to-r from-sky-50 via-white to-indigo-50 shadow-md">
             <CardHeader className="relative pb-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
-                  <CardTitle className="text-2xl font-semibold text-white">{yardCapacityStats.label}</CardTitle>
-                </div>
+                  <CardTitle className="text-2xl font-semibold text-slate-900">Current stock level</CardTitle>
+                  <p className="text-sm text-slate-600">{yardCapacityStats.label}</p>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="relative space-y-4">
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
-                  <p className="text-xs uppercase tracking-wide text-slate-200/80">Max Yard Capacity</p>
-                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold">
-                    <span>{yardCapacityStats.maxCapacity ?? "—"}</span>
-                    <span className="text-sm font-medium text-slate-200/70">vans</span>
+                <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Current Yard Stock</p>
+                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold text-slate-900">
+                    <span>{currentStockTotal ?? "—"}</span>
+                    <span className="text-sm font-medium text-slate-500">vans</span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-200/70">Sum of "Current Yard Stock" in Stock Model Outlook.</p>
+                  <p className="mt-1 text-xs text-slate-500">Live yard stock across all models.</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Target Max</p>
+                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold text-slate-900">
+                    <span>{yardCapacityStats.maxCapacity ?? "—"}</span>
+                    <span className="text-sm font-medium text-slate-500">vans</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">Configured yard capacity limit.</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Target Min</p>
+                  <div className="mt-2 flex items-end gap-2 text-3xl font-semibold text-slate-900">
+                    <span>{yardCapacityStats.minVanVolume ?? "—"}</span>
+                    <span className="text-sm font-medium text-slate-500">vans</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">Minimum on-yard volume for a healthy pipeline.</p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/15 bg-white/5 p-4 shadow-inner">
-                <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-100">
+              <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-700">
                   <div className="flex flex-col">
-                    <span className="text-xs uppercase tracking-wide text-slate-200/80">Yard Fill</span>
+                    <span className="text-xs uppercase tracking-wide text-slate-500">Yard Fill</span>
                     {capacityPercent != null ? (
                       <span className="text-lg font-semibold">{capacityPercent}% utilised</span>
                     ) : (
@@ -897,34 +909,42 @@ export default function InventoryManagement() {
                     )}
                   </div>
                   {remainingCapacity != null && (
-                    <div className="rounded-full border border-emerald-200/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-50 shadow-sm">
+                    <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm">
                       {remainingCapacity >= 0 ? `${remainingCapacity} slots free` : `${Math.abs(remainingCapacity)} over capacity`}
                     </div>
                   )}
                 </div>
-                <div className="mt-3 h-3 w-full overflow-hidden rounded-full border border-white/20 bg-white/10">
+                <div className="mt-3 flex items-center justify-between text-xs font-semibold text-slate-600">
+                  <span>
+                    Min {yardCapacityStats.minVanVolume ?? "—"}
+                  </span>
+                  <span>
+                    Max {yardCapacityStats.maxCapacity ?? "—"}
+                  </span>
+                </div>
+                <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-amber-300 via-emerald-300 to-sky-300 shadow-[0_0_12px_rgba(255,255,255,0.45)]"
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-300 via-sky-300 to-indigo-300 shadow-[0_2px_8px_rgba(0,0,0,0.08)]"
                     style={{ width: capacityPercent != null ? `${Math.min(100, capacityPercent)}%` : "0%" }}
                   />
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-200/80">
-                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 font-semibold">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
                     Current: {currentStockTotal}
                   </span>
                   {yardCapacityStats.maxCapacity && (
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 font-semibold">
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
                       Target Max: {yardCapacityStats.maxCapacity}
                     </span>
                   )}
                   {yardCapacityStats.minVanVolume && (
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 font-semibold">
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold shadow-sm">
                       Target Min: {yardCapacityStats.minVanVolume}
                     </span>
                   )}
                 </div>
                 {!yardCapacityStats.found && (
-                  <p className="mt-2 text-xs italic text-amber-100/90">
+                  <p className="mt-2 text-xs italic text-amber-700">
                     No yardsize entry matched this dealer yet. Add Max/Min volumes in the yardsize feed to unlock full insights.
                   </p>
                 )}
