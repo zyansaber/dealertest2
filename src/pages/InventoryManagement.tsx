@@ -216,9 +216,15 @@ export default function InventoryManagement() {
     unsubYardSize = subscribeToYardSizes((data) => setYardSizes(data || {}));
     const unsubPgi = subscribeToPGIRecords((data) => setPgiRecords(data || {}));
     const unsubSchedule = subscribeToSchedule(
-      (data) => setSchedule(Array.isArray(data) ? data : []),
+      (data) => {
+        const normalized = Array.isArray(data)
+          ? data.filter(Boolean)
+          : Object.values(data || {}).filter(Boolean);
+        setSchedule(normalized as ScheduleItem[]);
+      },
       { includeNoChassis: true, includeNoCustomer: true, includeFinished: true }
     );
+
 
     return () => {
       unsubYard?.();
@@ -365,7 +371,7 @@ export default function InventoryManagement() {
       schedule.forEach((item) => {
         const dealerMatches = slugifyDealerName((item as any)?.Dealer) === dealerSlug || !dealerSlug;
         if (!dealerMatches) return;
-       if (!isStockCustomer((item as any)?.Customer)) return;
+        if (!isStockCustomer((item as any)?.Customer)) return;
         const model = primaryLabel(toStr((item as any)?.Model || "").trim());
         if (!model) return;
         if (!modelMap.has(model)) return;
@@ -731,7 +737,7 @@ export default function InventoryManagement() {
     };
 
     const countModelInWindow = (model: string, referenceDate: Date) => {
-      const windowStart = addDays(referenceDate, -rollingWindowDays)
+      const windowStart = addDays(referenceDate, -rollingWindowDays);
       return plannedOrders.filter(
         (order) =>
           order.model.toLowerCase() === model.toLowerCase() &&
