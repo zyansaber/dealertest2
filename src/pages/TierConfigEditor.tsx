@@ -2,19 +2,43 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { subscribeTierConfig, setTierConfig } from "@/lib/firebase";
+import {
+  subscribeTierConfig,
+  setTierConfig,
+  subscribeToYardSizes,
+  dealerNameToSlug,
+} from "@/lib/firebase";
 import type { TierConfig, TierTarget } from "@/types/tierConfig";
 import { defaultShareTargets, defaultTierTargets } from "@/config/tierDefaults";
+import type { YardSizeRecord } from "@/lib/firebase";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const toNumber = (value: string) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
 };
 
+const pickNumber = (source: Record<string, any>, keys: string[]) => {
+  for (const key of keys) {
+    const num = Number(source?.[key]);
+    if (Number.isFinite(num)) return num;
+  }
+  return undefined;
+};
+
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
 export default function TierConfigEditor() {
   const [config, setConfig] = useState<TierConfig>({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [yardSizes, setYardSizes] = useState<Record<string, YardSizeRecord>>({});
+  const [selectedDealerSlug, setSelectedDealerSlug] = useState<string>("");
 
   useEffect(() => {
     const unsub = subscribeTierConfig((data) => {
@@ -22,6 +46,45 @@ export default function TierConfigEditor() {
     });
     return () => unsub?.();
   }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToYardSizes((data) => setYardSizes(data || {}));
+    return () => unsub?.();
+  }, []);
+
+  const yardOptions = useMemo(() => {
+    const entries = Object.entries(yardSizes || {});
+    const options = entries.map(([key, value]) => {
+      const label =
+        (value?.dealer as string) || (value?.dealerName as string) || (value?.yard as string) || (value?.name as string) || key;
+      const slug = slugify(label) || dealerNameToSlug(label) || slugify(key);
+      const minVolume = pickNumber(value as Record<string, any>, [
+        "Min Van Volumn",
+        "Min Van Volume",
+        "min_van_volumn",
+        "min_van_volume",
+        "minVanVolume",
+        "minVanVolumn",
+        "min_van",
+        "minimum_van_volume",
+        "Min",
+        "MIN",
+        "min",
+      ]);
+      return { key, slug, label, minVolume };
+    });
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  }, [yardSizes]);
+
+  useEffect(() => {
+    if (!selectedDealerSlug && yardOptions.length > 0) {
+      setSelectedDealerSlug(yardOptions[0]?.slug || "");
+    }
+  }, [selectedDealerSlug, yardOptions]);
+
+  const selectedYard = useMemo(() => {
+    return yardOptions.find((option) => option.slug === selectedDealerSlug) || null;
+  }, [selectedDealerSlug, yardOptions]);
 
   const effectiveTargets = useMemo(() => {
     const tierTargets: Record<string, TierTarget> = { ...defaultTierTargets };
@@ -33,6 +96,13 @@ export default function TierConfigEditor() {
 
     return { tierTargets, shareTargets };
   }, [config]);
+
+  const yardShareCounts = useMemo(() => {
+    if (!selectedYard?.minVolume || selectedYard.minVolume <= 0) return {} as Record<string, number>;
+    return Object.fromEntries(
+      Object.entries(effectiveTargets.shareTargets).map(([tier, pct]) => [tier, Math.round(selectedYard.minVolume * pct)])
+    );
+  }, [effectiveTargets.shareTargets, selectedYard]);
 
   const handleShareChange = (tier: string, value: string) => {
     const pct = Math.max(0, toNumber(value));
@@ -156,6 +226,56 @@ export default function TierConfigEditor() {
           </Button>
           {message && <span className="text-sm text-slate-700">{message}</span>}
         </div>
+
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="border-b border-slate-200">
+            <CardTitle className="text-lg font-semibold text-slate-900">Yard requirement preview</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4">
+            <div className="grid gap-4 md:grid-cols-2 md:items-end">
+              <div className="space-y-2">
+                <Label className="text-sm text-slate-700">Select dealer / yard</Label>
+                <Select value={selectedDealerSlug} onValueChange={setSelectedDealerSlug}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Choose a dealer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yardOptions.map((option) => (
+                      <SelectItem key={option.slug} value={option.slug}>
+                        {option.label || option.slug}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <p className="font-semibold text-slate-900">Baseline: min yard volume</p>
+                {selectedYard?.minVolume ? (
+                  <p>
+                    Using current min yard number of <span className="font-semibold">{selectedYard.minVolume}</span> units. Percent
+                    targets above are applied to this baseline.
+                  </p>
+                ) : (
+                  <p className="text-amber-700">No min yard volume found for this dealer.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+              {Object.entries(effectiveTargets.shareTargets).map(([tier, pct]) => (
+                <div key={tier} className="space-y-1 rounded-lg border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
+                    <span>Tier {tier}</span>
+                    <span className="text-xs text-slate-500">{Math.round(pct * 10000) / 100}%</span>
+                  </div>
+                  <p className="text-sm text-slate-700">
+                    Target yard count: <span className="font-semibold">{yardShareCounts[tier] ?? "-"}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
