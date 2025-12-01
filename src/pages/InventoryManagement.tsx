@@ -15,12 +15,15 @@ import {
   subscribeToYardSizes,
   type ModelAnalysisRecord,
   subscribeShowDealerMappings,
+  subscribeTierConfig,
 } from "@/lib/firebase";
 import { normalizeDealerSlug, prettifyDealerName } from "@/lib/dealerUtils";
 import type { ScheduleItem } from "@/types";
 import { formatShowDate, parseFlexibleDateToDate, subscribeToShows } from "@/lib/showDatabase";
 import type { ShowDealerMapping } from "@/lib/firebase";
 import type { ShowRecord } from "@/types/show";
+import type { TierConfig, TierTarget } from "@/types/tierConfig";
+import { defaultShareTargets, defaultTierTargets } from "@/config/tierDefaults";
 
 type AnyRecord = Record<string, any>;
 
@@ -158,6 +161,7 @@ const isFinishedProduction = (value?: unknown) => {
   return status === "finished" || status === "finish";
 };
 
+
 export default function InventoryManagement() {
   const { dealerSlug: rawDealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
 
@@ -179,6 +183,7 @@ export default function InventoryManagement() {
 
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
+  const [tierConfig, setTierConfig] = useState<TierConfig | null>(null);
 
   const today = useMemo(() => new Date(), []);
   const currentMonthStart = useMemo(() => startOfMonth(today), [today]);
@@ -214,9 +219,11 @@ export default function InventoryManagement() {
   useEffect(() => {
     const unsubShows = subscribeToShows((data) => setShows(data || []));
     const unsubMappings = subscribeShowDealerMappings((data) => setShowMappings(data || {}));
+    const unsubTier = subscribeTierConfig((data) => setTierConfig(data));
     return () => {
       unsubShows?.();
       unsubMappings?.();
+      unsubTier?.();
     };
   }, []);
 
@@ -344,6 +351,7 @@ export default function InventoryManagement() {
       schedule.forEach((item) => {
         const dealerMatches = slugifyDealerName((item as any)?.Dealer) === dealerSlug || !dealerSlug;
         if (!dealerMatches) return;
+        if (!isStockCustomer((item as any)?.Customer)) return;
         const model = primaryLabel(toStr((item as any)?.Model || "").trim());
         if (!model) return;
         if (!modelMap.has(model)) return;
@@ -448,7 +456,7 @@ export default function InventoryManagement() {
     });
     return markers;
   }, [monthBuckets.length, showFootnotes]);
-  
+
   const tierColor = (tier?: string) => {
     const key = normalizeTierCode(tier);
     const palette: Record<string, { bg: string; border: string; text: string; pill: string }> = {
@@ -491,12 +499,18 @@ export default function InventoryManagement() {
 
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
 
-  const tierTargets: Record<string, { label: string; role: string; minimum: number; ceiling?: number }> = {
-    A1: { label: "Core", role: "Never run dry; keep multiple couple options visible.", minimum: 3 },
-    "A1+": { label: "Flagship", role: "Prioritise showcase quality; always have a demo.", minimum: 1 },
-    A2: { label: "Supporting", role: "Fill structural gaps like family bunk and hybrid.", minimum: 1 },
-    B1: { label: "Niche", role: "Tightly control volume; refresh quickly.", minimum: 0, ceiling: 1 },
-  };
+  const tierTargets = useMemo(() => {
+    const configTargets = tierConfig?.tierTargets || {};
+    const merged: Record<string, TierTarget> = { ...defaultTierTargets };
+
+    Object.entries(configTargets).forEach(([tier, target]) => {
+      merged[tier] = { ...defaultTierTargets[tier], ...target } as TierTarget;
+    });
+
+    return merged;
+  }, [tierConfig]);
+
+  const shareTargets = useMemo(() => ({ ...defaultShareTargets, ...(tierConfig?.shareTargets || {}) }), [tierConfig]);
 
   const tierAggregates = useMemo(() => {
     const totals: Record<string, { stock: number; incoming: number[] }> = {};
@@ -627,7 +641,9 @@ export default function InventoryManagement() {
       .filter((item) => {
         const hasDealer = toStr((item as any)?.Dealer).trim() !== "";
         const lacksChassis = !hasKey(item, "Chassis");
-        return hasDealer && lacksChassis;
+        const customer = toStr((item as any)?.Customer);
+        const isStock = customer ? isStockCustomer(customer) : false;
+        return hasDealer && lacksChassis && isStock;
       })
       .map((item) => {
         const forecastRaw =
@@ -641,10 +657,21 @@ export default function InventoryManagement() {
       .filter(Boolean) as EmptySlot[];
   }, [dealerSlug, schedule]);
 
+  const prioritizedEmptySlots = useMemo(() => {
+    const horizonStart = monthBuckets[0]?.start;
+    const horizonEnd = monthBuckets[monthBuckets.length - 1]?.end;
+
+    return [...emptySlots]
+      .filter((slot) => {
+        if (!horizonStart || !horizonEnd) return true;
+        return slot.deliveryDate >= horizonStart && slot.deliveryDate < horizonEnd;
+      })
+      .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
+      .slice(0, 10);
+  }, [emptySlots, monthBuckets]);
+
   const emptySlotRecommendations = useMemo(() => {
     if (monthBuckets.length === 0) return [] as string[];
-
-    const shareTargets: Record<string, number> = { A1: 0.4, "A1+": 0.3, A2: 0.2, B1: 0.1 };
     const rollingWindowDays = 90;
     const capacityBaseline = (() => {
       const { maxCapacity, minVanVolume } = yardCapacityStats;
@@ -661,13 +688,7 @@ export default function InventoryManagement() {
     const horizonStart = monthBuckets[0]?.start;
     const horizonEnd = monthBuckets[monthBuckets.length - 1]?.end;
 
-    const slots = [...emptySlots]
-      .filter((slot) => {
-        if (!horizonStart || !horizonEnd) return true;
-        return slot.deliveryDate >= horizonStart && slot.deliveryDate < horizonEnd;
-      })
-      .sort((a, b) => a.forecastDate.getTime() - b.forecastDate.getTime())
-      .slice(0, 10);
+    const slots = prioritizedEmptySlots;
 
     const tierModels: Record<string, string[]> = {};
     modelRows.forEach((row) => {
@@ -689,7 +710,8 @@ export default function InventoryManagement() {
     schedule.forEach((item) => {
       const dealerMatches = slugifyDealerName((item as any)?.Dealer) === dealerSlug || !dealerSlug;
       const hasChassis = Boolean((item as any)?.Chassis);
-      if (!dealerMatches || !hasChassis) return;
+      const isStock = isStockCustomer((item as any)?.Customer);
+      if (!dealerMatches || !hasChassis || !isStock) return;
       const forecastRaw =
         (item as any)?.["Forecast Production Date: dd/mm/yyyy"] ||
         (item as any)?.["Forecast Production Date"] ||
@@ -847,7 +869,8 @@ export default function InventoryManagement() {
     analysisByModel,
     currentStockTotal,
     dealerSlug,
-    emptySlots,
+    prioritizedEmptySlots,
+    shareTargets,
     modelRows,
     monthBuckets,
     schedule,
@@ -1072,6 +1095,20 @@ export default function InventoryManagement() {
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                   Empty slot capture suggestions
                 </div>
+                {prioritizedEmptySlots.length > 0 && (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                    <div className="mb-1 font-semibold text-slate-900">Next 10 empty slots</div>
+                    <ol className="list-decimal space-y-1 pl-4">
+                      {prioritizedEmptySlots.map((slot, idx) => (
+                        <li key={`${slot.item?.id || idx}-${slot.forecastDate.toISOString()}`}>
+                          Forecast {slot.forecastDate.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                          {" "}
+                          → delivery ETA {monthFormatter.format(slot.deliveryDate)}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
                 {emptySlotRecommendations.length === 0 ? (
                   <p className="text-slate-600">No empty slots on the horizon; keep monitoring the schedule.</p>
                 ) : (
