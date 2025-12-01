@@ -1319,7 +1319,7 @@ export default function InventoryManagement() {
                           </TableCell>
                         ))}
                         <TableCell className="text-right font-semibold tabular-nums">
-                          {totalsRow.currentStock + totalsRow.recentHandover + totalsRow.recentPgi + totalsRow.incoming.reduce((sum, v) => sum + (v || 0), 0)}
+                          {totalsRow.incoming.reduce((sum, v) => sum + (v || 0), 0)}
                         </TableCell>
                       </TableRow>
                       {filteredRows.map((row, idx) => {
@@ -1354,7 +1354,7 @@ export default function InventoryManagement() {
                               {row.incoming[monthIdx] ?? 0}
                             </TableCell>
                           ))}
-                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{row.currentStock + row.recentHandover + row.recentPgi + inboundTotal}</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-900 tabular-nums">{inboundTotal}</TableCell>
                         </TableRow>
                       );
                     })}
