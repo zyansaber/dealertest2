@@ -810,11 +810,8 @@ export default function InventoryManagement() {
 
       const sharePct = shareTargets[tier] ?? 0;
       const recommendation = selectedModel
-        ? `Tier ${tier} target ${tierGoal} over ${rollingWindowDays} days; booked ${tierTally} (deficit ${tierDeficit}). Per-model target ${perModelTarget} (evenly split), booked ${modelTally}; order ${selectedModel} to close ${Math.max(
-            modelDeficit,
-            tierDeficit
-          )}. Share target ${Math.round(sharePct * 100)}% of baseline ${capacityBaseline}.`
-        : `Tier ${tier} target ${tierGoal} over ${rollingWindowDays} days; booked ${tierTally}. Assign a mapped model to meet the split target.`;
+        ? `Order ${selectedModel} (${Math.max(modelDeficit, tierDeficit)} needed in tier ${tier}).`
+        : `Assign a mapped model for tier ${tier} to meet the split target.`;
 
       plans.push({
         id: `${slot.item?.id || idx}-${slot.forecastDate.toISOString()}`,
