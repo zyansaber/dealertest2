@@ -255,9 +255,15 @@ export default function Sidebar({
               </div>
             ) : (
               // 单个dealer显示
-              <div className={`rounded-lg border border-slate-700 bg-slate-900 ${isCollapsed ? "p-3" : "p-4 space-y-2"}`}>
-                <div className="font-semibold text-slate-50">{displayDealerName}</div>
-                {!isCollapsed && <div className="text-sm text-slate-300">Dealer Portal</div>}
+              <div className={`rounded-lg border border-slate-700 bg-slate-900 ${isCollapsed ? "flex items-center justify-center p-3" : "p-4 space-y-2"}`}>
+                {isCollapsed ? (
+                  <ClipboardList className="h-4 w-4 text-slate-200" />
+                ) : (
+                  <>
+                    <div className="font-semibold text-slate-50">{displayDealerName}</div>
+                    <div className="text-sm text-slate-300">Dealer Portal</div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -295,7 +301,6 @@ export default function Sidebar({
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          {!isCollapsed && <span className="text-sm font-medium">Collapse</span>}
         </button>
       </div>
     </aside>
