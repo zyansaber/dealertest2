@@ -959,7 +959,6 @@ export default function InventoryManagement() {
                     <span>{currentStockTotal ?? "—"}</span>
                     <span className="text-sm font-medium text-slate-500">vans</span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">Live yard stock across all models.</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Target Max</p>
@@ -967,7 +966,6 @@ export default function InventoryManagement() {
                     <span>{yardCapacityStats.maxCapacity ?? "—"}</span>
                     <span className="text-sm font-medium text-slate-500">vans</span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">Configured yard capacity limit.</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Target Min</p>
@@ -975,7 +973,6 @@ export default function InventoryManagement() {
                     <span>{yardCapacityStats.minVanVolume ?? "—"}</span>
                     <span className="text-sm font-medium text-slate-500">vans</span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">Minimum on-yard volume for a healthy pipeline.</p>
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
