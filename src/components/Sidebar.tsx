@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  Package,
   BarChart3,
   Factory,
   FileX,
@@ -166,9 +165,12 @@ export default function Sidebar({
       <div className="flex h-full flex-1 flex-col">
         {/* Header */}
         <div className="relative flex items-center gap-3 border-b border-slate-800 px-4 py-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-slate-100 ring-1 ring-slate-700">
-            <Package className="h-5 w-5" />
-          </div>
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-800 ring-1 ring-slate-700">
+            <img
+              src="/assets/snowy-river-logo.svg"
+              alt="Snowy River Caravans"
+              className="h-9 w-9 object-contain"
+            />
           {!isCollapsed && (
             <div className="space-y-1">
               <h1 className="text-base font-semibold leading-tight">
