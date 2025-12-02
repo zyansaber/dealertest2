@@ -326,7 +326,7 @@ function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlan
               <div className="col-span-1 text-left">Model Year</div>
               <div className="col-span-2 text-left">Forecast Melbourne Factory Start Date</div>
               <div className="col-span-2 text-left">Status</div>
-              <div className="col-span-1 text-center">Action</div>
+              <div className="col-span-1 text-center">Updating Subscription</div>
             </div>
 
             {/* Orders List */}
