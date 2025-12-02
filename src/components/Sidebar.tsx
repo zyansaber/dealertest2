@@ -171,6 +171,7 @@ export default function Sidebar({
               alt="Snowy River Caravans"
               className="h-9 w-9 object-contain"
             />
+          </div>
           {!isCollapsed && (
             <div className="space-y-1">
               <h1 className="text-base font-semibold leading-tight">
