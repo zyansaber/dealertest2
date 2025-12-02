@@ -1,0 +1,15 @@
+<svg width="400" height="210" viewBox="0 0 400 210" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Snowy River Caravans Logo</title>
+  <desc id="desc">Stylized teal sun over black mountain silhouettes with the text Snowy River Caravans.</desc>
+  <defs>
+    <linearGradient id="sunGradient" x1="200" y1="0" x2="200" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3DC5B6" stop-opacity="0.9" />
+      <stop offset="1" stop-color="#2FA79A" />
+    </linearGradient>
+  </defs>
+  <path d="M200 10C104.859 10 27 87.8589 27 183H373C373 87.8589 295.141 10 200 10Z" fill="url(#sunGradient)"/>
+  <path d="M84 176C110 143 143 125 170 126C197 127 223 146 244 145C266 144 291 126 320 129C343 131 362 145 372 159V183H84V176Z" fill="#0F1010"/>
+  <path d="M62 183C90 136 137 104 175 110C196 114 219 129 243 129C263 129 286 121 310 110C333 99 355 89 373 100C354 69 317 45 272 38C228 32 182 39 148 59C115 78 90 110 62 141V183Z" fill="#121212"/>
+  <text x="200" y="206" text-anchor="middle" font-family="'Inter', 'Arial Black', sans-serif" font-size="26" font-weight="700" letter-spacing="2" fill="#0F1010">SNOWY  RIVER</text>
+  <text x="200" y="228" text-anchor="middle" font-family="'Inter', 'Arial', sans-serif" font-size="14" font-weight="600" letter-spacing="5" fill="#0F1010">CARAVANS</text>
+</svg>
