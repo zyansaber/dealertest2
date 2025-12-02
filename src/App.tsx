@@ -30,7 +30,6 @@ import DealerGroupYard from "./pages/DealerGroupYard";
 import AIFloatingAssistant from "./components/AIFloatingAssistant";
 import InventoryManagement from "./pages/InventoryManagement";
 import TierConfigEditor from "@/pages/TierConfigEditor";
-import SalesforceTest from "./pages/SalesforceTest";
 
 const queryClient = new QueryClient();
 
@@ -75,9 +74,6 @@ const App = () => (
           {/* 管理员相关路由 */}
           <Route path="/admin-login" element={<AdminLogin />} />
           <Route path="/admin" element={<Admin />} />
-
-          {/* 独立 Salesforce 测试页（不纳入正式导航） */}
-          <Route path="/salesforce-test" element={<SalesforceTest />} />
 
           {/* 单个 Dealer 路由 - 使用 /dealer/ 前缀 */}
           <Route path="/dealer/:dealerSlug" element={
