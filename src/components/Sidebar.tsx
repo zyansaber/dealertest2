@@ -165,7 +165,7 @@ export default function Sidebar({
       <div className="flex h-full flex-1 flex-col">
         {/* Header */}
         <div className="relative flex items-center gap-3 border-b border-slate-800 px-4 py-4">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-slate-800 ring-1 ring-slate-700">
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
             <img
               src="/assets/snowy-river-logo.svg"
               alt="Snowy River Caravans"
