@@ -217,16 +217,17 @@ const SalesforceTest = () => {
               className="rounded border px-3 py-2"
               value={authForm.client_id}
               onChange={(e) => handleAuthChange("client_id", e.target.value)}
-              placeholder="Your client id"
+              placeholder=""
             />
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium">
             client_secret
             <input
               className="rounded border px-3 py-2"
+              type="password"
               value={authForm.client_secret}
               onChange={(e) => handleAuthChange("client_secret", e.target.value)}
-              placeholder="Your client secret"
+              placeholder=""
             />
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium">
@@ -235,16 +236,17 @@ const SalesforceTest = () => {
               className="rounded border px-3 py-2"
               value={authForm.username}
               onChange={(e) => handleAuthChange("username", e.target.value)}
-              placeholder="Salesforce username"
+              placeholder=""
             />
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium">
             password + security token
             <input
               className="rounded border px-3 py-2"
+              type="password"
               value={authForm.password}
               onChange={(e) => handleAuthChange("password", e.target.value)}
-              placeholder="Password concatenated with security token"
+              placeholder=""
             />
           </label>
         </div>
