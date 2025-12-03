@@ -34,7 +34,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 
-export { database };
+export { app, database };
 
 export type ShowDealerMapping = {
   dealership: string;
