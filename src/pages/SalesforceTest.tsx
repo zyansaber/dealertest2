@@ -33,6 +33,17 @@ type SubmitProductRegistrationResult = {
   salesforceId?: string;
 };
 
+type UploadProofPayload = {
+  fileName: string;
+  base64Data: string;
+  productRegisteredId: string;
+};
+
+type UploadProofOfPurchaseResponse = {
+  success: boolean;
+  contentVersionId?: string;
+};
+
 const productRegistrationTemplate = JSON.stringify(
   {
     First_Name__c: "John",
@@ -112,6 +123,15 @@ const SalesforceTest = () => {
     [functions],
   );
 
+  const uploadProofOfPurchaseFn = useMemo(
+    () =>
+      httpsCallable<UploadProofPayload, UploadProofOfPurchaseResponse>(
+        functions,
+        "uploadProofOfPurchase",
+      ),
+    [functions],
+  );
+
   const [uploadForm, setUploadForm] = useState({
     title: "test.txt",
     pathOnClient: "test.txt",
@@ -122,6 +142,14 @@ const SalesforceTest = () => {
   });
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<string>("");
+
+  const [callableUploadPayload, setCallableUploadPayload] = useState<UploadProofPayload>({
+    fileName: "",
+    base64Data: "",
+    productRegisteredId: "",
+  });
+  const [callableUploadFile, setCallableUploadFile] = useState<File | null>(null);
+  const [callableUploadResult, setCallableUploadResult] = useState<string>("");
 
   const handleAuthChange = (key: string, value: string) => {
     setAuthForm((prev) => ({ ...prev, [key]: value }));
@@ -196,6 +224,11 @@ const SalesforceTest = () => {
 
   const filePreview = useMemo(() => uploadFile?.name ?? "No file selected", [uploadFile]);
 
+  const callableFilePreview = useMemo(
+    () => callableUploadFile?.name ?? "No file selected",
+    [callableUploadFile],
+  );
+
   const toBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -244,6 +277,10 @@ const SalesforceTest = () => {
     setCallablePayload((prev) => ({ ...prev, [key]: value }));
   };
 
+  const handleCallableUploadChange = (key: keyof UploadProofPayload, value: string) => {
+    setCallableUploadPayload((prev) => ({ ...prev, [key]: value }));
+  };
+
   const runCallableSubmission = async () => {
     setCallableResult("Submitting via Firebase Function...");
     try {
@@ -253,6 +290,18 @@ const SalesforceTest = () => {
       const code = error?.code ?? "unknown";
       const message = error?.message ?? String(error);
       setCallableResult(`Error (${code}): ${message}`);
+    }
+  };
+
+  const runCallableUpload = async () => {
+    setCallableUploadResult("Uploading via Firebase Function...");
+    try {
+      const response = await uploadProofOfPurchaseFn(callableUploadPayload);
+      setCallableUploadResult(JSON.stringify(response.data, null, 2));
+    } catch (error: any) {
+      const code = error?.code ?? "unknown";
+      const message = error?.message ?? String(error);
+      setCallableUploadResult(`Error (${code}): ${message}`);
     }
   };
 
@@ -682,6 +731,80 @@ const SalesforceTest = () => {
 
         <pre className="mt-4 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">
 {callableResult || "等待提交"}
+        </pre>
+      </section>
+
+      <section className="rounded-lg border bg-white p-4 shadow-sm">
+        <h2 className="text-xl font-semibold">5. 通过 Firebase Function 上传购买凭证</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          使用 uploadProofOfPurchase（Callable）将文件上传为 ContentVersion，并关联到 Product_Registered__c。
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Product_Registered__c Id（关联目标）
+            <input
+              className="rounded border px-3 py-2"
+              value={callableUploadPayload.productRegisteredId}
+              onChange={(e) => handleCallableUploadChange("productRegisteredId", e.target.value)}
+              placeholder="来自 submitProductRegistration 的 salesforceId"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            原始文件名
+            <input
+              className="rounded border px-3 py-2"
+              value={callableUploadPayload.fileName}
+              onChange={(e) => handleCallableUploadChange("fileName", e.target.value)}
+              placeholder="invoice123.pdf"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium md:col-span-2">
+            Base64 内容（可粘贴 dataURI，或选择文件自动生成）
+            <textarea
+              className="rounded border px-3 py-2"
+              rows={4}
+              value={callableUploadPayload.base64Data}
+              onChange={(e) => handleCallableUploadChange("base64Data", e.target.value)}
+              placeholder="data:application/pdf;base64,XXX 或纯 base64"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            选择文件（自动转 base64）
+            <input
+              type="file"
+              onChange={async (e) => {
+                const file = e.target.files?.[0] ?? null;
+                setCallableUploadFile(file);
+                if (file) {
+                  try {
+                    const base64 = await toBase64(file);
+                    setCallableUploadPayload((prev) => ({
+                      ...prev,
+                      base64Data: base64,
+                      fileName: prev.fileName || file.name,
+                    }));
+                  } catch (err) {
+                    setCallableUploadResult(`读取文件失败: ${String(err)}`);
+                  }
+                }
+              }}
+            />
+            <span className="text-xs text-muted-foreground">{callableFilePreview}</span>
+          </label>
+        </div>
+
+        <div className="mt-4 flex gap-3">
+          <button
+            className="rounded bg-sky-600 px-4 py-2 text-white hover:bg-sky-700"
+            onClick={runCallableUpload}
+            type="button"
+          >
+            通过 Firebase Function 上传凭证
+          </button>
+        </div>
+
+        <pre className="mt-4 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">
+{callableUploadResult || "等待上传"}
         </pre>
       </section>
     </div>
