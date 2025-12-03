@@ -150,6 +150,7 @@ const SalesforceTest = () => {
   });
   const [callableUploadFile, setCallableUploadFile] = useState<File | null>(null);
   const [callableUploadResult, setCallableUploadResult] = useState<string>("");
+  const [chainedStatus, setChainedStatus] = useState<string>("");
 
   const handleAuthChange = (key: string, value: string) => {
     setAuthForm((prev) => ({ ...prev, [key]: value }));
@@ -302,6 +303,48 @@ const SalesforceTest = () => {
       const code = error?.code ?? "unknown";
       const message = error?.message ?? String(error);
       setCallableUploadResult(`Error (${code}): ${message}`);
+    }
+  };
+
+  const runChainedSubmissionAndUpload = async () => {
+    setChainedStatus("步骤 1/2：通过 Callable 创建 Product_Registered__c...");
+    setCallableResult("");
+    setCallableUploadResult("");
+    try {
+      const registrationResponse = await submitProductRegistrationFn(callablePayload);
+      setCallableResult(JSON.stringify(registrationResponse.data, null, 2));
+
+      const { success, salesforceId } = registrationResponse.data;
+      if (!success || !salesforceId) {
+        throw new Error("submitProductRegistration 未返回 salesforceId");
+      }
+
+      setCallableUploadPayload((prev) => ({
+        ...prev,
+        productRegisteredId: salesforceId,
+      }));
+
+      const base64Data = callableUploadPayload.base64Data || "";
+      if (!base64Data) {
+        throw new Error("请先选择购买凭证文件或填写 base64 内容");
+      }
+
+      const uploadPayload: UploadProofPayload = {
+        fileName: callableUploadPayload.fileName || "proof-of-purchase",
+        base64Data,
+        productRegisteredId: salesforceId,
+      };
+
+      setChainedStatus(
+        `步骤 2/2：已获得 ${salesforceId}，准备上传购买凭证...`,
+      );
+      const uploadResponse = await uploadProofOfPurchaseFn(uploadPayload);
+      setCallableUploadResult(JSON.stringify(uploadResponse.data, null, 2));
+      setChainedStatus("完成：已创建 Product_Registered__c 并上传购买凭证。");
+    } catch (error: any) {
+      const code = error?.code ?? "unknown";
+      const message = error?.message ?? String(error);
+      setChainedStatus(`流程失败 (${code}): ${message}`);
     }
   };
 
@@ -735,10 +778,16 @@ const SalesforceTest = () => {
       </section>
 
       <section className="rounded-lg border bg-white p-4 shadow-sm">
-        <h2 className="text-xl font-semibold">5. 通过 Firebase Function 上传购买凭证</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          使用 uploadProofOfPurchase（Callable）将文件上传为 ContentVersion，并关联到 Product_Registered__c。
-        </p>
+        <h2 className="text-xl font-semibold">6. 通过 Firebase Function 上传购买凭证</h2>
+        <div className="mt-1 space-y-1 text-sm text-muted-foreground">
+          <p>
+            使用 uploadProofOfPurchase（Callable）将文件上传为 ContentVersion，并关联到 Product_Registered__c。
+          </p>
+          <p>
+            如果要和 submitProductRegistration 串联测试，请在下方填写文件信息后点击「提交注册并上传凭证」，流程会先
+            调用 submitProductRegistration，拿到 salesforceId 后再自动上传凭证并把 productRegisteredId 填好。
+          </p>
+        </div>
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm font-medium">
             Product_Registered__c Id（关联目标）
@@ -793,7 +842,7 @@ const SalesforceTest = () => {
           </label>
         </div>
 
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-wrap gap-3">
           <button
             className="rounded bg-sky-600 px-4 py-2 text-white hover:bg-sky-700"
             onClick={runCallableUpload}
@@ -801,8 +850,16 @@ const SalesforceTest = () => {
           >
             通过 Firebase Function 上传凭证
           </button>
+          <button
+            className="rounded bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700"
+            onClick={runChainedSubmissionAndUpload}
+            type="button"
+          >
+            提交注册并上传凭证（串联）
+          </button>
         </div>
 
+        <p className="mt-2 text-sm text-slate-700">{chainedStatus || "等待操作"}</p>
         <pre className="mt-4 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">
 {callableUploadResult || "等待上传"}
         </pre>
