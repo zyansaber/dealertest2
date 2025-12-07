@@ -46,6 +46,9 @@ const App = () => (
           
           {/* 密码登录页 */}
           <Route path="/login" element={<PasswordLogin />} />
+
+          {/* Standalone OCR playground (public) */}
+          <Route path="/ocr" element={<OcrPage />} />
           
           {/* 主仪表板（需要密码验证） */}
           <Route path="/dashboard" element={
