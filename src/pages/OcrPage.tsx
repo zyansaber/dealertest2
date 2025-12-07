@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useDropzone } from "react-dropzone";
-import { AlertCircle, Check, Copy, FileText, Loader2, RotateCw, Upload } from "lucide-react";
+import { AlertCircle, Camera, Check, Copy, FileText, Loader2, RotateCw, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,9 +96,11 @@ const OcrPage = () => {
   const [rotation, setRotation] = useState(0);
   const [engineStatus, setEngineStatus] = useState<"idle" | "warming" | "ready" | "error">("idle");
   const [engineMessage, setEngineMessage] = useState<string | null>(null);
+  const [patternMatches, setPatternMatches] = useState<string[]>([]);
   const jobRef = useRef(0);
   const lastFileRef = useRef<File | null>(null);
   const lastProcessedRotationRef = useRef(0);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   const resetState = useCallback(() => {
     setOcrText("");
@@ -163,6 +165,15 @@ const OcrPage = () => {
     performOcr(file);
   }, [performOcr]);
 
+  const handleCameraCapture = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      performOcr(file);
+    }
+    // reset the input to allow re-uploading the same file after capture
+    event.target.value = "";
+  };
+
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: {
@@ -188,6 +199,35 @@ const OcrPage = () => {
       }
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (!ocrText) {
+      setPatternMatches([]);
+      return;
+    }
+
+    const regex = /[A-Za-z]{3}[0-9]{6}/g;
+    const matches: string[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(ocrText)) !== null) {
+      matches.push(match[0]);
+    }
+
+    const prioritized = matches.filter((value) => value[3] === "2");
+    const others = matches.filter((value) => value[3] !== "2");
+    const ordered = [...prioritized, ...others];
+    const unique: string[] = [];
+    const seen = new Set<string>();
+
+    for (const value of ordered) {
+      if (seen.has(value)) continue;
+      seen.add(value);
+      unique.push(value);
+    }
+
+    setPatternMatches(unique);
+  }, [ocrText]);
 
   useEffect(() => {
     let cancelled = false;
@@ -356,8 +396,26 @@ const OcrPage = () => {
                 <Button type="button" variant="outline" size="sm" onClick={() => setRotation((r) => r + 90)}>
                   <RotateCw className="h-4 w-4" /> Rotate 90°
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2"
+                  onClick={() => cameraInputRef.current?.click()}
+                >
+                  <Camera className="h-4 w-4" /> Open camera
+                </Button>
                 <span className="text-xs text-slate-500">Use rotation if the preview looks sideways or upside-down.</span>
               </div>
+
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleCameraCapture}
+              />
 
               {previewUrl && (
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -453,6 +511,35 @@ const OcrPage = () => {
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                   {copied ? "Copied" : "Copy text"}
                 </Button>
+              </div>
+
+              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="flex items-center gap-2 font-semibold">
+                  <FileText className="h-4 w-4 text-primary" /> Detected codes (AAA + 6 digits)
+                </p>
+                {patternMatches.length > 0 ? (
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {patternMatches.map((code) => (
+                      <li
+                        key={code}
+                        className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <span className="font-mono text-base font-semibold text-slate-900">{code}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            code[3] === "2"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {code[3] === "2" ? "Starts with 2" : "Check first digit"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-500">No matches yet. Upload or edit text to find codes like ABC234567.</p>
+                )}
               </div>
 
               <div className="relative">
