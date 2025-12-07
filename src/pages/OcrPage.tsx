@@ -8,12 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 
-const OCR_LANGUAGE = "chi_sim+eng";
-const OCR_LANG_PATH = "https://tessdata.projectnaptha.com/4.0.0";
+const OCR_LANGUAGE = "eng";
+const OCR_LANG_SOURCES = ["/tessdata", "https://tessdata.projectnaptha.com/4.0.0"] as const;
 const MAX_WORKING_WIDTH = 2000;
 const MIN_DIMENSION = 320;
 
-async function preprocessImage(file: File, rotation: number) {
+async function preprocessImage(file: File, rotation: number, applyEnhancement: boolean) {
   const img = document.createElement("img");
   const url = URL.createObjectURL(file);
   img.src = url;
@@ -55,21 +55,24 @@ async function preprocessImage(file: File, rotation: number) {
   ctx.drawImage(img, -width / 2, -height / 2, width, height);
   ctx.restore();
 
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
+  if (applyEnhancement) {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const contrast = 1.05;
 
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-    const v = Math.min(255, Math.max(0, (gray - 128) * 1.15 + 128));
-    data[i] = v;
-    data[i + 1] = v;
-    data[i + 2] = v;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      const v = Math.min(255, Math.max(0, (gray - 128) * contrast + 128));
+      data[i] = v;
+      data[i + 1] = v;
+      data[i + 2] = v;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
   }
-
-  ctx.putImageData(imageData, 0, 0);
 
   URL.revokeObjectURL(url);
 
@@ -97,6 +100,9 @@ const OcrPage = () => {
   const [engineStatus, setEngineStatus] = useState<"idle" | "warming" | "ready" | "error">("idle");
   const [engineMessage, setEngineMessage] = useState<string | null>(null);
   const [patternMatches, setPatternMatches] = useState<string[]>([]);
+  const [enhance, setEnhance] = useState(true);
+  const [langPath, setLangPath] = useState<string>(OCR_LANG_SOURCES[0]);
+  const [langWarning, setLangWarning] = useState<string | null>(null);
   const jobRef = useRef(0);
   const lastFileRef = useRef<File | null>(null);
   const lastProcessedRotationRef = useRef(0);
@@ -131,10 +137,10 @@ const OcrPage = () => {
         throw new Error("The OCR engine is still loading. Please try again in a second.");
       }
 
-      const processed = await preprocessImage(file, rotation);
+      const processed = await preprocessImage(file, rotation, enhance);
 
       const { data } = await tesseract.recognize(processed, OCR_LANGUAGE, {
-        langPath: OCR_LANG_PATH,
+        langPath,
         logger: (message: { status: string; progress?: number }) => {
           if (message.status === "recognizing text" && typeof message.progress === "number") {
             setProgress(Math.round(message.progress * 100));
@@ -156,7 +162,7 @@ const OcrPage = () => {
       setStatus("error");
       setLastError(error instanceof Error ? error.message : "Unable to recognize this image");
     }
-  }, [resetState, rotation]);
+  }, [enhance, langPath, resetState, rotation]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles?.[0];
@@ -191,6 +197,41 @@ const OcrPage = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveLangPath = async () => {
+      for (const source of OCR_LANG_SOURCES) {
+        try {
+          const response = await fetch(`${source}/eng.traineddata.gz`, { method: "HEAD", mode: "no-cors" });
+          if (cancelled) return;
+          if (response.ok || response.type === "opaque") {
+            setLangPath(source);
+            setLangWarning(
+              source === OCR_LANG_SOURCES[0]
+                ? null
+                : "Using fallback CDN language data. Host eng.traineddata.gz under /public/tessdata for best stability."
+            );
+            return;
+          }
+        } catch (error) {
+          console.warn(`Language pack check failed for ${source}`, error);
+        }
+      }
+
+      if (!cancelled) {
+        setLangPath(OCR_LANG_SOURCES[OCR_LANG_SOURCES.length - 1]);
+        setLangWarning("English language pack not found locally; falling back to remote source.");
+      }
+    };
+
+    resolveLangPath();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -265,7 +306,7 @@ const OcrPage = () => {
         );
 
         await tesseract.recognize(blob, OCR_LANGUAGE, {
-          langPath: OCR_LANG_PATH,
+          langPath,
           logger: (message) => {
             if (cancelled) return;
             if (message.status === "recognizing text") {
@@ -306,7 +347,7 @@ const OcrPage = () => {
       cancelled = true;
       stopPolling();
     };
-  }, []);
+  }, [langPath]);
 
   useEffect(() => {
     if (!lastFileRef.current) return;
@@ -330,11 +371,11 @@ const OcrPage = () => {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-10 sm:px-8">
         <header className="flex flex-col gap-2">
-          <p className="text-sm font-semibold text-primary">Standalone OCR (English UI)</p>
-          <h1 className="text-3xl font-bold leading-tight text-slate-900">Image-to-Text (Chinese) Lab</h1>
+          <p className="text-sm font-semibold text-primary">Standalone OCR (English only)</p>
+          <h1 className="text-3xl font-bold leading-tight text-slate-900">Image-to-Text Precision Lab</h1>
           <p className="text-sm text-slate-600 sm:text-base">
-            Drop an image with Chinese characters and get selectable text in a few seconds. The page runs entirely
-            on the client with Tesseract.js; nothing is sent to a backend.
+            Drop a clear English-alphabet image and get selectable text in a few seconds. Everything runs on the
+            client with Tesseract.js; nothing is sent to a backend.
           </p>
         </header>
 
@@ -356,6 +397,7 @@ const OcrPage = () => {
             {engineMessage ?? "Preparing OCR engine…"}
             {engineStatus === "warming" && " (prefetching language data)"}
           </p>
+          {langWarning && <p className="text-xs text-amber-700">{langWarning}</p>}
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
@@ -365,7 +407,7 @@ const OcrPage = () => {
                 <Upload className="h-5 w-5 text-primary" />
                 Upload or drop an image
               </CardTitle>
-              <CardDescription>English interface, Chinese text recognition (Simplified).</CardDescription>
+              <CardDescription>English interface and language pack for crisp alphanumeric recognition.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div
@@ -395,6 +437,16 @@ const OcrPage = () => {
               <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
                 <Button type="button" variant="outline" size="sm" onClick={() => setRotation((r) => r + 90)}>
                   <RotateCw className="h-4 w-4" /> Rotate 90°
+                </Button>
+                <Button
+                  type="button"
+                  variant={enhance ? "default" : "outline"}
+                  size="sm"
+                  className="flex items-center gap-2"
+                  onClick={() => setEnhance((value) => !value)}
+                >
+                  {enhance ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                  {enhance ? "Enhanced" : "Raw"} input
                 </Button>
                 <Button
                   type="button"
@@ -492,8 +544,8 @@ const OcrPage = () => {
                 <div className="space-y-0.5 text-sm text-slate-600">
                   <p><span className="font-semibold text-slate-800">Engine:</span> Tesseract.js</p>
                   <p>
-                    <span className="font-semibold text-slate-800">Language pack:</span> Simplified Chinese + English
-                    ({OCR_LANGUAGE})
+                    <span className="font-semibold text-slate-800">Language pack:</span> English ({OCR_LANGUAGE})
+                    {langPath && ` via ${langPath}`}
                   </p>
                   {averageConfidence !== null && (
                     <p>
