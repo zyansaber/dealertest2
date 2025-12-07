@@ -31,6 +31,7 @@ import AIFloatingAssistant from "./components/AIFloatingAssistant";
 import InventoryManagement from "./pages/InventoryManagement";
 import TierConfigEditor from "@/pages/TierConfigEditor";
 import SalesforceTest from "./pages/SalesforceTest";
+import OcrPage from "./pages/OcrPage";
 
 const queryClient = new QueryClient();
 
