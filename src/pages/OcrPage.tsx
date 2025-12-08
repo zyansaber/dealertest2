@@ -731,7 +731,6 @@ const OcrPage = () => {
                   <ul className="grid gap-2 sm:grid-cols-2">
                     {patternMatches.map((code) => (
                       <li
-                      <li
                         key={code}
                         className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm"
                       >
