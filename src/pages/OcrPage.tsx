@@ -24,6 +24,7 @@ const OCR_LANG_SOURCES = ["/tessdata", "https://tessdata.projectnaptha.com/4.0.0
 const MAX_WORKING_WIDTH = 2000;
 const MIN_DIMENSION = 320;
 const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-1.5-flash-001";
+const GEMINI_API_VERSION = GEMINI_MODEL.includes("2.0") ? "v1beta" : "v1";
 
 async function preprocessImage(file: File, rotation: number, applyEnhancement: boolean) {
   const img = document.createElement("img");
@@ -203,7 +204,7 @@ const OcrPage = () => {
         setEngineMessage("Sending to Gemini for recognition…");
 
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/${GEMINI_API_VERSION}/models/${GEMINI_MODEL}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -216,25 +217,29 @@ const OcrPage = () => {
                         "Extract all visible text from this image. Preserve line breaks and punctuation. Return plain UTF-8 text only without additional commentary.",
                     },
                     {
-                      inlineData: {
+                      inline_data: {
                         data: base64,
-                        mimeType: "image/png",
+                        mime_type: "image/png",
                       },
                     },
                   ],
                 },
               ],
-              generationConfig: { temperature: 0.2 },
+              generation_config: { temperature: 0.2 },
             }),
           }
         );
 
         if (!response.ok) {
           const detail = await response.text();
-          const notFoundMessage =
-            response.status === 404
-              ? "The requested Gemini model is unavailable. Set VITE_GEMINI_MODEL to a supported model (e.g. gemini-1.5-flash-001 or gemini-1.5-flash-latest)."
-              : "";
+          const notFoundMessage = (() => {
+            if (response.status !== 404) return "";
+            if (GEMINI_API_VERSION === "v1") {
+              return "The requested Gemini model is unavailable on the v1 API. Try a v1-supported model such as gemini-1.5-flash-001 or switch to a v1beta model by setting VITE_GEMINI_MODEL to a Gemini 2.0 variant (which automatically uses v1beta).";
+            }
+
+            return "The requested Gemini model is unavailable on the v1beta API. Confirm the model name or switch to a v1-supported model such as gemini-1.5-flash-001.";
+          })();
           throw new Error(
             `Gemini OCR failed (${response.status}). ${notFoundMessage || ""}${detail ? ` ${detail}` : ""}`.trim()
           );
