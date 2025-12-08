@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { receiveChassisToYard } from "@/lib/firebase";
+import { receiveChassisToYard, subscribeToPGIRecords } from "@/lib/firebase";
 
 const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-2.5-flash";
 
@@ -13,6 +13,12 @@ const inferGeminiApiVersion = (model: string = GEMINI_MODEL): "v1" | "v1beta" =>
   if (fromEnv === "v1" || fromEnv === "v1beta") return fromEnv;
   return /gemini-2(\.|-|$)/i.test(model) ? "v1beta" : "v1";
 };
+
+const slugifyDealerName = (name?: string | null) =>
+  String(name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 
 const toBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -64,13 +70,12 @@ const OcrPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [receiving, setReceiving] = useState(false);
   const [apiVersionUsed, setApiVersionUsed] = useState<"v1" | "v1beta">(inferGeminiApiVersion());
-  const autoSlug = useMemo(() => {
-    const randomPart =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID().slice(0, 8)
-        : Math.random().toString(36).slice(2, 10);
-    return `auto-${randomPart}`;
-  }, []);
+  const [pgi, setPgi] = useState<Record<string, any>>({});
+  const matchedPgi = useMemo(() => (bestCode ? pgi[bestCode] : null), [bestCode, pgi]);
+  const matchedDealerSlug = useMemo(() => {
+    const slug = matchedPgi ? slugifyDealerName(matchedPgi.dealer) : "";
+    return slug || null;
+  }, [matchedPgi]);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -183,16 +188,26 @@ const OcrPage = () => {
     };
   }, [previewUrl]);
 
+  useEffect(() => {
+    const unsub = subscribeToPGIRecords((data) => setPgi(data || {}));
+    return () => unsub?.();
+  }, []);
+
   const handleReceive = async () => {
     if (!bestCode) {
       toast.error("No code to receive");
       return;
     }
 
+    if (!matchedDealerSlug) {
+      toast.error("No matching PGI record");
+      return;
+    }
+
     setReceiving(true);
     try {
-      await receiveChassisToYard(autoSlug, bestCode, null);
-      toast.success(`${bestCode} received (${autoSlug})`);
+      await receiveChassisToYard(matchedDealerSlug, bestCode, matchedPgi || null);
+      toast.success(`${bestCode} received (${matchedDealerSlug})`);
     } catch (err) {
       console.error(err);
       toast.error("Receive failed");
@@ -314,11 +329,13 @@ const OcrPage = () => {
             <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
               <div className="flex items-center justify-between text-xs text-slate-300">
                 <span>Receive</span>
-                <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-200">{autoSlug}</span>
+                <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-200">
+                  {matchedDealerSlug || "No PGI match"}
+                </span>
               </div>
               <Button
                 type="button"
-                disabled={!bestCode || receiving}
+                disabled={!bestCode || !matchedDealerSlug || receiving}
                 className="w-full gap-2 bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
                 onClick={handleReceive}
               >
