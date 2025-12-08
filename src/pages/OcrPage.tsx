@@ -1,832 +1,373 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { useDropzone } from "react-dropzone";
-import {
-  AlertCircle,
-  Camera,
-  Check,
-  Cloud,
-  Copy,
-  Cpu,
-  FileText,
-  Loader2,
-  RotateCw,
-  Upload,
-} from "lucide-react";
+import { Camera, Check, Loader2, ScanLine, Sparkles, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { receiveChassisToYard } from "@/lib/firebase";
 
-const OCR_LANGUAGE = "eng";
-const OCR_LANG_SOURCES = ["/tessdata", "https://tessdata.projectnaptha.com/4.0.0"] as const;
-const MAX_WORKING_WIDTH = 2000;
-const MIN_DIMENSION = 320;
 const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-2.5-flash";
-
-const isGemini2Model = (model: string) => /gemini-2(\.|-|$)/i.test(model);
 
 const inferGeminiApiVersion = (model: string = GEMINI_MODEL): "v1" | "v1beta" => {
   const fromEnv = import.meta.env.VITE_GEMINI_API_VERSION;
   if (fromEnv === "v1" || fromEnv === "v1beta") return fromEnv;
-
-  return isGemini2Model(model) ? "v1beta" : "v1";
+  return /gemini-2(\.|-|$)/i.test(model) ? "v1beta" : "v1";
 };
 
-async function preprocessImage(file: File, rotation: number, applyEnhancement: boolean) {
-  const img = document.createElement("img");
-  const url = URL.createObjectURL(file);
-  img.src = url;
-
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error("Unable to read this image. Please re-upload."));
-  });
-
-  const scale = Math.min(1, MAX_WORKING_WIDTH / img.width);
-  const width = Math.max(1, Math.round(img.width * scale));
-  const height = Math.max(1, Math.round(img.height * scale));
-
-  if (Math.min(width, height) < MIN_DIMENSION) {
-    URL.revokeObjectURL(url);
-    throw new Error("The image is too small or blurry. Please upload a clearer photo or scan.");
-  }
-
-  const normalizedRotation = ((rotation % 360) + 360) % 360;
-  const canvas = document.createElement("canvas");
-
-  if (normalizedRotation === 90 || normalizedRotation === 270) {
-    canvas.width = height;
-    canvas.height = width;
-  } else {
-    canvas.width = width;
-    canvas.height = height;
-  }
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    URL.revokeObjectURL(url);
-    throw new Error("Canvas unsupported in this browser.");
-  }
-
-  ctx.save();
-  ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.rotate((normalizedRotation * Math.PI) / 180);
-  ctx.drawImage(img, -width / 2, -height / 2, width, height);
-  ctx.restore();
-
-  if (applyEnhancement) {
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    const contrast = 1.05;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-      const v = Math.min(255, Math.max(0, (gray - 128) * contrast + 128));
-      data[i] = v;
-      data[i + 1] = v;
-      data[i + 2] = v;
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-  }
-
-  URL.revokeObjectURL(url);
-
-  return await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error("Failed to process the image. Please try again."));
-        return;
-      }
-      resolve(blob);
-    }, "image/png", 1)
-  );
-}
-
-function blobToBase64(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
+const toBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result;
       if (typeof result !== "string") {
-        reject(new Error("Unable to read image for Gemini."));
+        reject(new Error("无法读取图片"));
         return;
       }
-
       const base64 = result.split(",")[1];
       if (!base64) {
-        reject(new Error("Invalid image encoding for Gemini."));
+        reject(new Error("图片编码失败"));
         return;
       }
-
       resolve(base64);
     };
-    reader.onerror = () => reject(new Error("Failed to encode image for Gemini."));
-    reader.readAsDataURL(blob);
+    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.readAsDataURL(file);
   });
-}
+
+const extractChassis = (text: string) => {
+  const regex = /[A-Za-z]{3}[0-9]{6}/g;
+  const matches = [...text.matchAll(regex)].map((m) => m[0].toUpperCase());
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const m of matches) {
+    if (seen.has(m)) continue;
+    seen.add(m);
+    unique.push(m);
+  }
+
+  const prioritized = unique.sort((a, b) => {
+    const aStartsWith2 = a[3] === "2" ? 0 : 1;
+    const bStartsWith2 = b[3] === "2" ? 0 : 1;
+    if (aStartsWith2 !== bStartsWith2) return aStartsWith2 - bStartsWith2;
+    return unique.indexOf(a) - unique.indexOf(b);
+  });
+
+  return { best: prioritized[0] ?? null, all: prioritized } as const;
+};
 
 const OcrPage = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [ocrText, setOcrText] = useState("");
-  const [status, setStatus] = useState<"idle" | "running" | "error">("idle");
-  const [progress, setProgress] = useState(0);
-  const [lastError, setLastError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [activeFileName, setActiveFileName] = useState<string | null>(null);
-  const [averageConfidence, setAverageConfidence] = useState<number | null>(null);
-  const [rotation, setRotation] = useState(0);
-  const [engineStatus, setEngineStatus] = useState<"idle" | "warming" | "ready" | "error">("idle");
-  const [engineMessage, setEngineMessage] = useState<string | null>(null);
-  const [ocrEngine, setOcrEngine] = useState<"tesseract" | "gemini">("tesseract");
-  const [patternMatches, setPatternMatches] = useState<string[]>([]);
-  const [enhance, setEnhance] = useState(true);
-  const [langPath, setLangPath] = useState<string>(OCR_LANG_SOURCES[0]);
-  const [langWarning, setLangWarning] = useState<string | null>(null);
-  const jobRef = useRef(0);
-  const lastFileRef = useRef<File | null>(null);
-  const lastProcessedRotationRef = useRef(0);
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
-  const geminiReady = Boolean(import.meta.env.VITE_GEMINI_API_KEY);
+  const [ocrText, setOcrText] = useState("待扫描…");
+  const [bestCode, setBestCode] = useState<string | null>(null);
+  const [matches, setMatches] = useState<string[]>([]);
+  const [status, setStatus] = useState<"idle" | "scanning">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [dealerSlug, setDealerSlug] = useState("");
+  const [receiving, setReceiving] = useState(false);
+  const [apiVersionUsed, setApiVersionUsed] = useState<"v1" | "v1beta">(inferGeminiApiVersion());
 
-  const resetState = useCallback(() => {
-    setOcrText("");
-    setStatus("idle");
-    setProgress(0);
-    setLastError(null);
-    setActiveFileName(null);
-    setAverageConfidence(null);
-    setCopied(false);
-  }, []);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const performOcr = useCallback(async (file: File) => {
-    lastFileRef.current = file;
-    lastProcessedRotationRef.current = rotation;
-    const nextJobId = jobRef.current + 1;
-    jobRef.current = nextJobId;
-    resetState();
-    setStatus("running");
-    setActiveFileName(file.name);
+  const handleSelectPhoto = () => {
+    inputRef.current?.click();
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      runScan(file);
+    }
+    event.target.value = "";
+  };
+
+  const runScan = useCallback(async (file: File) => {
+    if (!import.meta.env.VITE_GEMINI_API_KEY) {
+      setError("缺少 VITE_GEMINI_API_KEY，无法连接 Gemini");
+      return;
+    }
+
+    setStatus("scanning");
+    setError(null);
+    setOcrText("识别中…");
+    setBestCode(null);
+    setMatches([]);
+
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
 
     try {
-      if (ocrEngine === "tesseract") {
-        const tesseract = window.Tesseract;
-        if (!tesseract?.recognize) {
-          throw new Error("The OCR engine is still loading. Please try again in a second.");
-        }
-
-        const processed = await preprocessImage(file, rotation, enhance);
-
-        const { data } = await tesseract.recognize(processed, OCR_LANGUAGE, {
-          langPath,
-          logger: (message: { status: string; progress?: number }) => {
-            if (message.status === "recognizing text" && typeof message.progress === "number") {
-              setProgress(Math.round(message.progress * 100));
-            }
+      const base64 = await toBase64(file);
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              {
+                text:
+                  "Extract clear text from the photo. If a chassis code like ABC234567 (three letters + six digits, no spaces) exists, keep it intact. Return plain text only.",
+              },
+              {
+                inline_data: {
+                  data: base64,
+                  mime_type: "image/png",
+                },
+              },
+            ],
           },
-        });
+        ],
+        generation_config: { temperature: 0 },
+      };
 
-        if (jobRef.current !== nextJobId) return;
-
-        setOcrText(data?.text?.trim() ?? "");
-        setAverageConfidence(
-          typeof data?.confidence === "number" ? Math.round(data.confidence) : null
+      const apiVersion = inferGeminiApiVersion();
+      const send = (version: "v1" | "v1beta") =>
+        fetch(
+          `https://generativelanguage.googleapis.com/${version}/models/${GEMINI_MODEL}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+          }
         );
-      } else {
-        if (!geminiReady) {
-          throw new Error("Missing VITE_GEMINI_API_KEY. Add it to use Gemini OCR.");
+
+      let response = await send(apiVersion);
+      let versionUsed: "v1" | "v1beta" = apiVersion;
+
+      if (!response.ok && response.status === 404) {
+        const fallback = apiVersion === "v1" ? "v1beta" : "v1";
+        const fallbackResp = await send(fallback);
+        if (fallbackResp.ok) {
+          response = fallbackResp;
+          versionUsed = fallback;
+        } else {
+          const detail = await fallbackResp.text();
+          throw new Error(detail || "Gemini 返回 404，请确认模型可用");
         }
-
-        const processed = await preprocessImage(file, rotation, enhance);
-        const base64 = await blobToBase64(processed);
-
-        setEngineMessage("Sending to Gemini for recognition…");
-
-        const makeRequest = (apiVersion: "v1" | "v1beta") =>
-          fetch(
-            `https://generativelanguage.googleapis.com/${apiVersion}/models/${GEMINI_MODEL}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [
-                  {
-                    parts: [
-                      {
-                        text:
-                          "Extract all visible text from this image. Preserve line breaks and punctuation. Return plain UTF-8 text only without additional commentary.",
-                      },
-                      {
-                        inline_data: {
-                          data: base64,
-                          mime_type: "image/png",
-                        },
-                      },
-                    ],
-                  },
-                ],
-                generation_config: { temperature: 0.2 },
-              }),
-            }
-          );
-
-        const preferredVersion = isGemini2Model(GEMINI_MODEL) ? "v1beta" : "v1";
-        let apiVersion: "v1" | "v1beta" = inferGeminiApiVersion();
-        let response = await makeRequest(apiVersion);
-
-        const allowVersionSwitch = apiVersion !== preferredVersion;
-
-        if (!response.ok && response.status === 404 && allowVersionSwitch) {
-          const fallbackVersion = apiVersion === "v1" ? "v1beta" : "v1";
-          if (fallbackVersion !== apiVersion) {
-            setEngineMessage(`Retrying with Gemini ${fallbackVersion} API…`);
-            const fallbackResponse = await makeRequest(fallbackVersion);
-            if (fallbackResponse.ok) {
-              apiVersion = fallbackVersion;
-              response = fallbackResponse;
-            } else {
-              const fallbackDetail = await fallbackResponse.text();
-              const fallbackMessage =
-                fallbackResponse.status === 404
-                  ? fallbackVersion === "v1"
-                    ? "The requested Gemini model is unavailable on the v1 API. Switch to a v1-supported model or use a Gemini 2.x variant like gemini-2.5-flash (uses v1beta)."
-                    : "The requested Gemini model is unavailable on the v1beta API. Use a Gemini 2.x model name (e.g. gemini-2.0 or gemini-2.5) or switch back to a v1-supported model."
-                  : "";
-              throw new Error(
-                `Gemini OCR failed (${fallbackResponse.status}). ${fallbackMessage}${fallbackDetail ? ` ${fallbackDetail}` : ""}`.trim()
-              );
-            }
-          }
-        }
-
-        if (!response.ok) {
-          const detail = await response.text();
-          const notFoundMessage = (() => {
-            if (response.status !== 404) return "";
-            if (apiVersion === "v1") {
-              return "The requested Gemini model is unavailable on the v1 API. Switch to a v1-supported model or set VITE_GEMINI_MODEL to a Gemini 2.x variant such as gemini-2.5-flash (uses v1beta).";
-            }
-
-            return "The requested Gemini model is unavailable on the v1beta API. Use a Gemini 2.x model (e.g. gemini-2.0 or gemini-2.5) or revert to a v1-supported model.";
-          })();
-          throw new Error(
-            `Gemini OCR failed (${response.status}). ${notFoundMessage || ""}${detail ? ` ${detail}` : ""}`.trim()
-          );
-        }
-
-        const payload = (await response.json()) as {
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        };
-
-        if (jobRef.current !== nextJobId) return;
-
-        const text =
-          payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim() ??
-          "";
-
-        setOcrText(text);
-        setAverageConfidence(null);
-        setProgress(100);
       }
 
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || "Gemini 识别失败");
+      }
+
+      const payload = (await response.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+
+      const text =
+        payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ?? "";
+
+      const { best, all } = extractChassis(text);
+
+      setApiVersionUsed(versionUsed);
+      setOcrText(text || "未检测到文字");
+      setBestCode(best);
+      setMatches(all);
       setStatus("idle");
-    } catch (error) {
-      console.error("OCR failed", error);
-      if (jobRef.current !== nextJobId) return;
-
-      setStatus("error");
-      setLastError(error instanceof Error ? error.message : "Unable to recognize this image");
+    } catch (err) {
+      console.error(err);
+      setStatus("idle");
+      setError(err instanceof Error ? err.message : "识别失败，请重试");
     }
-  }, [enhance, geminiReady, langPath, ocrEngine, resetState, rotation]);
-
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles?.[0];
-    if (!file) return;
-
-    performOcr(file);
-  }, [performOcr]);
-
-  const handleCameraCapture = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      performOcr(file);
-    }
-    // reset the input to allow re-uploading the same file after capture
-    event.target.value = "";
-  };
-
-  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
-    onDrop,
-    accept: {
-      "image/*": [],
-    },
-    maxFiles: 1,
-    multiple: false,
-    noClick: true,
-  });
-
-  const copyToClipboard = async () => {
-    if (!ocrText) return;
-
-    await navigator.clipboard.writeText(ocrText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1400);
-  };
-
-  useEffect(() => {
-    if (ocrEngine === "tesseract") {
-      setEngineStatus("idle");
-      setEngineMessage("Preparing OCR engine…");
-      return;
-    }
-
-    setEngineStatus(geminiReady ? "ready" : "error");
-    setEngineMessage(
-      geminiReady
-        ? "Gemini API ready. Upload an image to use cloud OCR."
-        : "Add VITE_GEMINI_API_KEY to enable Gemini cloud OCR."
-    );
-  }, [geminiReady, ocrEngine]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const resolveLangPath = async () => {
-      for (const source of OCR_LANG_SOURCES) {
-        try {
-          const response = await fetch(`${source}/eng.traineddata.gz`, { method: "HEAD", mode: "no-cors" });
-          if (cancelled) return;
-          if (response.ok || response.type === "opaque") {
-            setLangPath(source);
-            setLangWarning(
-              source === OCR_LANG_SOURCES[0]
-                ? null
-                : "Using fallback CDN language data. Host eng.traineddata.gz under /public/tessdata for best stability."
-            );
-            return;
-          }
-        } catch (error) {
-          console.warn(`Language pack check failed for ${source}`, error);
-        }
-      }
-
-      if (!cancelled) {
-        setLangPath(OCR_LANG_SOURCES[OCR_LANG_SOURCES.length - 1]);
-        setLangWarning("English language pack not found locally; falling back to remote source.");
-      }
-    };
-
-    resolveLangPath();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
     return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
 
-  useEffect(() => {
-    if (!ocrText) {
-      setPatternMatches([]);
-      return;
-    }
-
-    const regex = /[A-Za-z]{3}[0-9]{6}/g;
-    const matches: string[] = [];
-    let match: RegExpExecArray | null;
-
-    while ((match = regex.exec(ocrText)) !== null) {
-      matches.push(match[0]);
-    }
-
-    const prioritized = matches.filter((value) => value[3] === "2");
-    const others = matches.filter((value) => value[3] !== "2");
-    const ordered = [...prioritized, ...others];
-    const unique: string[] = [];
-    const seen = new Set<string>();
-
-    for (const value of ordered) {
-      if (seen.has(value)) continue;
-      seen.add(value);
-      unique.push(value);
-    }
-
-    setPatternMatches(unique);
-  }, [ocrText]);
-
-  useEffect(() => {
-    if (ocrEngine !== "tesseract") return undefined;
-
-    let cancelled = false;
-    let warmupStarted = false;
-    let pollHandle: number | undefined;
-
-    const stopPolling = () => {
-      if (pollHandle) {
-        window.clearInterval(pollHandle);
-        pollHandle = undefined;
-      }
-    };
-
-    const warmup = async () => {
-      if (warmupStarted) return;
-      warmupStarted = true;
-      const tesseract = window.Tesseract;
-      if (!tesseract?.recognize) return;
-
-      setEngineStatus("warming");
-      setEngineMessage("Loading OCR engine…");
-
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = 2;
-        canvas.height = 2;
-        const blob = await new Promise<Blob>((resolve, reject) =>
-          canvas.toBlob((b) => {
-            if (!b) {
-              reject(new Error("Canvas warmup failed"));
-              return;
-            }
-            resolve(b);
-          }, "image/png", 1)
-        );
-
-        await tesseract.recognize(blob, OCR_LANGUAGE, {
-          langPath,
-          logger: (message) => {
-            if (cancelled) return;
-            if (message.status === "recognizing text") {
-              setEngineMessage("OCR engine ready");
-            } else if (message.status.includes("load")) {
-              setEngineMessage("Loading language data…");
-            }
-          },
-        });
-
-        if (!cancelled) {
-          setEngineStatus("ready");
-          setEngineMessage("Engine warmed up and ready.");
-          stopPolling();
-        }
-     } catch (error) {
-        if (!cancelled) {
-          console.error("Warmup failed", error);
-          setEngineStatus("error");
-          setEngineMessage("Unable to warm up OCR engine. It may still work on first run.");
-          stopPolling();
-        }
-      }
-    };
-
-    const tryWarmup = () => {
-      if (cancelled) return;
-      const tesseract = window.Tesseract;
-      if (tesseract?.recognize) {
-        warmup();
-      }
-    };
-
-    tryWarmup();
-    pollHandle = window.setInterval(tryWarmup, 500);
-
-    return () => {
-      cancelled = true;
-      stopPolling();
-    };
-  }, [langPath, ocrEngine]);
-
-  useEffect(() => {
-    if (!lastFileRef.current) return;
-    if (status === "running") return;
-    if (rotation === lastProcessedRotationRef.current) return;
-
-    performOcr(lastFileRef.current);
-  }, [performOcr, rotation, status]);
-
-  const helperText = useMemo(
-    () => [
-      "Use clear, non-reflective scans or mobile photos with good lighting.",
-      "Keep text horizontal and avoid heavy compression or motion blur.",
-      "Rotate or crop so the main text block is upright before recognition.",
-      "High-contrast images with ≥320px on the shorter side work best.",
-    ],
+  const helperChips = useMemo(
+    () => ["无复杂选项、直接拍照", "优先 Gemini 云识别", "聚焦 ABC234567 编码", "提取后直接 Receive"],
     []
   );
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-10 sm:px-8">
-        <header className="flex flex-col gap-2">
-          <p className="text-sm font-semibold text-primary">Standalone OCR (English only)</p>
-          <h1 className="text-3xl font-bold leading-tight text-slate-900">Image-to-Text Precision Lab</h1>
-          <p className="text-sm text-slate-600 sm:text-base">
-            Drop a clear English-alphabet image and get selectable text in a few seconds. Use on-device
-            Tesseract.js or opt into Gemini cloud OCR when a VITE_GEMINI_API_KEY is configured.
-          </p>
-        </header>
+  const handleReceive = async () => {
+    if (!bestCode) {
+      toast.error("没有可用的编码");
+      return;
+    }
+    const slug = dealerSlug.trim();
+    if (!slug) {
+      toast.error("请填写 dealer slug");
+      return;
+    }
 
-        <div
-          className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${
-            engineStatus === "ready"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : engineStatus === "error"
-                ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "border-slate-200 bg-white text-slate-700"
-          }`}
-        >
-          {engineStatus === "ready" ? (
-            <Check className="h-4 w-4 text-emerald-600" />
-          ) : (
-            <Loader2 className={`h-4 w-4 ${engineStatus === "warming" ? "animate-spin" : ""} text-primary`} />
-          )}
-          <p className="font-medium">
-            {engineMessage ?? "Preparing OCR engine…"}
-            {engineStatus === "warming" && " (prefetching language data)"}
-          </p>
-          {langWarning && <p className="text-xs text-amber-700">{langWarning}</p>}
+    setReceiving(true);
+    try {
+      await receiveChassisToYard(slug, bestCode, null);
+      toast.success(`${bestCode} 已标记为 Received`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Receive 失败，请检查权限或网络");
+    } finally {
+      setReceiving(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-white">
+      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6">
+        <div className="flex items-center gap-3 rounded-3xl bg-slate-800/60 px-4 py-3 backdrop-blur">
+          <Wand2 className="h-5 w-5 text-emerald-300" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-200">Gemini 实时 OCR</p>
+            <p className="text-xs text-slate-300">始终连接 Gemini · 专注车架号提取</p>
+          </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Upload className="h-5 w-5 text-primary" />
-                Upload or drop an image
-              </CardTitle>
-              <CardDescription>English interface and language pack for crisp alphanumeric recognition.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div
-                {...getRootProps({
-                  className:
-                    "border-2 border-dashed border-slate-200 rounded-lg bg-white p-6 transition hover:border-primary/60 " +
-                    (isDragActive ? "ring-2 ring-primary/40" : ""),
-                })}
-              >
-                <input {...getInputProps()} />
-                <div className="flex flex-col items-center justify-center gap-3 text-center text-slate-600">
-                  <Upload className="h-10 w-10 text-primary" />
-                  {isDragActive ? (
-                    <p className="text-base font-medium">Release to start recognition</p>
-                  ) : (
-                    <p className="text-base font-medium">
-                      Drag & drop a JPG/PNG or
-                      <button type="button" className="text-primary underline" onClick={open}>
-                        browse
-                      </button>
-                    </p>
+        <Card className="border-none bg-white/5 shadow-xl backdrop-blur">
+          <CardContent className="space-y-4 p-5 sm:p-6">
+            <div className="flex flex-col gap-1">
+              <h1 className="text-2xl font-bold text-white">Scan & Receive</h1>
+              <p className="text-sm text-slate-200">拍照 / 上传 · 自动识别 ABC234567（首位数字 2 优先）</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {helperChips.map((chip) => (
+                <span
+                  key={chip}
+                  className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 ring-1 ring-white/10"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-2xl bg-slate-950/40 p-4 ring-1 ring-white/10">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-sm text-slate-200">
+                  <Sparkles className="h-4 w-4 text-emerald-300" />
+                  <span>模型：{GEMINI_MODEL}</span>
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-200">{apiVersionUsed}</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-2 bg-emerald-500 text-slate-900 hover:bg-emerald-400"
+                    onClick={handleSelectPhoto}
+                    disabled={status === "scanning"}
+                  >
+                    {status === "scanning" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                    {status === "scanning" ? "扫描中" : "Scan / Photo"}
+                  </Button>
+                  {previewUrl && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-2 border-white/20 text-slate-100 hover:bg-white/5"
+                      onClick={handleSelectPhoto}
+                    >
+                      <ScanLine className="h-4 w-4" /> 重新拍
+                    </Button>
                   )}
-                  <p className="text-xs text-slate-500">
-                    Maximum 1 image at a time. Stays client-side unless Gemini cloud OCR is selected.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-                <Button type="button" variant="outline" size="sm" onClick={() => setRotation((r) => r + 90)}>
-                  <RotateCw className="h-4 w-4" /> Rotate 90°
-                </Button>
-                <Button
-                  type="button"
-                  variant={enhance ? "default" : "outline"}
-                  size="sm"
-                  className="flex items-center gap-2"
-                  onClick={() => setEnhance((value) => !value)}
-                >
-                  {enhance ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-                  {enhance ? "Enhanced" : "Raw"} input
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-2"
-                  onClick={() => cameraInputRef.current?.click()}
-                >
-                  <Camera className="h-4 w-4" /> Open camera
-                </Button>
-                <span className="text-xs text-slate-500">Use rotation if the preview looks sideways or upside-down.</span>
-              </div>
-
-              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                    <Cpu className="h-4 w-4 text-primary" /> OCR engine
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={ocrEngine === "tesseract" ? "default" : "outline"}
-                      className="flex items-center gap-2"
-                      onClick={() => setOcrEngine("tesseract")}
-                    >
-                      <Cpu className="h-4 w-4" /> On-device (Tesseract)
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={ocrEngine === "gemini" ? "default" : "outline"}
-                      className="flex items-center gap-2"
-                      disabled={!geminiReady}
-                      onClick={() => setOcrEngine("gemini")}
-                    >
-                      <Cloud className="h-4 w-4" /> Gemini (API)
-                    </Button>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-600">
-                  {ocrEngine === "gemini"
-                    ? "Gemini sends the image to Google for recognition; results depend on network speed."
-                    : "Tesseract.js keeps all processing in the browser. Switch to Gemini for higher quality if the API key is set."}
-                  {!geminiReady && " Add VITE_GEMINI_API_KEY to enable the cloud option."}
-                </p>
-              </div>
-
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleCameraCapture}
-              />
-
-              {previewUrl && (
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2 text-sm">
-                    <span className="font-medium text-slate-700">{activeFileName}</span>
-                    <span className="text-slate-500">Preview</span>
-                  </div>
-                  <img
-                    src={previewUrl}
-                    alt="Uploaded preview"
-                    className="max-h-96 w-full object-contain bg-slate-50"
-                    style={{ transform: `rotate(${rotation % 360}deg)` }}
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleFileChange}
                   />
                 </div>
-              )}
-
-              {status === "running" && (
-                <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <div className="flex-1 space-y-2">
-                    <p className="text-sm font-medium text-slate-700">Recognizing text…</p>
-                    <Progress value={progress} className="h-2" />
-                    <p className="text-xs text-slate-500">Using Tesseract.js ({OCR_LANGUAGE})</p>
-                  </div>
-                </div>
-              )}
-
-              {status === "error" && lastError && (
-                <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-                  <AlertCircle className="mt-0.5 h-5 w-5" />
-                  <div className="space-y-1">
-                    <p className="font-semibold">Couldn’t read this image</p>
-                    <p className="text-sm leading-relaxed">{lastError}</p>
-                  </div>
-                </div>
-              )}
-
-              {averageConfidence !== null && averageConfidence < 70 && status === "idle" && !lastError && (
-                <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
-                  <AlertCircle className="mt-0.5 h-5 w-5" />
-                  <div className="space-y-1">
-                    <p className="font-semibold">Low confidence result</p>
-                    <p className="text-sm leading-relaxed">
-                      Please double-check the text. Try rotating the image, improving lighting/contrast, or uploading a
-                      higher resolution photo for a better result.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
-                  <FileText className="h-4 w-4" /> Quality tips
-                </p>
-                <ul className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                  {helperText.map((tip) => (
-                    <li key={tip} className="leading-snug">• {tip}</li>
-                  ))}
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-slate-200 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <FileText className="h-5 w-5 text-primary" />
-                OCR result
-              </CardTitle>
-              <CardDescription>Copy-ready plain text after recognition. Editable if the confidence is low.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-0.5 text-sm text-slate-600">
-                  <p>
-                    <span className="font-semibold text-slate-800">Engine:</span> {" "}
-                    {ocrEngine === "tesseract" ? "Tesseract.js (on-device)" : "Gemini API (cloud)"}
-                  </p>
-                  {ocrEngine === "tesseract" ? (
-                    <p>
-                      <span className="font-semibold text-slate-800">Language pack:</span> English ({OCR_LANGUAGE})
-                      {langPath && ` via ${langPath}`}
-                    </p>
-                  ) : (
-                    <p>
-                      <span className="font-semibold text-slate-800">Model:</span> {GEMINI_MODEL}
-                    </p>
-                  )}
-                  {averageConfidence !== null && ocrEngine === "tesseract" && (
-                    <p>
-                      <span className="font-semibold text-slate-800">Avg confidence:</span> {averageConfidence}%
-                    </p>
-                  )}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-2"
-                  disabled={!ocrText}
-                  onClick={copyToClipboard}
-                >
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copied ? "Copied" : "Copy text"}
-                </Button>
               </div>
 
-              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <p className="flex items-center gap-2 font-semibold">
-                  <FileText className="h-4 w-4 text-primary" /> Detected codes (AAA + 6 digits)
-                </p>
-                {patternMatches.length > 0 ? (
-                  <ul className="grid gap-2 sm:grid-cols-2">
-                    {patternMatches.map((code) => (
-                      <li
-                        key={code}
-                        className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm"
-                      >
-                        <span className="font-mono text-base font-semibold text-slate-900">{code}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            code[3] === "2"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {code[3] === "2" ? "Starts with 2" : "Check first digit"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+              <div className="overflow-hidden rounded-xl bg-black/30 ring-1 ring-white/5">
+                {previewUrl ? (
+                  <img src={previewUrl} alt="preview" className="h-64 w-full object-cover" />
                 ) : (
-                  <p className="text-xs text-slate-500">No matches yet. Upload or edit text to find codes like ABC234567.</p>
+                  <div className="flex h-64 items-center justify-center text-sm text-slate-400">
+                    拍照或上传图片开始识别
+                  </div>
                 )}
               </div>
 
-              <div className="relative">
-                <Label htmlFor="ocr-output" className="mb-2 block text-sm font-semibold text-slate-700">
-                  Extracted text
+              {error && (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                  {error}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-100">识别结果</p>
+                {status === "scanning" && (
+                  <span className="flex items-center gap-2 text-xs text-slate-200">
+                    <Loader2 className="h-3 w-3 animate-spin" /> 正在连接 Gemini…
+                  </span>
+                )}
+              </div>
+
+              <div className="rounded-xl bg-slate-900/60 p-3 ring-1 ring-white/5">
+                <Label htmlFor="ocr-output" className="text-xs uppercase tracking-wide text-slate-400">
+                  Raw text
                 </Label>
                 <Textarea
                   id="ocr-output"
                   value={ocrText}
-                  placeholder="Upload an image to see the recognized text here."
-                  className="min-h-[280px] resize-none border-slate-200 bg-slate-50 text-sm shadow-inner"
-                  onChange={(event) => setOcrText(event.target.value)}
+                  onChange={(e) => setOcrText(e.target.value)}
+                  className="mt-1 min-h-[180px] resize-none border-none bg-transparent text-sm text-slate-100 shadow-none focus-visible:ring-0"
                 />
               </div>
 
-              <div className="space-y-1 text-xs text-slate-500">
-                <p>
-                  You can correct the text above if something looks wrong. Very low confidence (&lt;70%) usually means the
-                  image needs better lighting, contrast, or rotation.
-                </p>
-                <p>
-                  On-device mode keeps processing in the browser. Gemini mode will upload the image to Google for
-                  recognition. Refresh the page to start fresh if the OCR engine stalls.
-                </p>
+              <div className="rounded-xl bg-emerald-500/10 p-3 ring-1 ring-emerald-200/30">
+                <p className="text-xs uppercase tracking-wide text-emerald-200">匹配的车架号</p>
+                {bestCode ? (
+                  <div className="mt-2 flex items-center justify-between">
+                    <div>
+                      <p className="text-2xl font-extrabold text-white">{bestCode}</p>
+                      <p className="text-xs text-emerald-100">首位数字为 2 的编码会自动置顶</p>
+                    </div>
+                    <div className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-semibold text-emerald-100">
+                      优先
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-emerald-50">尚未匹配到 ABC234567 结构的编码</p>
+                )}
+
+                {matches.length > 1 && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-emerald-50">
+                    {matches.slice(1).map((code) => (
+                      <span key={code} className="rounded-full bg-white/10 px-2 py-1">
+                        {code}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+
+            <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+              <p className="text-sm font-semibold text-slate-100">Receive（与 Yard 页面一致）</p>
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-wide text-slate-400">Dealer slug</Label>
+                <Input
+                  value={dealerSlug}
+                  onChange={(e) => setDealerSlug(e.target.value)}
+                  placeholder="例如 melbourne"
+                  className="border-white/10 bg-slate-950/40 text-white placeholder:text-slate-500"
+                />
+              </div>
+              <Button
+                type="button"
+                disabled={!bestCode || receiving}
+                className="w-full gap-2 bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
+                onClick={handleReceive}
+              >
+                {receiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Receive
+              </Button>
+              <p className="text-xs text-slate-300">调用与 Yard Inventory 相同的 receiveChassisToYard，直接更新车辆状态。</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
