@@ -23,7 +23,7 @@ const OCR_LANGUAGE = "eng";
 const OCR_LANG_SOURCES = ["/tessdata", "https://tessdata.projectnaptha.com/4.0.0"] as const;
 const MAX_WORKING_WIDTH = 2000;
 const MIN_DIMENSION = 320;
-const GEMINI_MODEL = "gemini-1.5-flash";
+const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-1.5-flash-001";
 
 async function preprocessImage(file: File, rotation: number, applyEnhancement: boolean) {
   const img = document.createElement("img");
@@ -231,7 +231,13 @@ const OcrPage = () => {
 
         if (!response.ok) {
           const detail = await response.text();
-          throw new Error(`Gemini OCR failed (${response.status}). ${detail}`);
+          const notFoundMessage =
+            response.status === 404
+              ? "The requested Gemini model is unavailable. Set VITE_GEMINI_MODEL to a supported model (e.g. gemini-1.5-flash-001 or gemini-1.5-flash-latest)."
+              : "";
+          throw new Error(
+            `Gemini OCR failed (${response.status}). ${notFoundMessage || ""}${detail ? ` ${detail}` : ""}`.trim()
+          );
         }
 
         const payload = (await response.json()) as {
