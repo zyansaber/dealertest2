@@ -4,9 +4,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { receiveChassisToYard } from "@/lib/firebase";
 
 const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-2.5-flash";
@@ -23,17 +20,17 @@ const toBase64 = (file: File) =>
     reader.onloadend = () => {
       const result = reader.result;
       if (typeof result !== "string") {
-        reject(new Error("无法读取图片"));
+        reject(new Error("Image read error"));
         return;
       }
       const base64 = result.split(",")[1];
       if (!base64) {
-        reject(new Error("图片编码失败"));
+        reject(new Error("Image encode error"));
         return;
       }
       resolve(base64);
     };
-    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.onerror = () => reject(new Error("Image read error"));
     reader.readAsDataURL(file);
   });
 
@@ -60,14 +57,20 @@ const extractChassis = (text: string) => {
 
 const OcrPage = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [ocrText, setOcrText] = useState("待扫描…");
+  const [ocrText, setOcrText] = useState("Ready");
   const [bestCode, setBestCode] = useState<string | null>(null);
   const [matches, setMatches] = useState<string[]>([]);
   const [status, setStatus] = useState<"idle" | "scanning">("idle");
   const [error, setError] = useState<string | null>(null);
-  const [dealerSlug, setDealerSlug] = useState("");
   const [receiving, setReceiving] = useState(false);
   const [apiVersionUsed, setApiVersionUsed] = useState<"v1" | "v1beta">(inferGeminiApiVersion());
+  const autoSlug = useMemo(() => {
+    const randomPart =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID().slice(0, 8)
+        : Math.random().toString(36).slice(2, 10);
+    return `auto-${randomPart}`;
+  }, []);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -85,13 +88,13 @@ const OcrPage = () => {
 
   const runScan = useCallback(async (file: File) => {
     if (!import.meta.env.VITE_GEMINI_API_KEY) {
-      setError("缺少 VITE_GEMINI_API_KEY，无法连接 Gemini");
+      setError("Missing VITE_GEMINI_API_KEY");
       return;
     }
 
     setStatus("scanning");
     setError(null);
-    setOcrText("识别中…");
+    setOcrText("Scanning…");
     setBestCode(null);
     setMatches([]);
 
@@ -144,13 +147,13 @@ const OcrPage = () => {
           versionUsed = fallback;
         } else {
           const detail = await fallbackResp.text();
-          throw new Error(detail || "Gemini 返回 404，请确认模型可用");
+          throw new Error(detail || "Gemini 404 — check model");
         }
       }
 
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(detail || "Gemini 识别失败");
+        throw new Error(detail || "Gemini OCR error");
       }
 
       const payload = (await response.json()) as {
@@ -163,14 +166,14 @@ const OcrPage = () => {
       const { best, all } = extractChassis(text);
 
       setApiVersionUsed(versionUsed);
-      setOcrText(text || "未检测到文字");
+      setOcrText(text || "No text found");
       setBestCode(best);
       setMatches(all);
       setStatus("idle");
     } catch (err) {
       console.error(err);
       setStatus("idle");
-      setError(err instanceof Error ? err.message : "识别失败，请重试");
+      setError(err instanceof Error ? err.message : "Scan failed");
     }
   }, []);
 
@@ -180,29 +183,19 @@ const OcrPage = () => {
     };
   }, [previewUrl]);
 
-  const helperChips = useMemo(
-    () => ["无复杂选项、直接拍照", "优先 Gemini 云识别", "聚焦 ABC234567 编码", "提取后直接 Receive"],
-    []
-  );
-
   const handleReceive = async () => {
     if (!bestCode) {
-      toast.error("没有可用的编码");
-      return;
-    }
-    const slug = dealerSlug.trim();
-    if (!slug) {
-      toast.error("请填写 dealer slug");
+      toast.error("No code to receive");
       return;
     }
 
     setReceiving(true);
     try {
-      await receiveChassisToYard(slug, bestCode, null);
-      toast.success(`${bestCode} 已标记为 Received`);
+      await receiveChassisToYard(autoSlug, bestCode, null);
+      toast.success(`${bestCode} received (${autoSlug})`);
     } catch (err) {
       console.error(err);
-      toast.error("Receive 失败，请检查权限或网络");
+      toast.error("Receive failed");
     } finally {
       setReceiving(false);
     }
@@ -213,35 +206,21 @@ const OcrPage = () => {
       <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex items-center gap-3 rounded-3xl bg-slate-800/60 px-4 py-3 backdrop-blur">
           <Wand2 className="h-5 w-5 text-emerald-300" />
-          <div>
-            <p className="text-sm font-semibold text-emerald-200">Gemini 实时 OCR</p>
-            <p className="text-xs text-slate-300">始终连接 Gemini · 专注车架号提取</p>
-          </div>
+          <p className="text-sm font-semibold text-emerald-200">Gemini OCR</p>
         </div>
 
         <Card className="border-none bg-white/5 shadow-xl backdrop-blur">
           <CardContent className="space-y-4 p-5 sm:p-6">
             <div className="flex flex-col gap-1">
               <h1 className="text-2xl font-bold text-white">Scan & Receive</h1>
-              <p className="text-sm text-slate-200">拍照 / 上传 · 自动识别 ABC234567（首位数字 2 优先）</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {helperChips.map((chip) => (
-                <span
-                  key={chip}
-                  className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 ring-1 ring-white/10"
-                >
-                  {chip}
-                </span>
-              ))}
+              <p className="text-xs text-slate-300">ABC + 6 digits · no spaces</p>
             </div>
 
             <div className="flex flex-col gap-3 rounded-2xl bg-slate-950/40 p-4 ring-1 ring-white/10">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2 text-sm text-slate-200">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-300">
                   <Sparkles className="h-4 w-4 text-emerald-300" />
-                  <span>模型：{GEMINI_MODEL}</span>
+                  <span>{GEMINI_MODEL}</span>
                   <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-200">{apiVersionUsed}</span>
                 </div>
                 <div className="flex gap-2">
@@ -252,9 +231,9 @@ const OcrPage = () => {
                     onClick={handleSelectPhoto}
                     disabled={status === "scanning"}
                   >
-                    {status === "scanning" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    {status === "scanning" ? "扫描中" : "Scan / Photo"}
-                  </Button>
+                      {status === "scanning" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                      {status === "scanning" ? "Scanning" : "Scan"}
+                    </Button>
                   {previewUrl && (
                     <Button
                       type="button"
@@ -263,7 +242,7 @@ const OcrPage = () => {
                       className="gap-2 border-white/20 text-slate-100 hover:bg-white/5"
                       onClick={handleSelectPhoto}
                     >
-                      <ScanLine className="h-4 w-4" /> 重新拍
+                      <ScanLine className="h-4 w-4" /> Rescan
                     </Button>
                   )}
                   <input
@@ -282,7 +261,7 @@ const OcrPage = () => {
                   <img src={previewUrl} alt="preview" className="h-64 w-full object-cover" />
                 ) : (
                   <div className="flex h-64 items-center justify-center text-sm text-slate-400">
-                    拍照或上传图片开始识别
+                    Tap Scan to start
                   </div>
                 )}
               </div>
@@ -295,41 +274,29 @@ const OcrPage = () => {
             </div>
 
             <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-100">识别结果</p>
+              <div className="flex items-center justify-between text-xs text-slate-200">
+                <span>Result</span>
                 {status === "scanning" && (
                   <span className="flex items-center gap-2 text-xs text-slate-200">
-                    <Loader2 className="h-3 w-3 animate-spin" /> 正在连接 Gemini…
+                    <Loader2 className="h-3 w-3 animate-spin" /> Gemini
                   </span>
                 )}
               </div>
 
               <div className="rounded-xl bg-slate-900/60 p-3 ring-1 ring-white/5">
-                <Label htmlFor="ocr-output" className="text-xs uppercase tracking-wide text-slate-400">
-                  Raw text
-                </Label>
-                <Textarea
-                  id="ocr-output"
-                  value={ocrText}
-                  onChange={(e) => setOcrText(e.target.value)}
-                  className="mt-1 min-h-[180px] resize-none border-none bg-transparent text-sm text-slate-100 shadow-none focus-visible:ring-0"
-                />
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">Text</p>
+                <p className="mt-1 text-sm text-slate-100 whitespace-pre-line">{ocrText}</p>
               </div>
 
               <div className="rounded-xl bg-emerald-500/10 p-3 ring-1 ring-emerald-200/30">
-                <p className="text-xs uppercase tracking-wide text-emerald-200">匹配的车架号</p>
+                <p className="text-[11px] uppercase tracking-wide text-emerald-200">Code</p>
                 {bestCode ? (
                   <div className="mt-2 flex items-center justify-between">
-                    <div>
-                      <p className="text-2xl font-extrabold text-white">{bestCode}</p>
-                      <p className="text-xs text-emerald-100">首位数字为 2 的编码会自动置顶</p>
-                    </div>
-                    <div className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-semibold text-emerald-100">
-                      优先
-                    </div>
+                    <p className="text-2xl font-extrabold text-white">{bestCode}</p>
+                    <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-[11px] font-semibold text-emerald-100">top</span>
                   </div>
                 ) : (
-                  <p className="mt-2 text-sm text-emerald-50">尚未匹配到 ABC234567 结构的编码</p>
+                  <p className="mt-2 text-sm text-emerald-50">No match yet</p>
                 )}
 
                 {matches.length > 1 && (
@@ -345,15 +312,9 @@ const OcrPage = () => {
             </div>
 
             <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <p className="text-sm font-semibold text-slate-100">Receive（与 Yard 页面一致）</p>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wide text-slate-400">Dealer slug</Label>
-                <Input
-                  value={dealerSlug}
-                  onChange={(e) => setDealerSlug(e.target.value)}
-                  placeholder="例如 melbourne"
-                  className="border-white/10 bg-slate-950/40 text-white placeholder:text-slate-500"
-                />
+              <div className="flex items-center justify-between text-xs text-slate-300">
+                <span>Receive</span>
+                <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-200">{autoSlug}</span>
               </div>
               <Button
                 type="button"
@@ -364,7 +325,6 @@ const OcrPage = () => {
                 {receiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Receive
               </Button>
-              <p className="text-xs text-slate-300">调用与 Yard Inventory 相同的 receiveChassisToYard，直接更新车辆状态。</p>
             </div>
           </CardContent>
         </Card>
