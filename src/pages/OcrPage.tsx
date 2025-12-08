@@ -745,6 +745,7 @@ const OcrPage = () => {
                           {code[3] === "2" ? "Starts with 2" : "Check first digit"}
                         </span>
                       </li>
+                    ))}
                   </ul>
                 ) : (
                   <p className="text-xs text-slate-500">No matches yet. Upload or edit text to find codes like ABC234567.</p>
