@@ -23,15 +23,15 @@ const OCR_LANGUAGE = "eng";
 const OCR_LANG_SOURCES = ["/tessdata", "https://tessdata.projectnaptha.com/4.0.0"] as const;
 const MAX_WORKING_WIDTH = 2000;
 const MIN_DIMENSION = 320;
-const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-1.5-flash-001";
+const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-2.5-flash";
 
 const isGemini2Model = (model: string) => /gemini-2(\.|-|$)/i.test(model);
 
-const inferGeminiApiVersion = (): "v1" | "v1beta" => {
+const inferGeminiApiVersion = (model: string = GEMINI_MODEL): "v1" | "v1beta" => {
   const fromEnv = import.meta.env.VITE_GEMINI_API_VERSION;
   if (fromEnv === "v1" || fromEnv === "v1beta") return fromEnv;
 
-  return isGemini2Model(GEMINI_MODEL) ? "v1beta" : "v1";
+  return isGemini2Model(model) ? "v1beta" : "v1";
 };
 
 async function preprocessImage(file: File, rotation: number, applyEnhancement: boolean) {
@@ -239,10 +239,13 @@ const OcrPage = () => {
             }
           );
 
+        const preferredVersion = isGemini2Model(GEMINI_MODEL) ? "v1beta" : "v1";
         let apiVersion: "v1" | "v1beta" = inferGeminiApiVersion();
         let response = await makeRequest(apiVersion);
 
-        if (!response.ok && response.status === 404) {
+        const allowVersionSwitch = apiVersion !== preferredVersion;
+
+        if (!response.ok && response.status === 404 && allowVersionSwitch) {
           const fallbackVersion = apiVersion === "v1" ? "v1beta" : "v1";
           if (fallbackVersion !== apiVersion) {
             setEngineMessage(`Retrying with Gemini ${fallbackVersion} API…`);
@@ -255,8 +258,8 @@ const OcrPage = () => {
               const fallbackMessage =
                 fallbackResponse.status === 404
                   ? fallbackVersion === "v1"
-                    ? "The requested Gemini model is unavailable on the v1 API. Switch to a v1-supported model such as gemini-1.5-flash-001, or configure VITE_GEMINI_MODEL to a Gemini 2.x variant which uses v1beta."
-                    : "The requested Gemini model is unavailable on the v1beta API. Use a Gemini 2.x model name (e.g. gemini-2.0 or gemini-2.5) or switch to a v1-supported model such as gemini-1.5-flash-001."
+                    ? "The requested Gemini model is unavailable on the v1 API. Switch to a v1-supported model or use a Gemini 2.x variant like gemini-2.5-flash (uses v1beta)."
+                    : "The requested Gemini model is unavailable on the v1beta API. Use a Gemini 2.x model name (e.g. gemini-2.0 or gemini-2.5) or switch back to a v1-supported model."
                   : "";
               throw new Error(
                 `Gemini OCR failed (${fallbackResponse.status}). ${fallbackMessage}${fallbackDetail ? ` ${fallbackDetail}` : ""}`.trim()
@@ -270,10 +273,10 @@ const OcrPage = () => {
           const notFoundMessage = (() => {
             if (response.status !== 404) return "";
             if (apiVersion === "v1") {
-              return "The requested Gemini model is unavailable on the v1 API. Switch to a v1-supported model such as gemini-1.5-flash-001, or set VITE_GEMINI_MODEL to a Gemini 2.x variant (uses v1beta).";
+              return "The requested Gemini model is unavailable on the v1 API. Switch to a v1-supported model or set VITE_GEMINI_MODEL to a Gemini 2.x variant such as gemini-2.5-flash (uses v1beta).";
             }
 
-            return "The requested Gemini model is unavailable on the v1beta API. Use a Gemini 2.x model (e.g. gemini-2.0 or gemini-2.5) or revert to a v1-supported model such as gemini-1.5-flash-001.";
+            return "The requested Gemini model is unavailable on the v1beta API. Use a Gemini 2.x model (e.g. gemini-2.0 or gemini-2.5) or revert to a v1-supported model.";
           })();
           throw new Error(
             `Gemini OCR failed (${response.status}). ${notFoundMessage || ""}${detail ? ` ${detail}` : ""}`.trim()
