@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useDropzone } from "react-dropzone";
-import { AlertCircle, Camera, Check, Copy, FileText, Loader2, RotateCw, Upload } from "lucide-react";
+import {
+  AlertCircle,
+  Camera,
+  Check,
+  Cloud,
+  Copy,
+  Cpu,
+  FileText,
+  Loader2,
+  RotateCw,
+  Upload,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +23,7 @@ const OCR_LANGUAGE = "eng";
 const OCR_LANG_SOURCES = ["/tessdata", "https://tessdata.projectnaptha.com/4.0.0"] as const;
 const MAX_WORKING_WIDTH = 2000;
 const MIN_DIMENSION = 320;
+const GEMINI_MODEL = "gemini-1.5-flash";
 
 async function preprocessImage(file: File, rotation: number, applyEnhancement: boolean) {
   const img = document.createElement("img");
@@ -87,6 +99,29 @@ async function preprocessImage(file: File, rotation: number, applyEnhancement: b
   );
 }
 
+function blobToBase64(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Unable to read image for Gemini."));
+        return;
+      }
+
+      const base64 = result.split(",")[1];
+      if (!base64) {
+        reject(new Error("Invalid image encoding for Gemini."));
+        return;
+      }
+
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error("Failed to encode image for Gemini."));
+    reader.readAsDataURL(blob);
+  });
+}
+
 const OcrPage = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [ocrText, setOcrText] = useState("");
@@ -99,6 +134,7 @@ const OcrPage = () => {
   const [rotation, setRotation] = useState(0);
   const [engineStatus, setEngineStatus] = useState<"idle" | "warming" | "ready" | "error">("idle");
   const [engineMessage, setEngineMessage] = useState<string | null>(null);
+  const [ocrEngine, setOcrEngine] = useState<"tesseract" | "gemini">("tesseract");
   const [patternMatches, setPatternMatches] = useState<string[]>([]);
   const [enhance, setEnhance] = useState(true);
   const [langPath, setLangPath] = useState<string>(OCR_LANG_SOURCES[0]);
@@ -107,6 +143,7 @@ const OcrPage = () => {
   const lastFileRef = useRef<File | null>(null);
   const lastProcessedRotationRef = useRef(0);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const geminiReady = Boolean(import.meta.env.VITE_GEMINI_API_KEY);
 
   const resetState = useCallback(() => {
     setOcrText("");
@@ -132,28 +169,86 @@ const OcrPage = () => {
     });
 
     try {
-      const tesseract = window.Tesseract;
-      if (!tesseract?.recognize) {
-        throw new Error("The OCR engine is still loading. Please try again in a second.");
+      if (ocrEngine === "tesseract") {
+        const tesseract = window.Tesseract;
+        if (!tesseract?.recognize) {
+          throw new Error("The OCR engine is still loading. Please try again in a second.");
+        }
+
+        const processed = await preprocessImage(file, rotation, enhance);
+
+        const { data } = await tesseract.recognize(processed, OCR_LANGUAGE, {
+          langPath,
+          logger: (message: { status: string; progress?: number }) => {
+            if (message.status === "recognizing text" && typeof message.progress === "number") {
+              setProgress(Math.round(message.progress * 100));
+            }
+          },
+        });
+
+        if (jobRef.current !== nextJobId) return;
+
+        setOcrText(data?.text?.trim() ?? "");
+        setAverageConfidence(
+          typeof data?.confidence === "number" ? Math.round(data.confidence) : null
+        );
+      } else {
+        if (!geminiReady) {
+          throw new Error("Missing VITE_GEMINI_API_KEY. Add it to use Gemini OCR.");
+        }
+
+        const processed = await preprocessImage(file, rotation, enhance);
+        const base64 = await blobToBase64(processed);
+
+        setEngineMessage("Sending to Gemini for recognition…");
+
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text:
+                        "Extract all visible text from this image. Preserve line breaks and punctuation. Return plain UTF-8 text only without additional commentary.",
+                    },
+                    {
+                      inlineData: {
+                        data: base64,
+                        mimeType: "image/png",
+                      },
+                    },
+                  ],
+                },
+              ],
+              generationConfig: { temperature: 0.2 },
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(`Gemini OCR failed (${response.status}). ${detail}`);
+        }
+
+        const payload = (await response.json()) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        };
+
+        if (jobRef.current !== nextJobId) return;
+
+        const text =
+          payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim() ??
+          "";
+
+        setOcrText(text);
+        setAverageConfidence(null);
+        setProgress(100);
       }
 
-      const processed = await preprocessImage(file, rotation, enhance);
-
-      const { data } = await tesseract.recognize(processed, OCR_LANGUAGE, {
-        langPath,
-        logger: (message: { status: string; progress?: number }) => {
-          if (message.status === "recognizing text" && typeof message.progress === "number") {
-            setProgress(Math.round(message.progress * 100));
-          }
-        },
-      });
-
-      if (jobRef.current !== nextJobId) return;
-
-      setOcrText(data?.text?.trim() ?? "");
-      setAverageConfidence(
-        typeof data?.confidence === "number" ? Math.round(data.confidence) : null
-      );
       setStatus("idle");
     } catch (error) {
       console.error("OCR failed", error);
@@ -162,7 +257,7 @@ const OcrPage = () => {
       setStatus("error");
       setLastError(error instanceof Error ? error.message : "Unable to recognize this image");
     }
-  }, [enhance, langPath, resetState, rotation]);
+  }, [enhance, geminiReady, langPath, ocrEngine, resetState, rotation]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles?.[0];
@@ -197,6 +292,21 @@ const OcrPage = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
   };
+
+  useEffect(() => {
+    if (ocrEngine === "tesseract") {
+      setEngineStatus("idle");
+      setEngineMessage("Preparing OCR engine…");
+      return;
+    }
+
+    setEngineStatus(geminiReady ? "ready" : "error");
+    setEngineMessage(
+      geminiReady
+        ? "Gemini API ready. Upload an image to use cloud OCR."
+        : "Add VITE_GEMINI_API_KEY to enable Gemini cloud OCR."
+    );
+  }, [geminiReady, ocrEngine]);
 
   useEffect(() => {
     let cancelled = false;
@@ -271,6 +381,8 @@ const OcrPage = () => {
   }, [ocrText]);
 
   useEffect(() => {
+    if (ocrEngine !== "tesseract") return undefined;
+
     let cancelled = false;
     let warmupStarted = false;
     let pollHandle: number | undefined;
@@ -322,7 +434,7 @@ const OcrPage = () => {
           setEngineMessage("Engine warmed up and ready.");
           stopPolling();
         }
-      } catch (error) {
+     } catch (error) {
         if (!cancelled) {
           console.error("Warmup failed", error);
           setEngineStatus("error");
@@ -347,7 +459,7 @@ const OcrPage = () => {
       cancelled = true;
       stopPolling();
     };
-  }, [langPath]);
+  }, [langPath, ocrEngine]);
 
   useEffect(() => {
     if (!lastFileRef.current) return;
@@ -374,8 +486,8 @@ const OcrPage = () => {
           <p className="text-sm font-semibold text-primary">Standalone OCR (English only)</p>
           <h1 className="text-3xl font-bold leading-tight text-slate-900">Image-to-Text Precision Lab</h1>
           <p className="text-sm text-slate-600 sm:text-base">
-            Drop a clear English-alphabet image and get selectable text in a few seconds. Everything runs on the
-            client with Tesseract.js; nothing is sent to a backend.
+            Drop a clear English-alphabet image and get selectable text in a few seconds. Use on-device
+            Tesseract.js or opt into Gemini cloud OCR when a VITE_GEMINI_API_KEY is configured.
           </p>
         </header>
 
@@ -430,7 +542,9 @@ const OcrPage = () => {
                       </button>
                     </p>
                   )}
-                  <p className="text-xs text-slate-500">Maximum 1 image at a time. Client-side only.</p>
+                  <p className="text-xs text-slate-500">
+                    Maximum 1 image at a time. Stays client-side unless Gemini cloud OCR is selected.
+                  </p>
                 </div>
               </div>
 
@@ -458,6 +572,41 @@ const OcrPage = () => {
                   <Camera className="h-4 w-4" /> Open camera
                 </Button>
                 <span className="text-xs text-slate-500">Use rotation if the preview looks sideways or upside-down.</span>
+              </div>
+
+              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <Cpu className="h-4 w-4 text-primary" /> OCR engine
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={ocrEngine === "tesseract" ? "default" : "outline"}
+                      className="flex items-center gap-2"
+                      onClick={() => setOcrEngine("tesseract")}
+                    >
+                      <Cpu className="h-4 w-4" /> On-device (Tesseract)
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={ocrEngine === "gemini" ? "default" : "outline"}
+                      className="flex items-center gap-2"
+                      disabled={!geminiReady}
+                      onClick={() => setOcrEngine("gemini")}
+                    >
+                      <Cloud className="h-4 w-4" /> Gemini (API)
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600">
+                  {ocrEngine === "gemini"
+                    ? "Gemini sends the image to Google for recognition; results depend on network speed."
+                    : "Tesseract.js keeps all processing in the browser. Switch to Gemini for higher quality if the API key is set."}
+                  {!geminiReady && " Add VITE_GEMINI_API_KEY to enable the cloud option."}
+                </p>
               </div>
 
               <input
@@ -542,12 +691,21 @@ const OcrPage = () => {
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="space-y-0.5 text-sm text-slate-600">
-                  <p><span className="font-semibold text-slate-800">Engine:</span> Tesseract.js</p>
                   <p>
-                    <span className="font-semibold text-slate-800">Language pack:</span> English ({OCR_LANGUAGE})
-                    {langPath && ` via ${langPath}`}
+                    <span className="font-semibold text-slate-800">Engine:</span> {" "}
+                    {ocrEngine === "tesseract" ? "Tesseract.js (on-device)" : "Gemini API (cloud)"}
                   </p>
-                  {averageConfidence !== null && (
+                  {ocrEngine === "tesseract" ? (
+                    <p>
+                      <span className="font-semibold text-slate-800">Language pack:</span> English ({OCR_LANGUAGE})
+                      {langPath && ` via ${langPath}`}
+                    </p>
+                  ) : (
+                    <p>
+                      <span className="font-semibold text-slate-800">Model:</span> {GEMINI_MODEL}
+                    </p>
+                  )}
+                  {averageConfidence !== null && ocrEngine === "tesseract" && (
                     <p>
                       <span className="font-semibold text-slate-800">Avg confidence:</span> {averageConfidence}%
                     </p>
@@ -573,6 +731,7 @@ const OcrPage = () => {
                   <ul className="grid gap-2 sm:grid-cols-2">
                     {patternMatches.map((code) => (
                       <li
+                      <li
                         key={code}
                         className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm"
                       >
@@ -587,7 +746,6 @@ const OcrPage = () => {
                           {code[3] === "2" ? "Starts with 2" : "Check first digit"}
                         </span>
                       </li>
-                    ))}
                   </ul>
                 ) : (
                   <p className="text-xs text-slate-500">No matches yet. Upload or edit text to find codes like ABC234567.</p>
@@ -613,7 +771,8 @@ const OcrPage = () => {
                   image needs better lighting, contrast, or rotation.
                 </p>
                 <p>
-                  This page keeps all processing in the browser. Refresh the page to start fresh if the OCR engine stalls.
+                  On-device mode keeps processing in the browser. Gemini mode will upload the image to Google for
+                  recognition. Refresh the page to start fresh if the OCR engine stalls.
                 </p>
               </div>
             </CardContent>
