@@ -23,8 +23,8 @@ const OCR_LANGUAGE = "eng";
 const OCR_LANG_SOURCES = ["/tessdata", "https://tessdata.projectnaptha.com/4.0.0"] as const;
 const MAX_WORKING_WIDTH = 2000;
 const MIN_DIMENSION = 320;
-const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-1.5-flash-001";
-const DEFAULT_GEMINI_API_VERSION = GEMINI_MODEL.includes("2.0") ? "v1beta" : "v1";
+const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-2.5-flash-001";
+const DEFAULT_GEMINI_API_VERSION = GEMINI_MODEL.includes("2.5") ? "v1beta" : "v1";
 
 async function preprocessImage(file: File, rotation: number, applyEnhancement: boolean) {
   const img = document.createElement("img");
