@@ -53,19 +53,8 @@ export default function ShowManagement() {
   }, [shows]);
 
   const ordersForDealer = useMemo(() => {
-    return orders
-      .filter((order) => Boolean(order.orderId))
-      .filter((order) => {
-        const show = showMap[order.showId];
-        if (!dealerSlug) return true;
-        if (!show) return true;
-
-        const showDealerSlug = normalizeDealerSlug(
-          dealerNameToSlug(show.handoverDealer || show.dealership || "")
-        );
-        return showDealerSlug === dealerSlug;
-      });
-  }, [orders, showMap, dealerSlug]);
+    return orders.filter((order) => Boolean(order.orderId));
+  }, [orders]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
@@ -132,7 +121,7 @@ export default function ShowManagement() {
                 <Clock3 className="h-4 w-4 animate-spin" /> Loading orders...
               </div>
             ) : ordersForDealer.length === 0 ? (
-              <div className="py-10 text-center text-slate-500">No show orders for this dealer.</div>
+              <div className="py-10 text-center text-slate-500">No show orders found.</div>
             ) : (
               <div className="overflow-x-auto">
                 <Table className="min-w-[1000px] text-sm">
