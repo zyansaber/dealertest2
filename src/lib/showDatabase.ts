@@ -76,6 +76,7 @@ export const subscribeToShows = (callback: (shows: ShowRecord[]) => void) => {
       id: item.id ?? item.showId ?? String(index),
       name: item.name ?? "",
       dealership: item.dealership ?? "",
+      handoverDealer: item.handoverDealer ?? "",
       siteLocation: item.siteLocation ?? "",
       layoutAddress: item.layoutAddress ?? "",
       standSize: item.standSize ?? "",
@@ -125,7 +126,7 @@ export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) =
       dealerConfirmAt: item.dealerConfirmAt || "",
     }));
 
-    callback(normalized.filter((item) => item.orderId && item.showId));
+    callback(normalized.filter((item) => item.orderId));
   };
 
   onValue(ordersRef, handler);
