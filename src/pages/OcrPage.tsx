@@ -257,10 +257,14 @@ const OcrPage = () => {
       const photoDataUrl = await fileToDataUrl(capturedFile);
       const photoImage = await loadImageElement(photoDataUrl);
       const photoFormat = capturedFile.type.includes("png") ? "PNG" : "JPEG";
-      const photoScale = photoImage.width ? Math.min(usableWidth / photoImage.width, 1) : 1;
-      const photoHeight = photoImage.height ? photoImage.height * photoScale : usableWidth * 0.75;
+      const maxPhotoHeight = 320;
+      const photoScale = photoImage.width
+        ? Math.min(usableWidth / photoImage.width, maxPhotoHeight / photoImage.height, 1)
+        : 1;
+      const photoWidth = photoImage.width ? photoImage.width * photoScale : usableWidth;
+      const photoHeight = photoImage.height ? photoImage.height * photoScale : Math.min(maxPhotoHeight, usableWidth * 0.75);
 
-      pdf.addImage(photoDataUrl, photoFormat, margin, margin, usableWidth, photoHeight);
+      pdf.addImage(photoDataUrl, photoFormat, margin, margin, photoWidth, photoHeight);
 
       let y = margin + photoHeight + 18;
       const timestamp = new Date().toLocaleString();
@@ -408,8 +412,8 @@ const OcrPage = () => {
               <PenLine className="h-5 w-5" />
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-semibold text-emerald-100">Smart chassis scan</p>
-              <p className="text-xs text-slate-200">ABC + 6 digits · no spaces · Gemini 2.5 Flash</p>
+              <p className="text-sm font-semibold text-emerald-100">Chassis intake</p>
+              <p className="text-xs text-slate-200">Scan, verify, sign, and submit</p>
             </div>
           </div>
           {matchedDealerSlug && (
@@ -564,7 +568,7 @@ const OcrPage = () => {
 
                 <div className="sticky bottom-4 z-10 rounded-2xl border border-emerald-500/40 bg-emerald-500/20 p-3 shadow-lg shadow-emerald-500/30 backdrop-blur">
                   <div className="flex items-center justify-between text-xs text-emerald-50">
-                    <span>Save and receive</span>
+                    <span>Save and submit</span>
                     <span className="rounded-full bg-white/15 px-2 py-1 text-[11px] text-white">
                       {matchedDealerSlug || "No match"}
                     </span>
@@ -576,7 +580,7 @@ const OcrPage = () => {
                     onClick={handleReceive}
                   >
                     {receiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Generate PDF & receive
+                    Submit
                   </Button>
                 </div>
               </div>
