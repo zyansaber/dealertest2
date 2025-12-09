@@ -57,17 +57,8 @@ export default function ShowManagement() {
   };
 
   const ordersForDealer = useMemo(() => {
-    return orders
-      .filter((order) => Boolean(order.orderId))
-      .filter((order) => {
-        if (showsLoading) return true;
-        const show = showMap[order.showId];
-        if (!show) return true;
-        const showSlug = normalizeDealerSlug(getShowDealerSlug(show));
-        if (!showSlug) return true;
-        return showSlug === dealerSlug;
-      });
-  }, [orders, dealerSlug, showMap, showsLoading]);
+    return orders.filter((order) => Boolean(order.orderId));
+  }, [orders]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
