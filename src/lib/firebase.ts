@@ -10,6 +10,7 @@ import {
   remove,
   DataSnapshot,
 } from "firebase/database";
+import { getStorage, ref as storageRef, uploadBytes } from "firebase/storage";
 import type {
   SecondHandSale,
   ScheduleItem,
@@ -33,8 +34,9 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
+const storage = getStorage(app);
 
-export { app, database };
+export { app, database, storage };
 
 export type ShowDealerMapping = {
   dealership: string;
@@ -693,6 +695,14 @@ export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<stri
   const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
+}
+
+export async function uploadDeliveryDocument(chassis: string, pdf: Blob) {
+  const sanitized = chassis.trim().replace(/\s+/g, "").toUpperCase();
+  const key = sanitized || `delivery_${Date.now()}`;
+  const fileRef = storageRef(storage, `deliverydoc/${key}.pdf`);
+  await uploadBytes(fileRef, pdf, { contentType: "application/pdf" });
+  return fileRef;
 }
 
 export async function receiveChassisToYard(
