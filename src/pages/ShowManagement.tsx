@@ -124,11 +124,12 @@ export default function ShowManagement() {
               <div className="py-10 text-center text-slate-500">No show orders found.</div>
             ) : (
               <div className="overflow-x-auto">
-                <Table className="min-w-[1000px] text-sm">
+                <Table className="min-w-[1100px] text-sm">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Order ID</TableHead>
                       <TableHead className="font-semibold">Show</TableHead>
+                      <TableHead className="font-semibold">Show Dealer Slug</TableHead>
                       <TableHead className="font-semibold">Date</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Salesperson</TableHead>
@@ -141,11 +142,13 @@ export default function ShowManagement() {
                   <TableBody>
                     {ordersForDealer.map((order) => {
                       const show = showMap[order.showId];
+                      const showDealerSlug = dealerNameToSlug(show?.handoverDealer || show?.dealership || "");
                       const chassisValue = chassisDrafts[order.orderId] ?? order.chassisNumber ?? "";
                       return (
                         <TableRow key={order.orderId}>
                           <TableCell className="font-semibold text-slate-900">{order.orderId}</TableCell>
                           <TableCell>{show?.name || order.showId || "Unknown show"}</TableCell>
+                          <TableCell className="text-slate-700">{showDealerSlug || "-"}</TableCell>
                           <TableCell>{order.date || "-"}</TableCell>
                           <TableCell>{order.model || "-"}</TableCell>
                           <TableCell>{order.salesperson || "-"}</TableCell>
