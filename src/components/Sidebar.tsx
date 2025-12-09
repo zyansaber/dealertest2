@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
@@ -26,7 +27,16 @@ interface SidebarProps {
   showStats?: boolean;
   isGroup?: boolean;
   includedDealers?: Array<{ slug: string; name: string }> | null;
+  showManagementPending?: number;
 }
+
+type NavigationItem = {
+  path: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+  badge?: number;
+};
 
 /** ---- 安全工具函数：统一兜底，避免 undefined.toLowerCase 报错 ---- */
 const toStr = (v: any) => String(v ?? "");
@@ -40,7 +50,8 @@ export default function Sidebar({
   currentDealerName,
   showStats = true,
   isGroup = false,
-  includedDealers = null
+  includedDealers = null,
+  showManagementPending,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { dealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
@@ -109,7 +120,7 @@ export default function Sidebar({
     }
   }, [isGroup, dealerSlug, selectedDealerSlug]);
 
-  const navigationItems = [
+  const navigationItems: NavigationItem[] = [
     { path: `${basePath}/dashboard`, label: "Dashboard", icon: LayoutDashboard, end: true },
     { path: isGroup ? `${basePath}/dealerorders` : basePath, label: "Dealer Orders", icon: BarChart3, end: !isGroup },
     { path: `${basePath}/inventorystock`, label: "Factory Inventory", icon: Factory, end: true },
@@ -123,6 +134,13 @@ export default function Sidebar({
       label: "Inventory Management",
       icon: ClipboardList,
       end: true
+    });
+    navigationItems.splice(5, 0, {
+      path: `${basePath}/show-management`,
+      label: "Show Management",
+      icon: ClipboardList,
+      end: true,
+      badge: showManagementPending && showManagementPending > 0 ? showManagementPending : undefined,
     });
   }
 
@@ -208,9 +226,25 @@ export default function Sidebar({
                           ? "bg-slate-800 text-white shadow-inner"
                           : "text-slate-200 hover:bg-slate-800 hover:text-white"
                       }`}
-                    >
-                      <item.icon className="h-5 w-5" />
-                      {!isCollapsed && <span>{item.label}</span>}
+                      >
+                        <div className="relative">
+                          <item.icon className="h-5 w-5" />
+                          {isCollapsed && item.badge && (
+                            <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                      {!isCollapsed && (
+                        <span className="flex items-center gap-2">
+                          <span>{item.label}</span>
+                          {item.badge && (
+                            <Badge variant="destructive" className="ml-1 h-5 px-2 text-xs">
+                              {item.badge}
+                            </Badge>
+                          )}
+                        </span>
+                      )}
                       {isCollapsed && <span className="sr-only">{item.label}</span>}
                     </Button>
                   )}
