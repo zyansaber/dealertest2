@@ -61,6 +61,23 @@ export const formatShowDate = (value?: string | null): string => {
   return formatted || "Not set";
 };
 
+const resolveHandoverDealer = (item: any): string => {
+  const candidates = [
+    item?.handoverDealer,
+    item?.handoverdealer,
+    item?.handover_dealer,
+    item?.["handover dealer"],
+    item?.["Handover Dealer"],
+  ];
+
+  for (const candidate of candidates) {
+    const value = typeof candidate === "string" ? candidate.trim() : "";
+    if (value) return value;
+  }
+
+  return "";
+};
+
 export const subscribeToShows = (callback: (shows: ShowRecord[]) => void) => {
   const showsRef = ref(showDatabase, "shows");
 
@@ -76,7 +93,7 @@ export const subscribeToShows = (callback: (shows: ShowRecord[]) => void) => {
       id: item.id ?? item.showId ?? String(index),
       name: item.name ?? "",
       dealership: item.dealership ?? "",
-      handoverDealer: item.handoverDealer ?? "",
+      handoverDealer: resolveHandoverDealer(item),
       siteLocation: item.siteLocation ?? "",
       layoutAddress: item.layoutAddress ?? "",
       standSize: item.standSize ?? "",
