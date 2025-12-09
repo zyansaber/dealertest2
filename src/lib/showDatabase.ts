@@ -1,6 +1,7 @@
 import { getApps, initializeApp } from "firebase/app";
-import { DataSnapshot, getDatabase, off, onValue, ref } from "firebase/database";
+import { DataSnapshot, getDatabase, off, onValue, ref, update } from "firebase/database";
 import type { ShowRecord } from "@/types/show";
+import type { ShowOrder } from "@/types/showOrder";
 
 const showFirebaseConfig = {
   apiKey: "AIzaSyCxOWHjnnyjILF_zZFC0gVha9rx8nrpGwE",
@@ -97,6 +98,54 @@ export const subscribeToShows = (callback: (shows: ShowRecord[]) => void) => {
 
   onValue(showsRef, handler);
   return () => off(showsRef, "value", handler);
+};
+
+export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) => {
+  const ordersRef = ref(showDatabase, "showOrders");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const raw = snapshot.val();
+    const list: any[] = raw
+      ? Array.isArray(raw)
+        ? raw.filter(Boolean)
+        : Object.entries(raw).map(([key, value]) => ({ orderId: key, ...(value as any) }))
+      : [];
+
+    const normalized: ShowOrder[] = list.map((item: any) => ({
+      orderId: item.orderId || item.id || "",
+      id: item.id,
+      showId: item.showId || "",
+      date: item.date || "",
+      model: item.model || "",
+      orderType: item.orderType || "",
+      status: item.status || "",
+      salesperson: item.salesperson || "",
+      chassisNumber: item.chassisNumber || "",
+      dealerConfirm: Boolean(item.dealerConfirm),
+      dealerConfirmAt: item.dealerConfirmAt || "",
+    }));
+
+    callback(normalized.filter((item) => item.orderId && item.showId));
+  };
+
+  onValue(ordersRef, handler);
+  return () => off(ordersRef, "value", handler);
+};
+
+export const updateShowOrder = async (orderId: string, updates: Partial<ShowOrder>) => {
+  const orderRef = ref(showDatabase, `showOrders/${orderId}`);
+  const payload: Record<string, unknown> = {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (updates.dealerConfirm) {
+    payload.dealerConfirmAt = new Date().toISOString();
+  } else if (typeof updates.dealerConfirmAt !== "undefined") {
+    payload.dealerConfirmAt = updates.dealerConfirmAt;
+  }
+
+  await update(orderRef, payload);
 };
 
 export { showDatabase };
