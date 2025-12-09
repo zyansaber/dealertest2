@@ -52,9 +52,22 @@ export default function ShowManagement() {
     return map;
   }, [shows]);
 
+  const getShowDealerSlug = (show?: ShowRecord) => {
+    return dealerNameToSlug(show?.handoverDealer || show?.dealership || "");
+  };
+
   const ordersForDealer = useMemo(() => {
-    return orders.filter((order) => Boolean(order.orderId));
-  }, [orders]);
+    return orders
+      .filter((order) => Boolean(order.orderId))
+      .filter((order) => {
+        if (showsLoading) return true;
+        const show = showMap[order.showId];
+        if (!show) return true;
+        const showSlug = normalizeDealerSlug(getShowDealerSlug(show));
+        if (!showSlug) return true;
+        return showSlug === dealerSlug;
+      });
+  }, [orders, dealerSlug, showMap, showsLoading]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
@@ -142,13 +155,14 @@ export default function ShowManagement() {
                   <TableBody>
                     {ordersForDealer.map((order) => {
                       const show = showMap[order.showId];
-                      const showDealerSlug = dealerNameToSlug(show?.handoverDealer || show?.dealership || "");
+                      const showDealerSlug = getShowDealerSlug(show);
+                      const normalizedShowDealerSlug = normalizeDealerSlug(showDealerSlug);
                       const chassisValue = chassisDrafts[order.orderId] ?? order.chassisNumber ?? "";
                       return (
                         <TableRow key={order.orderId}>
                           <TableCell className="font-semibold text-slate-900">{order.orderId}</TableCell>
                           <TableCell>{show?.name || order.showId || "Unknown show"}</TableCell>
-                          <TableCell className="text-slate-700">{showDealerSlug || "-"}</TableCell>
+                          <TableCell className="text-slate-700">{normalizedShowDealerSlug || "-"}</TableCell>
                           <TableCell>{order.date || "-"}</TableCell>
                           <TableCell>{order.model || "-"}</TableCell>
                           <TableCell>{order.salesperson || "-"}</TableCell>
