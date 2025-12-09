@@ -53,7 +53,9 @@ export default function ShowManagement() {
   }, [shows]);
 
   const getShowDealerSlug = (show?: ShowRecord) => {
-    return dealerNameToSlug(show?.handoverDealer || show?.dealership || "");
+    const preferredDealer = (show?.handoverDealer ?? "").trim();
+    const fallbackDealer = (show?.dealership ?? "").trim();
+    return dealerNameToSlug(preferredDealer || fallbackDealer);
   };
 
   const ordersForDealer = useMemo(() => {
