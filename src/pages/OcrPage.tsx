@@ -15,12 +15,40 @@ declare global {
   }
 }
 
-const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-1.5-pro";
+const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-2.5-flash";
 
 const inferGeminiApiVersion = (model: string = GEMINI_MODEL): "v1" | "v1beta" => {
   const fromEnv = import.meta.env.VITE_GEMINI_API_VERSION;
   if (fromEnv === "v1" || fromEnv === "v1beta") return fromEnv;
   return /gemini-2(\.|-|$)/i.test(model) ? "v1beta" : "v1";
+};
+
+const getGenerativeModel = (ai: { apiKey: string }, { model }: { model: string }) => {
+  const apiVersion = inferGeminiApiVersion(model);
+  const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${ai.apiKey}`;
+
+  return {
+    async generateContent(body: any) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || "OCR error");
+      }
+
+      const payload = (await response.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+
+      const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ?? "";
+
+      return { response: { text: () => text } };
+    },
+  };
 };
 
 const slugifyDealerName = (name?: string | null) =>
@@ -257,94 +285,64 @@ const OcrPage = () => {
 
   const runScan = useCallback(
     async (file: File) => {
-      if (!import.meta.env.VITE_GEMINI_API_KEY) {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
         setError("Missing VITE_GEMINI_API_KEY");
         return;
       }
 
-    setStatus("scanning");
-    setError(null);
-    setOcrText("Scanning…");
-    setBestCode(null);
-    setMatches([]);
-    setCapturedFile(file);
-    setHasSignature(false);
-    clearSignature();
+      setStatus("scanning");
+      setError(null);
+      setOcrText("Scanning…");
+      setBestCode(null);
+      setMatches([]);
+      setCapturedFile(file);
+      setHasSignature(false);
+      clearSignature();
 
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
 
-    try {
-      const base64 = await toBase64(file);
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text:
-                  "Extract clear text from the photo. Focus on chassis codes like ABC234567 (three letters + six digits, no spaces). Return only the OCR text with no model names, metadata, or explanations.",
-              },
-              {
-                inline_data: {
-                  data: base64,
-                  mime_type: file.type || "image/png",
+      try {
+        const base64 = await toBase64(file);
+        const ai = { apiKey };
+        const model = getGenerativeModel(ai, { model: GEMINI_MODEL });
+
+        const response = await model.generateContent({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text:
+                    "Extract clear text from the photo. Focus on chassis codes like ABC234567 (three letters + six digits, no spaces). Return only the OCR text with no model names, metadata, or explanations.",
                 },
-              },
-            ],
-          },
-        ],
-        generation_config: { temperature: 0 },
-      };
+                {
+                  inlineData: {
+                    data: base64,
+                    mimeType: file.type || "image/png",
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: { temperature: 0 },
+        });
 
-      const apiVersion = inferGeminiApiVersion();
-      const send = (version: "v1" | "v1beta") =>
-        fetch(
-          `https://generativelanguage.googleapis.com/${version}/models/${GEMINI_MODEL}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody),
-          }
-        );
+        const text = response.response.text().trim();
+        const { best, all } = extractChassis(text);
 
-      let response = await send(apiVersion);
-
-      if (!response.ok && response.status === 404) {
-        const fallback = apiVersion === "v1" ? "v1beta" : "v1";
-        const fallbackResp = await send(fallback);
-        if (fallbackResp.ok) {
-          response = fallbackResp;
-        } else {
-          const detail = await fallbackResp.text();
-          throw new Error(detail || "Model not found — check OCR model name");
-        }
+        setOcrText(text || "No text found");
+        setBestCode(best);
+        setMatches(all);
+        setStatus("idle");
+      } catch (err) {
+        console.error(err);
+        setStatus("idle");
+        setError(err instanceof Error ? err.message : "Scan failed");
       }
-
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || "OCR error");
-      }
-
-      const payload = (await response.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      };
-
-      const text =
-        payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ?? "";
-
-      const { best, all } = extractChassis(text);
-
-      setOcrText(text || "No text found");
-      setBestCode(best);
-      setMatches(all);
-      setStatus("idle");
-    } catch (err) {
-      console.error(err);
-      setStatus("idle");
-      setError(err instanceof Error ? err.message : "Scan failed");
-    }
     },
     [clearSignature]
   );
@@ -373,7 +371,7 @@ const OcrPage = () => {
     }
 
     if (!capturedFile) {
-      toast.error("请先拍照再提交");
+      toast.error("Please capture a photo first");
       return;
     }
 
@@ -402,171 +400,186 @@ const OcrPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-white">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6">
-        <div className="flex items-center gap-3 rounded-3xl bg-slate-800/60 px-4 py-3 backdrop-blur">
-          <PenLine className="h-5 w-5 text-emerald-300" />
-          <div className="leading-tight">
-            <p className="text-sm font-semibold text-emerald-200">OCR capture</p>
-            <p className="text-xs text-slate-300">ABC + 6 digits · no spaces</p>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0f172a,_#020617)] text-white">
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 pb-8 pt-6 sm:px-6 lg:pt-10">
+        <div className="flex items-center justify-between rounded-3xl bg-white/5 px-4 py-3 shadow-lg backdrop-blur">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/40">
+              <PenLine className="h-5 w-5" />
+            </div>
+            <div className="leading-tight">
+              <p className="text-sm font-semibold text-emerald-100">Smart chassis scan</p>
+              <p className="text-xs text-slate-200">ABC + 6 digits · no spaces · Gemini 2.5 Flash</p>
+            </div>
           </div>
+          {matchedDealerSlug && (
+            <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-100">
+              {matchedDealerSlug}
+            </span>
+          )}
         </div>
 
-        <Card className="border-none bg-white/5 shadow-xl backdrop-blur">
-          <CardContent className="space-y-6 p-5 sm:p-6">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="flex flex-col gap-3 rounded-2xl bg-slate-950/40 p-4 ring-1 ring-white/10">
-                <div className="flex items-center justify-between text-sm text-slate-200">
-                  <span>Capture photo</span>
-                  <span className="text-xs text-slate-400">Keep plate clear</span>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="gap-2 bg-emerald-500 text-slate-900 hover:bg-emerald-400"
-                    onClick={handleSelectPhoto}
-                    disabled={status === "scanning"}
-                  >
-                    {status === "scanning" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    {status === "scanning" ? "Scanning" : "Scan"}
-                  </Button>
-                  {previewUrl && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="gap-2 border-white/20 text-slate-100 hover:bg-white/5"
-                      onClick={handleSelectPhoto}
-                    >
-                      <ScanLine className="h-4 w-4" /> Rescan
-                    </Button>
-                  )}
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
+        <Card className="border-none bg-white/5 shadow-2xl backdrop-blur lg:overflow-hidden">
+          <CardContent className="p-0">
+            <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="flex flex-col gap-4 bg-slate-950/50 p-4 sm:p-6">
+                <div className="flex items-center justify-between text-xs text-slate-200">
+                  <span className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <Camera className="h-4 w-4 text-emerald-300" />
+                    Capture chassis
+                  </span>
+                  <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-200">HD / stabilized</span>
                 </div>
 
-                <div className="overflow-hidden rounded-xl bg-black/30 ring-1 ring-white/5">
+                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900 to-slate-950 shadow-inner">
+                  <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 text-[11px] text-emerald-100 ring-1 ring-emerald-400/30">
+                    <ScanLine className="h-3.5 w-3.5" />
+                    Smart scan
+                  </div>
                   {previewUrl ? (
-                    <img src={previewUrl} alt="preview" className="h-64 w-full object-cover" />
+                    <img src={previewUrl} alt="preview" className="h-[380px] w-full object-cover" />
                   ) : (
-                    <div className="flex h-64 items-center justify-center text-sm text-slate-400">
-                      Tap Scan to start
+                    <div className="flex h-[380px] items-center justify-center text-sm text-slate-400">
+                      Tap "Start scan"
                     </div>
                   )}
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent px-4 pb-4 pt-10">
+                    <div className="flex items-center gap-2 text-xs text-slate-200">
+                      <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                      {status === "scanning" ? "Recognizing…" : previewUrl ? "Image captured" : "Waiting to scan"}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="gap-2 bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
+                        onClick={handleSelectPhoto}
+                        disabled={status === "scanning"}
+                      >
+                        {status === "scanning" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                        {status === "scanning" ? "Scanning" : previewUrl ? "Rescan" : "Start scan"}
+                      </Button>
+                      <input
+                        ref={inputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handleFileChange}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {error && (
-                  <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                  <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100 shadow">
                     {error}
+                  </div>
+                )}
+
+                {matches.length > 1 && (
+                  <div className="flex flex-wrap gap-2 text-xs text-emerald-50">
+                    {matches.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        className={`rounded-full border px-2 py-1 transition ${
+                          code === bestCode
+                            ? "border-emerald-400/70 bg-emerald-500/20 text-emerald-100"
+                            : "border-white/10 bg-white/5 text-slate-100 hover:border-emerald-300/50 hover:text-white"
+                        }`}
+                        onClick={() => setBestCode(code)}
+                      >
+                        {code}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
 
-              <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-                <div className="flex items-center justify-between text-xs text-slate-200">
-                  <span>OCR result (editable)</span>
-                  {status === "scanning" && (
-                    <span className="flex items-center gap-2 text-xs text-slate-200">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Scanning
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Text</p>
-                  <Textarea
-                    value={ocrText}
-                    onChange={(e) => setOcrText(e.target.value)}
-                    className="min-h-[120px] bg-slate-900/60 text-sm text-slate-50"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-[11px] uppercase tracking-wide text-emerald-200">Chassis code</p>
-                  <Input
-                    value={bestCode ?? ""}
-                    placeholder="ABC234567"
-                    className="bg-slate-900/60 text-lg font-semibold text-white"
-                    onChange={(e) => {
-                      const cleaned = e.target.value.toUpperCase().replace(/\s+/g, "");
-                      setBestCode(cleaned || null);
-                    }}
-                  />
-                  {matches.length > 1 && (
-                    <div className="flex flex-wrap gap-2 text-xs text-emerald-50">
-                      {matches.slice(1).map((code) => (
-                        <button
-                          key={code}
-                          type="button"
-                          className="rounded-full bg-white/10 px-2 py-1 transition hover:bg-white/20"
-                          onClick={() => setBestCode(code)}
-                        >
-                          {code}
-                        </button>
-                      ))}
+              <div className="flex flex-col gap-4 bg-white/5 p-4 sm:p-6">
+                <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 shadow-inner">
+                  <div className="flex items-center justify-between text-xs text-slate-200">
+                    <span className="text-sm font-semibold text-white">OCR result (editable)</span>
+                    {status === "scanning" && (
+                      <span className="flex items-center gap-2 text-[11px] text-slate-200">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Recognizing
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    <Textarea
+                      value={ocrText}
+                      onChange={(e) => setOcrText(e.target.value)}
+                      className="min-h-[120px] resize-none bg-slate-950/60 text-sm text-slate-50 ring-1 ring-white/10"
+                    />
+                    <div className="space-y-2">
+                      <p className="text-[11px] uppercase tracking-wide text-emerald-200">Chassis code</p>
+                      <Input
+                        value={bestCode ?? ""}
+                        placeholder="ABC234567"
+                        className="bg-slate-950/60 text-lg font-semibold text-white ring-1 ring-white/10"
+                        onChange={(e) => {
+                          const cleaned = e.target.value.toUpperCase().replace(/\s+/g, "");
+                          setBestCode(cleaned || null);
+                        }}
+                      />
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-900/60 p-3 text-sm text-slate-100 ring-1 ring-white/5">
+                <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-4 text-sm text-slate-100 shadow-inner">
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-slate-400">Dealer</p>
-                    <p className="mt-1 font-semibold">{matchedPgi?.dealer ?? "-"}</p>
+                    <p className="mt-1 text-base font-semibold text-white">{matchedPgi?.dealer ?? "-"}</p>
                   </div>
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-slate-400">Model</p>
-                    <p className="mt-1 font-semibold">{matchedPgi?.model ?? "-"}</p>
+                    <p className="mt-1 text-base font-semibold text-white">{matchedPgi?.model ?? "-"}</p>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                  <PenLine className="h-4 w-4 text-emerald-300" />
-                  Signature (required)
+                <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4 shadow-inner">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                      <PenLine className="h-4 w-4 text-emerald-300" />
+                      Signature (required)
+                    </div>
+                    <Button variant="ghost" size="sm" className="text-xs text-slate-200 hover:bg-white/5" onClick={clearSignature}>
+                      Clear
+                    </Button>
+                  </div>
+                  <div className="mt-3 overflow-hidden rounded-xl bg-white p-2 text-slate-800 shadow-inner">
+                    <canvas
+                      ref={signatureRef}
+                      className="h-36 w-full touch-none bg-white"
+                      onPointerDown={handleSignatureStart}
+                      onPointerMove={handleSignatureMove}
+                      onPointerUp={handleSignatureEnd}
+                      onPointerLeave={handleSignatureEnd}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-slate-300">Please sign in the box before submitting.</p>
                 </div>
-                <Button variant="outline" size="sm" className="border-white/20 text-slate-100" onClick={clearSignature}>
-                  Clear
-                </Button>
-              </div>
-              <div className="overflow-hidden rounded-xl bg-white p-2 text-slate-800 shadow-inner">
-                <canvas
-                  ref={signatureRef}
-                  className="h-40 w-full touch-none bg-white"
-                  onPointerDown={handleSignatureStart}
-                  onPointerMove={handleSignatureMove}
-                  onPointerUp={handleSignatureEnd}
-                  onPointerLeave={handleSignatureEnd}
-                />
-              </div>
-              <p className="text-xs text-slate-300">Please sign inside the box before receiving.</p>
-            </div>
 
-            <div className="space-y-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <div className="flex items-center justify-between text-xs text-slate-300">
-                <span>Receive</span>
-                <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-200">
-                  {matchedDealerSlug || "No PGI match"}
-                </span>
+                <div className="sticky bottom-4 z-10 rounded-2xl border border-emerald-500/40 bg-emerald-500/20 p-3 shadow-lg shadow-emerald-500/30 backdrop-blur">
+                  <div className="flex items-center justify-between text-xs text-emerald-50">
+                    <span>Save and receive</span>
+                    <span className="rounded-full bg-white/15 px-2 py-1 text-[11px] text-white">
+                      {matchedDealerSlug || "No match"}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    disabled={!bestCode || !matchedDealerSlug || receiving || !hasSignature || !capturedFile}
+                    className="mt-2 w-full gap-2 bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-400/40 hover:bg-emerald-300"
+                    onClick={handleReceive}
+                  >
+                    {receiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Generate PDF & receive
+                  </Button>
+                </div>
               </div>
-              <Button
-                type="button"
-                disabled={!bestCode || !matchedDealerSlug || receiving || !hasSignature || !capturedFile}
-                className="w-full gap-2 bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
-                onClick={handleReceive}
-              >
-                {receiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                Receive & Upload PDF
-              </Button>
             </div>
           </CardContent>
         </Card>
