@@ -13,12 +13,6 @@ import type { ShowOrder } from "@/types/showOrder";
 import type { ShowRecord } from "@/types/show";
 import { CheckCircle2, Clock3 } from "lucide-react";
 
-const slugify = (value?: string) =>
-  (value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
 export default function ShowManagement() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = normalizeDealerSlug(rawDealerSlug);
@@ -58,13 +52,8 @@ export default function ShowManagement() {
   }, [shows]);
 
   const ordersForDealer = useMemo(() => {
-    return orders.filter((order) => {
-      const show = showMap[order.showId];
-      if (!show) return false;
-      const showDealerSlug = normalizeDealerSlug(slugify(show.handoverDealer || show.dealership));
-      return dealerSlug ? showDealerSlug === dealerSlug : true;
-    });
-  }, [orders, showMap, dealerSlug]);
+    return orders.filter((order) => Boolean(order.orderId));
+  }, [orders]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
@@ -123,7 +112,7 @@ export default function ShowManagement() {
             <div>
               <CardTitle className="text-lg">Orders</CardTitle>
               <p className="text-sm text-slate-500">
-                Orders are filtered by show handover dealer matching the current dealer portal.
+                Showing all show orders for visibility while dealer filtering is disabled.
               </p>
             </div>
             <Badge variant="outline" className="text-slate-700">
@@ -160,7 +149,7 @@ export default function ShowManagement() {
                       return (
                         <TableRow key={order.orderId}>
                           <TableCell className="font-semibold text-slate-900">{order.orderId}</TableCell>
-                          <TableCell>{show?.name || order.showId}</TableCell>
+                          <TableCell>{show?.name || order.showId || "Unknown show"}</TableCell>
                           <TableCell>{order.date || "-"}</TableCell>
                           <TableCell>{order.model || "-"}</TableCell>
                           <TableCell>{order.salesperson || "-"}</TableCell>
