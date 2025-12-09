@@ -19,6 +19,7 @@ import ProtectedDealerRoute from "./components/ProtectedDealerRoute";
 import ProtectedDealerGroupRoute from "./components/ProtectedDealerGroupRoute";
 import FinanceReport from "./pages/FinanceReport";
 import ShowDealerships from "@/pages/ShowDealerships";
+import ShowManagement from "./pages/ShowManagement";
 
 // Dealer Group pages
 import DealerGroupPortal from "./pages/DealerGroupPortal";
@@ -109,10 +110,16 @@ const App = () => (
               <DealerYard />
             </ProtectedDealerRoute>
           } />
-          
+
           <Route path="/dealer/:dealerSlug/inventory-management" element={
             <ProtectedDealerRoute>
               <InventoryManagement />
+            </ProtectedDealerRoute>
+          } />
+
+          <Route path="/dealer/:dealerSlug/show-management" element={
+            <ProtectedDealerRoute>
+              <ShowManagement />
             </ProtectedDealerRoute>
           } />
 
