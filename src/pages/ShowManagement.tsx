@@ -60,7 +60,9 @@ export default function ShowManagement() {
         if (!dealerSlug) return true;
         if (!show) return true;
 
-        const showDealerSlug = dealerNameToSlug(show.handoverDealer || show.dealership || "");
+        const showDealerSlug = normalizeDealerSlug(
+          dealerNameToSlug(show.handoverDealer || show.dealership || "")
+        );
         return showDealerSlug === dealerSlug;
       });
   }, [orders, showMap, dealerSlug]);
