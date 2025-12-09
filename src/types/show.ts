@@ -3,6 +3,7 @@ export type ShowRecord = {
   id: string;
   name: string;
   dealership: string;
+  handoverDealer?: string;
   siteLocation?: string;
   layoutAddress?: string;
   standSize?: string;
