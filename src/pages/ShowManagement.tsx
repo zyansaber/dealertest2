@@ -1,3 +1,6 @@
++217
+-0
+
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Sidebar from "@/components/Sidebar";
 import { prettifyDealerName, normalizeDealerSlug } from "@/lib/dealerUtils";
+import { dealerNameToSlug } from "@/lib/firebase";
 import { subscribeToShows, subscribeToShowOrders, updateShowOrder } from "@/lib/showDatabase";
 import type { ShowOrder } from "@/types/showOrder";
 import type { ShowRecord } from "@/types/show";
@@ -52,8 +56,17 @@ export default function ShowManagement() {
   }, [shows]);
 
   const ordersForDealer = useMemo(() => {
-    return orders.filter((order) => Boolean(order.orderId));
-  }, [orders]);
+    return orders
+      .filter((order) => Boolean(order.orderId))
+      .filter((order) => {
+        const show = showMap[order.showId];
+        if (!dealerSlug) return true;
+        if (!show) return true;
+
+        const showDealerSlug = dealerNameToSlug(show.handoverDealer || show.dealership || "");
+        return showDealerSlug === dealerSlug;
+      });
+  }, [orders, showMap, dealerSlug]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
@@ -109,12 +122,7 @@ export default function ShowManagement() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-lg">Orders</CardTitle>
-              <p className="text-sm text-slate-500">
-                Showing all show orders for visibility while dealer filtering is disabled.
-              </p>
-            </div>
+            <CardTitle className="text-lg">Orders</CardTitle>
             <Badge variant="outline" className="text-slate-700">
               Pending dealer confirmations: {pendingConfirmationCount}
             </Badge>
@@ -171,7 +179,7 @@ export default function ShowManagement() {
                                 size="sm"
                                 onClick={() => handleConfirm(order)}
                                 disabled={savingOrderId === order.orderId}
-                                className="bg-emerald-600 hover:bg-emerald-700"
+                                className="h-8 rounded px-2 text-xs bg-emerald-600 hover:bg-emerald-700"
                               >
                                 {savingOrderId === order.orderId ? "Saving..." : "Order confirmation"}
                               </Button>
