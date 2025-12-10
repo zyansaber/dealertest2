@@ -282,7 +282,6 @@ export default function ShowManagement() {
     return teamMembers.find((member) => member.memberName.trim().toLowerCase() === normalizedName) || null;
   };
 
-
   const buildOrderPdf = async (params: {
     order: ShowOrder;
     show?: ShowRecord;
@@ -531,10 +530,10 @@ export default function ShowManagement() {
     cursorY += 14;
 
     const orderIdText = sanitizeOrderIdForBarcode(order.orderId);
-    const barcodeHeight = 32; // ✅ 比你原来 48 明显小
+    const barcodeHeight = 26; // 更紧凑，避免抢占右下角空间
     const footerAvailableWidth = pageWidth - margin * 2;
 
-    const maxBarcodeWidth = Math.min(260, footerAvailableWidth * 0.45);
+    const maxBarcodeWidth = Math.min(220, footerAvailableWidth * 0.4);
     const chosenBarWidth = pickBarcodeBarWidth(order.orderId || "Unknown", maxBarcodeWidth);
 
     // 左侧条码
@@ -558,25 +557,22 @@ export default function ShowManagement() {
     // 右侧更小的提示 panel
     const panelX = barcodeX + Math.min(barcodeWidth, maxBarcodeWidth) + 18;
     const panelWidth = pageWidth - margin - panelX;
-    const panelHeight = 54;
+    const panelHeight = 44;
 
     doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
     doc.roundedRect(panelX, barcodeY - 2, panelWidth, panelHeight, 8, 8, "F");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
     doc.setTextColor(accent.r, accent.g, accent.b);
-    doc.text("Delivery readiness", panelX + 10, barcodeY + 18);
+    doc.text("Attach to Concur commission request", panelX + 10, barcodeY + 18);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.8);
+    doc.setFontSize(9.2);
     doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text(
-      "Dealer confirmation locks key options and helps finalize the delivery plan.",
-      panelX + 10,
-      barcodeY + 34,
-      { maxWidth: panelWidth - 20 }
-    );
+    doc.text("Use this confirmation as the supporting document.", panelX + 10, barcodeY + 32, {
+      maxWidth: panelWidth - 20,
+    });
 
     // ---------------------------
     // Done
@@ -607,7 +603,7 @@ export default function ShowManagement() {
         toast.error("Unable to find the salesperson's email in team members");
         return;
       }
-
+      
       const pdfAttachment = await buildOrderPdf({
         order: latestOrder,
         show: showMap[latestOrder.showId],
