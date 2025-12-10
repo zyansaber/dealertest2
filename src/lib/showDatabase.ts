@@ -1,7 +1,8 @@
 import { getApps, initializeApp } from "firebase/app";
-import { DataSnapshot, getDatabase, off, onValue, ref, update } from "firebase/database";
+import { DataSnapshot, get, getDatabase, off, onValue, ref, update } from "firebase/database";
 import type { ShowRecord } from "@/types/show";
 import type { ShowOrder } from "@/types/showOrder";
+import type { TeamMember } from "@/types/teamMember";
 
 const showFirebaseConfig = {
   apiKey: "AIzaSyCxOWHjnnyjILF_zZFC0gVha9rx8nrpGwE",
@@ -165,5 +166,52 @@ export const updateShowOrder = async (orderId: string, updates: Partial<ShowOrde
 
   await update(orderRef, payload);
 };
+
+export const fetchShowOrderById = async (orderId: string): Promise<ShowOrder | null> => {
+  if (!orderId) return null;
+
+  const orderRef = ref(showDatabase, `showOrders/${orderId}`);
+  const snapshot = await get(orderRef);
+
+  if (!snapshot.exists()) return null;
+
+  const data = snapshot.val();
+  return {
+    orderId,
+    id: data.id,
+    showId: data.showId || "",
+    date: data.date || "",
+    model: data.model || "",
+    orderType: data.orderType || "",
+    status: data.status || "",
+    salesperson: data.salesperson || "",
+    chassisNumber: data.chassisNumber || "",
+    dealerConfirm: Boolean(data.dealerConfirm),
+    dealerConfirmAt: data.dealerConfirmAt || "",
+  };
+};
+
+export const fetchTeamMembers = async (): Promise<TeamMember[]> => {
+  const membersRef = ref(showDatabase, "teamMembers");
+  const snapshot = await get(membersRef);
+
+  if (!snapshot.exists()) return [];
+
+  const raw = snapshot.val();
+  const entries = Array.isArray(raw) ? raw.filter(Boolean) : Object.entries(raw).map(([id, value]) => ({ id, ...(value as object) }));
+
+  return entries.map((item: any, index: number) => ({
+    id: item.id ?? String(index),
+    memberId: item.memberId ?? "",
+    memberName: item.memberName ?? item.name ?? "",
+    email: item.email ?? "",
+    activeFlag: typeof item.activeFlag === "number" ? item.activeFlag : Number(item.activeFlag ?? 0),
+    role: item.role ?? "",
+    totalSales: item.totalSales ?? 0,
+    totalWorkDays: item.totalWorkDays ?? 0,
+  }));
+};
+
+export { showDatabase };
 
 export { showDatabase };
