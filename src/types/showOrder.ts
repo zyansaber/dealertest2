@@ -8,6 +8,7 @@ export type ShowOrder = {
   orderType?: string;
   status?: string;
   salesperson?: string;
+  customerName?: string;
   chassisNumber?: string;
   dealerConfirm?: boolean;
   dealerConfirmAt?: string;
