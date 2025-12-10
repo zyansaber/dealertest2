@@ -456,7 +456,7 @@ export default function ShowManagement() {
     doc.text(recipient.email || "", margin + cardPadding, preparedY + 34);
 
     // core info rows
-    let infoY = cardY + topBlockHeight + 8;
+    let infoY = cardY + topBlockHeight + 18;
     const infoX = margin + cardPadding;
     const infoValueX = infoX + infoLabelWidth + 10;
 
