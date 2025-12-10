@@ -282,6 +282,7 @@ export default function ShowManagement() {
     return teamMembers.find((member) => member.memberName.trim().toLowerCase() === normalizedName) || null;
   };
 
+
   const buildOrderPdf = async (params: {
     order: ShowOrder;
     show?: ShowRecord;
