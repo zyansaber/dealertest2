@@ -140,6 +140,7 @@ export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) =
       status: item.status || "",
       salesperson: item.salesperson || "",
       chassisNumber: item.chassisNumber || "",
+      customerName: item.customerName || item.customer || "",
       dealerConfirm: Boolean(item.dealerConfirm),
       dealerConfirmAt: item.dealerConfirmAt || "",
     }));
@@ -185,6 +186,7 @@ export const fetchShowOrderById = async (orderId: string): Promise<ShowOrder | n
     orderType: data.orderType || "",
     status: data.status || "",
     salesperson: data.salesperson || "",
+    customerName: data.customerName || data.customer || "",
     chassisNumber: data.chassisNumber || "",
     dealerConfirm: Boolean(data.dealerConfirm),
     dealerConfirmAt: data.dealerConfirmAt || "",
