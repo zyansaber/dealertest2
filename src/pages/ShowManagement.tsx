@@ -144,11 +144,38 @@ const code39Patterns: Record<string, string> = {
 
 type RgbColor = { r: number; g: number; b: number };
 
+const estimateCode39Width = (orderId: string, barWidth: number) => {
+  const cleanValue = `*${sanitizeOrderIdForBarcode(orderId)}*`;
+  let total = 0;
+
+  for (const char of cleanValue) {
+    const pattern = code39Patterns[char];
+    if (!pattern) continue;
+
+    pattern.split("").forEach((token) => {
+      const width = token === "w" ? barWidth * 3 : barWidth;
+      total += width;
+    });
+
+    total += barWidth; // inter-character gap
+  }
+
+  return total;
+};
+
+const pickBarcodeBarWidth = (orderId: string, maxWidth: number) => {
+  let bw = 1.0;
+  while (bw > 0.6 && estimateCode39Width(orderId, bw) > maxWidth) {
+    bw -= 0.05;
+  }
+  return Math.max(0.6, bw);
+};
+
 const drawBarcode = (
   doc: any,
   params: { orderId: string; x: number; y: number; height: number; barWidth?: number; color: RgbColor }
 ) => {
-  const { orderId, x, y, height, barWidth = 1.1, color } = params;
+  const { orderId, x, y, height, barWidth = 1.0, color } = params;
   const cleanValue = `*${sanitizeOrderIdForBarcode(orderId)}*`;
   let cursor = x;
 
@@ -272,48 +299,64 @@ export default function ShowManagement() {
     const accent: RgbColor = { r: 33, g: 46, b: 71 };
     const softAccent: RgbColor = { r: 224, g: 237, b: 250 };
     const slate: RgbColor = { r: 64, g: 73, b: 86 };
+    const lightSlate: RgbColor = { r: 120, g: 130, b: 145 };
 
     let cursorY = margin;
 
-    const headerHeight = 160;
+    const ensureSpace = (heightNeeded: number) => {
+      if (cursorY + heightNeeded > pageHeight - margin) {
+        doc.addPage();
+        cursorY = margin;
+      }
+    };
+
+    // ---------------------------
+    // Header (更稳的视觉结构)
+    // ---------------------------
+    const headerHeight = 150;
+    ensureSpace(headerHeight + 10);
+
     doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
     doc.setDrawColor(accent.r, accent.g, accent.b);
-    doc.setLineWidth(1.5);
+    doc.setLineWidth(1.2);
     doc.roundedRect(margin, cursorY, pageWidth - margin * 2, headerHeight, 12, 12, "FD");
 
     const logoUrl = await loadLogoDataUrl();
     if (logoUrl) {
-      const logoWidth = 150;
-      const logoHeight = 90;
+      const logoWidth = 130;
+      const logoHeight = 78;
+      const logoX = margin + 18;
       const logoY = cursorY + headerHeight / 2 - logoHeight / 2;
-      doc.addImage(logoUrl, "PNG", margin + 18, logoY, logoWidth, logoHeight);
+      doc.addImage(logoUrl, "PNG", logoX, logoY, logoWidth, logoHeight);
     }
 
-    const textX = margin + 200;
-    const textWidth = pageWidth - textX - margin;
+    const headerTextX = margin + 170;
+    const headerTextWidth = pageWidth - headerTextX - margin;
+
     doc.setFont("helvetica", "bold");
     doc.setTextColor(accent.r, accent.g, accent.b);
     doc.setFontSize(22);
-    doc.text("Snowy River", textX, cursorY + 48, { maxWidth: textWidth });
+    doc.text("Snowy River", headerTextX, cursorY + 46, { maxWidth: headerTextWidth });
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(16);
+    doc.setFontSize(15);
     doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text("Dealer Confirmation", textX, cursorY + 74, { maxWidth: textWidth });
+    doc.text("Dealer Confirmation", headerTextX, cursorY + 72, { maxWidth: headerTextWidth });
 
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
+    doc.setTextColor(lightSlate.r, lightSlate.g, lightSlate.b);
     doc.text(
-      "Thank you for partnering with Snowy River. This confirmation secures the approved order and prepares our team to deliver with confidence.",
-      textX,
+      "This document confirms the approved show order for dealer acknowledgement and next-step preparation.",
+      headerTextX,
       cursorY + 98,
-      { maxWidth: textWidth }
+      { maxWidth: headerTextWidth }
     );
 
-    cursorY += headerHeight + 28;
+    cursorY += headerHeight + 26;
 
-    const labelSize = 11;
-    const valueSize = 13;
-    const rowHeight = 26;
+    // ---------------------------
+    // Key-Value detail block
+    // ---------------------------
     const detailRows: Array<[string, string]> = [
       ["Dealer", dealerName],
       ["Show", show?.name || order.showId || "Unknown show"],
@@ -323,114 +366,221 @@ export default function ShowManagement() {
       ["Order Type", order.orderType || "Not set"],
     ];
 
+    const labelX = margin;
+    const valueX = margin + 150;
+    const labelSize = 11;
+    const valueSize = 12.5;
+    const rowHeight = 24;
+    const valueMaxWidth = pageWidth - margin * 2 - 150;
+
+    ensureSpace(detailRows.length * rowHeight + 12);
+
     detailRows.forEach(([label, value]) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(labelSize);
       doc.setTextColor(slate.r, slate.g, slate.b);
-      doc.text(label, margin, cursorY);
+      doc.text(label, labelX, cursorY);
+
       doc.setFont("helvetica", "normal");
       doc.setFontSize(valueSize);
       doc.setTextColor(accent.r, accent.g, accent.b);
-      doc.text(value || "", margin + 150, cursorY, { maxWidth: pageWidth - margin * 2 - 160 });
-      cursorY += rowHeight;
+      const lines = doc.splitTextToSize(value || "", valueMaxWidth);
+      doc.text(lines, valueX, cursorY, { maxWidth: valueMaxWidth });
+
+      cursorY += Math.max(rowHeight, lines.length * 14);
     });
 
-    cursorY += 18;
+    cursorY += 16;
 
+    // ---------------------------
+    // "Prepared for" card (只放核心字段，避免溢出)
+    // ---------------------------
+    const cardPadding = 18;
     const cardWidth = pageWidth - margin * 2;
-    const cardHeight = 220;
+    const badgeHeight = 26;
+
+    const coreInfo = [
+      ["Model", order.model || "Not set"],
+      ["Date", order.date || "Not set"],
+      ["Chassis", order.chassisNumber || "Not recorded"],
+    ];
+
+    // 估算 card 高度
+    const infoLabelWidth = 110;
+    const infoValueWidth = cardWidth - cardPadding * 2 - infoLabelWidth - 10;
+    const infoLineHeight = 14;
+
+    // 顶部区域（badge + prepared-for）
+    const topBlockHeight = 90;
+
+    let infoBlockHeight = 0;
+    coreInfo.forEach(([, value]) => {
+      const lines = doc.splitTextToSize(value || "", infoValueWidth);
+      const h = Math.max(22, lines.length * infoLineHeight);
+      infoBlockHeight += h + 6;
+    });
+
+    const cardHeight = Math.max(180, topBlockHeight + infoBlockHeight + 16);
+
+    ensureSpace(cardHeight + 10);
+
     const cardY = cursorY;
     doc.setDrawColor(softAccent.r, softAccent.g, softAccent.b);
     doc.setFillColor(255, 255, 255);
     doc.roundedRect(margin, cardY, cardWidth, cardHeight, 12, 12, "FD");
 
-    const badgeY = cardY + 20;
+    // badge
+    const badgeY = cardY + cardPadding;
     doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
-    doc.roundedRect(margin + 18, badgeY, 180, 28, 6, 6, "F");
+    doc.roundedRect(margin + cardPadding, badgeY, 190, badgeHeight, 6, 6, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
     doc.setTextColor(accent.r, accent.g, accent.b);
-    doc.text("Snowy River Show Team", margin + 28, badgeY + 19);
+    doc.text("Snowy River Show Team", margin + cardPadding + 10, badgeY + 18);
 
-    const preparedY = badgeY + 44;
+    // prepared for
+    const preparedY = badgeY + badgeHeight + 18;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
     doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text("Prepared for", margin + 18, preparedY);
+    doc.text("Prepared for", margin + cardPadding, preparedY);
+
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(valueSize);
+    doc.setFontSize(12.5);
     doc.setTextColor(accent.r, accent.g, accent.b);
-    doc.text(recipient.memberName, margin + 18, preparedY + 18);
+    doc.text(recipient.memberName || "Salesperson", margin + cardPadding, preparedY + 18);
+
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text(recipient.email || "", margin + 18, preparedY + 32);
+    doc.setFontSize(9.8);
+    doc.setTextColor(lightSlate.r, lightSlate.g, lightSlate.b);
+    doc.text(recipient.email || "", margin + cardPadding, preparedY + 34);
 
-    let infoY = cardY + 120;
-    const infoX = margin + 18;
-    const valueX = margin + 150;
-    const lineHeight = 14;
+    // core info rows
+    let infoY = cardY + topBlockHeight + 8;
+    const infoX = margin + cardPadding;
+    const infoValueX = infoX + infoLabelWidth + 10;
 
-    const drawInfoRow = (label: string, value: string) => {
-      const lines = doc.splitTextToSize(value || "", cardWidth - 170);
+    coreInfo.forEach(([label, value]) => {
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(labelSize);
+      doc.setFontSize(10.5);
       doc.setTextColor(slate.r, slate.g, slate.b);
       doc.text(label, infoX, infoY);
+
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(valueSize);
+      doc.setFontSize(12);
       doc.setTextColor(accent.r, accent.g, accent.b);
-      doc.text(lines, valueX, infoY, { maxWidth: cardWidth - 170 });
-      infoY += Math.max(rowHeight, lines.length * lineHeight) + 6;
-    };
+      const lines = doc.splitTextToSize(value || "", infoValueWidth);
+      doc.text(lines, infoValueX, infoY);
 
-    drawInfoRow("Model", order.model || "Not set");
-    drawInfoRow("Date", order.date || "Not set");
-    drawInfoRow("Chassis", order.chassisNumber || "Not recorded");
-    drawInfoRow("Dealer Notes", order.dealerNotes || "No additional notes");
+      infoY += Math.max(22, lines.length * infoLineHeight) + 6;
+    });
 
-    cursorY = cardY + cardHeight + 32;
+    cursorY = cardY + cardHeight + 22;
 
-    const barcodeY = cursorY;
+    // ---------------------------
+    // Dealer Notes block (单独处理，最防重叠)
+    // ---------------------------
+    const notesText = (order.dealerNotes || "").trim();
+    if (notesText) {
+      const notesTitleHeight = 18;
+      const notesBoxPadding = 14;
+      const notesMaxWidth = pageWidth - margin * 2 - notesBoxPadding * 2;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11.5);
+      const notesLines = doc.splitTextToSize(notesText, notesMaxWidth);
+      const notesBodyHeight = notesLines.length * 14;
+
+      const notesBoxHeight = notesTitleHeight + notesBodyHeight + notesBoxPadding * 2 + 8;
+
+      ensureSpace(notesBoxHeight + 8);
+
+      const boxY = cursorY;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(softAccent.r, softAccent.g, softAccent.b);
+      doc.roundedRect(margin, boxY, pageWidth - margin * 2, notesBoxHeight, 10, 10, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(slate.r, slate.g, slate.b);
+      doc.text("Dealer Notes", margin + notesBoxPadding, boxY + notesBoxPadding + 10);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.8);
+      doc.setTextColor(accent.r, accent.g, accent.b);
+      doc.text(
+        notesLines,
+        margin + notesBoxPadding,
+        boxY + notesBoxPadding + 28,
+        { maxWidth: notesMaxWidth }
+      );
+
+      cursorY += notesBoxHeight + 20;
+    }
+
+    // ---------------------------
+    // Compact barcode footer
+    // ---------------------------
+    const footerHeight = 70;
+    ensureSpace(footerHeight);
+
+    // subtle divider line
+    doc.setDrawColor(230, 235, 242);
+    doc.setLineWidth(1);
+    doc.line(margin, cursorY, pageWidth - margin, cursorY);
+    cursorY += 14;
+
+    const orderIdText = sanitizeOrderIdForBarcode(order.orderId);
+    const barcodeHeight = 32; // ✅ 比你原来 48 明显小
+    const footerAvailableWidth = pageWidth - margin * 2;
+
+    const maxBarcodeWidth = Math.min(260, footerAvailableWidth * 0.45);
+    const chosenBarWidth = pickBarcodeBarWidth(order.orderId || "Unknown", maxBarcodeWidth);
+
+    // 左侧条码
+    const barcodeX = margin;
+    const barcodeY = cursorY + 10;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text(orderIdText || "", barcodeX, cursorY);
+
     const barcodeWidth = drawBarcode(doc, {
       orderId: order.orderId || "Unknown",
-      x: margin,
+      x: barcodeX,
       y: barcodeY,
-      height: 48,
-      barWidth: 1.05,
+      height: barcodeHeight,
+      barWidth: chosenBarWidth,
       color: accent,
     });
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text(sanitizeOrderIdForBarcode(order.orderId), margin, barcodeY - 18);
+    // 右侧更小的提示 panel
+    const panelX = barcodeX + Math.min(barcodeWidth, maxBarcodeWidth) + 18;
+    const panelWidth = pageWidth - margin - panelX;
+    const panelHeight = 54;
 
-    const panelX = margin + barcodeWidth + 20;
-    const panelWidth = pageWidth - margin * 2 - barcodeWidth - 26;
-    const panelHeight = 84;
     doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
-    doc.roundedRect(panelX, barcodeY - 10, panelWidth, panelHeight, 10, 10, "F");
+    doc.roundedRect(panelX, barcodeY - 2, panelWidth, panelHeight, 8, 8, "F");
+
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(accent.r, accent.g, accent.b);
-    doc.text("Delivery readiness", panelX + 12, barcodeY + 48);
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
+    doc.setTextColor(accent.r, accent.g, accent.b);
+    doc.text("Delivery readiness", panelX + 10, barcodeY + 18);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.8);
     doc.setTextColor(slate.r, slate.g, slate.b);
     doc.text(
-      "Approved dealer confirmation locks in the chassis, options, and schedule.",
-      panelX + 12,
-      barcodeY + 30,
-      { maxWidth: panelWidth - 24 }
-    );
-    doc.text(
-      "Our Snowy River team will now prepare the next steps and keep you informed.",
-      panelX + 12,
-      barcodeY + 14,
-      { maxWidth: panelWidth - 24 }
+      "Dealer confirmation locks key options and helps finalize the delivery plan.",
+      panelX + 10,
+      barcodeY + 34,
+      { maxWidth: panelWidth - 20 }
     );
 
+    // ---------------------------
+    // Done
+    // ---------------------------
     return doc.output("datauristring");
   };
   const handleConfirm = async (order: ShowOrder) => {
