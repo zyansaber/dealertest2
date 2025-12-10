@@ -105,6 +105,37 @@ const redactForLog = (pdfAttachment: string | undefined) => {
   return `${preview}... (length: ${pdfAttachment.length})`;
 };
 
+const extractEmailJsErrorMessage = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const maybeStatus = (error as { status?: unknown }).status;
+    const maybeText = (error as { text?: unknown }).text;
+
+    if (maybeStatus || maybeText) {
+      const statusPart =
+        typeof maybeStatus === "number" || typeof maybeStatus === "string"
+          ? `status ${maybeStatus}`
+          : "unknown status";
+      const textPart = typeof maybeText === "string" ? maybeText : "no message";
+      return `EmailJS responded with ${statusPart}: ${textPart}`;
+    }
+
+    const json = JSON.stringify(error);
+    if (json && json !== "{}") {
+      return json;
+    }
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Unknown EmailJS error";
+};
+
 export const sendDealerConfirmationEmail = async ({
   teamMember,
   order,
@@ -145,6 +176,8 @@ export const sendDealerConfirmationEmail = async ({
   try {
     return await emailjs.send(serviceId, templateId, templateParams);
   } catch (error) {
+    const message = extractEmailJsErrorMessage(error);
+
     // Surface enough context to debug payload issues without leaking the PDF content in logs.
     console.error("EmailJS send failed", {
       serviceId,
@@ -158,9 +191,8 @@ export const sendDealerConfirmationEmail = async ({
       salesperson: templateParams.salesperson,
       pdf_attachment: redactForLog(pdfAttachment),
       error,
+      message,
     });
-
-    const message = error instanceof Error ? error.message : "Unknown EmailJS error";
     throw new Error(`Failed to send confirmation email: ${message}`);
   }
 };
