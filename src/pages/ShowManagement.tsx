@@ -22,6 +22,157 @@ import type { ShowRecord } from "@/types/show";
 import type { TeamMember } from "@/types/teamMember";
 import { CheckCircle2, Clock3 } from "lucide-react";
 
+declare global {
+  interface Window {
+    jspdf?: any;
+    jsPDF?: any;
+  }
+}
+
+const loadScript = (src: string) =>
+  new Promise<void>((resolve, reject) => {
+    const existing = Array.from(document.querySelectorAll("script")).find((s) => s.src.includes(src));
+    if (existing) return resolve();
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.crossOrigin = "anonymous";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    document.head.appendChild(s);
+  });
+
+const ensureJsPdf = async (): Promise<any> => {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  if (window.jsPDF) return window.jsPDF;
+  await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  if (window.jsPDF) return window.jsPDF;
+  throw new Error("jsPDF not available after loading");
+};
+
+let cachedLogoDataUrl: string | undefined;
+
+const loadLogoDataUrl = async () => {
+  if (cachedLogoDataUrl) return cachedLogoDataUrl;
+
+  try {
+    const response = await fetch("/favicon.svg");
+    const svgText = await response.text();
+    const svgBlob = new Blob([svgText], { type: "image/svg+xml" });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    const image = new Image();
+    image.src = svgUrl;
+
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Failed to load logo"));
+    });
+
+    const canvas = document.createElement("canvas");
+    const targetWidth = 260;
+    const ratio = image.width ? targetWidth / image.width : 1;
+    canvas.width = targetWidth;
+    canvas.height = Math.max(120, image.height * ratio || 140);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Unable to render logo");
+
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(svgUrl);
+
+    cachedLogoDataUrl = canvas.toDataURL("image/png");
+  } catch (error) {
+    console.warn("Unable to embed logo in PDF", error);
+  }
+
+  return cachedLogoDataUrl;
+};
+
+const sanitizeOrderIdForBarcode = (orderId?: string | null) => {
+  return (orderId || "").toUpperCase().replace(/[^0-9A-Z\-\.\/\+% ]/g, "-");
+};
+
+const code39Patterns: Record<string, string> = {
+  "0": "nnnwwnwnn",
+  "1": "wnnwnnnnw",
+  "2": "nnwwnnnnw",
+  "3": "wnwwnnnnn",
+  "4": "nnnwwnnnw",
+  "5": "wnnwwnnnn",
+  "6": "nnwwwnnnn",
+  "7": "nnnwnnwnw",
+  "8": "wnnwnnwnn",
+  "9": "nnwwnnwnn",
+  A: "wnnnnwnnw",
+  B: "nnwnnwnnw",
+  C: "wnwnnwnnn",
+  D: "nnnnwwnnw",
+  E: "wnnnwwnnn",
+  F: "nnwnwwnnn",
+  G: "nnnnnwwnw",
+  H: "wnnnnwwnn",
+  I: "nnwnnwwnn",
+  J: "nnnnwwwnn",
+  K: "wnnnnnnww",
+  L: "nnwnnnnww",
+  M: "wnwnnnnwn",
+  N: "nnnnwnnww",
+  O: "wnnnwnnwn",
+  P: "nnwnwnnwn",
+  Q: "nnnnnnwww",
+  R: "wnnnnnwwn",
+  S: "nnwnnnwwn",
+  T: "nnnnwnwwn",
+  U: "wwnnnnnnw",
+  V: "nwwnnnnnw",
+  W: "wwwnnnnnn",
+  X: "nwnnwnnnw",
+  Y: "wwnnwnnnn",
+  Z: "nwwnwnnnn",
+  "-": "nwnnnnwnw",
+  ".": "wwnnnnwnn",
+  " ": "nwwnnnwnn",
+  "$": "nwnwnwnnn",
+  "/": "nwnwnnnwn",
+  "+": "nwnnnwnwn",
+  "%": "nnnwnwnwn",
+  "*": "nwnnwnwnn",
+};
+
+type RgbColor = { r: number; g: number; b: number };
+
+const drawBarcode = (
+  doc: any,
+  params: { orderId: string; x: number; y: number; height: number; barWidth?: number; color: RgbColor }
+) => {
+  const { orderId, x, y, height, barWidth = 1.1, color } = params;
+  const cleanValue = `*${sanitizeOrderIdForBarcode(orderId)}*`;
+  let cursor = x;
+
+  doc.setFillColor(color.r, color.g, color.b);
+
+  for (const char of cleanValue) {
+    const pattern = code39Patterns[char];
+    if (!pattern) continue;
+
+    pattern.split("").forEach((token, index) => {
+      const width = token === "w" ? barWidth * 3 : barWidth;
+      const isBar = index % 2 === 0;
+      if (isBar) {
+        doc.rect(cursor, y, width, height, "F");
+      }
+      cursor += width;
+    });
+
+    cursor += barWidth; // inter-character gap
+  }
+
+  return cursor - x;
+};
+
 export default function ShowManagement() {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const dealerSlug = normalizeDealerSlug(rawDealerSlug);
@@ -104,65 +255,168 @@ export default function ShowManagement() {
     return teamMembers.find((member) => member.memberName.trim().toLowerCase() === normalizedName) || null;
   };
 
-  const escapePdfText = (value: string) => value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 
-  const buildOrderPdf = (params: { order: ShowOrder; show?: ShowRecord; dealerName: string; recipient: TeamMember }) => {
-    const { order, show, dealerName, recipient } = params;
-    const lines = [
-      "Dealer Confirmation",
-      `Dealer: ${dealerName}`,
-      `Show: ${show?.name || order.showId || "Unknown show"}`,
-      `Salesperson: ${order.salesperson || recipient.memberName}`,
-      `Order ID: ${order.orderId}`,
-      `Status: ${order.status || "Pending"}`,
-      `Model: ${order.model || "Not set"}`,
-      `Order Type: ${order.orderType || "Not set"}`,
-      `Date: ${order.date || "Not set"}`,
-      `Chassis: ${order.chassisNumber || "Not recorded"}`,
-    ];
+const buildOrderPdf = async (params: {
+  order: ShowOrder;
+  show?: ShowRecord;
+  dealerName: string;
+  recipient: TeamMember;
+}) => {
+  const { order, show, dealerName, recipient } = params;
+  const JsPDF = await ensureJsPdf();
+  const doc = new JsPDF("p", "pt", "a4");
 
-    const contentLines = lines.map((line, index) => `${index === 0 ? "" : "T*\n"}(${escapePdfText(line)}) Tj`).join("\n");
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 42;
+  const accent: RgbColor = { r: 33, g: 46, b: 71 };
+  const softAccent: RgbColor = { r: 224, g: 237, b: 250 };
+  const slate: RgbColor = { r: 64, g: 73, b: 86 };
 
-    const contentStream = `BT\n/F1 18 Tf\n50 760 Td\n20 TL\n${contentLines}\nET`;
-    const encoder = new TextEncoder();
-    const contentLength = encoder.encode(contentStream).length;
+  const headerHeight = 140;
+  const headerY = pageHeight - margin - headerHeight;
 
-    const objects = [
-      "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n",
-      "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n",
-      "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>endobj\n",
-      `4 0 obj<< /Length ${contentLength} >>stream\n${contentStream}\nendstream\nendobj\n`,
-      "5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n",
-    ];
+  doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
+  doc.setDrawColor(accent.r, accent.g, accent.b);
+  doc.setLineWidth(1.5);
+  doc.roundedRect(margin, headerY, pageWidth - margin * 2, headerHeight, 12, 12, "FD");
 
-    let pdf = "%PDF-1.4\n";
-    const offsets: number[] = [];
-    let currentOffset = encoder.encode(pdf).length;
+  const logoUrl = await loadLogoDataUrl();
+  if (logoUrl) {
+    const logoWidth = 140;
+    const logoHeight = 80;
+    doc.addImage(logoUrl, "PNG", margin + 18, headerY + headerHeight / 2 - logoHeight / 2, logoWidth, logoHeight);
+  }
 
-    objects.forEach((obj) => {
-      offsets.push(currentOffset);
-      pdf += obj;
-      currentOffset += encoder.encode(obj).length;
-    });
+  const titleX = margin + 320;
+  const titleY = headerY + headerHeight - 32;
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(accent.r, accent.g, accent.b);
+  doc.setFontSize(20);
+  doc.text("Snowy River", titleX, titleY);
 
-    const xrefStart = currentOffset;
-    pdf += "xref\n0 6\n0000000000 65535 f \n";
-    offsets.forEach((offset) => {
-      pdf += `${offset.toString().padStart(10, "0")} 00000 n \n`;
-    });
-    pdf += "trailer<< /Size 6 /Root 1 0 R >>\nstartxref\n";
-    pdf += `${xrefStart}\n%%EOF`;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(16);
+  doc.setTextColor(slate.r, slate.g, slate.b);
+  doc.text("Dealer Confirmation", titleX, titleY - 26);
 
-    const bytes = encoder.encode(pdf);
-    let binary = "";
-    bytes.forEach((byte) => {
-      binary += String.fromCharCode(byte);
-    });
+  doc.setFontSize(11);
+  doc.text("Thank you for partnering with Snowy River. This confirmation secures the", titleX, titleY - 52);
+  doc.text("approved order and prepares our team to deliver with confidence.", titleX, titleY - 68);
 
-    const base64 = btoa(binary);
-    return `data:application/pdf;base64,${base64}`;
+  const detailsY = headerY - 30;
+  const rowHeight = 24;
+  const labelSize = 11;
+  const valueSize = 13;
+
+  const drawRow = (label: string, value: string, index: number) => {
+    const y = detailsY - index * rowHeight;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(labelSize);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text(label, margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(valueSize);
+    doc.setTextColor(accent.r, accent.g, accent.b);
+    doc.text(value || "", margin + 150, y);
   };
 
+  drawRow("Dealer", dealerName, 0);
+  drawRow("Show", show?.name || order.showId || "Unknown show", 1);
+  drawRow("Salesperson", order.salesperson || recipient.memberName, 2);
+  drawRow("Order ID", order.orderId || "Unavailable", 3);
+  drawRow("Status", order.status || "Pending", 4);
+  drawRow("Order Type", order.orderType || "Not set", 5);
+
+  const cardY = detailsY - rowHeight * 7;
+  const cardHeight = 186;
+  const cardWidth = pageWidth - margin * 2;
+  doc.setDrawColor(softAccent.r, softAccent.g, softAccent.b);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(margin, cardY, cardWidth, cardHeight, 12, 12, "FD");
+
+  const infoRows: Array<[string, string]> = [
+    ["Model", order.model || "Not set"],
+    ["Date", order.date || "Not set"],
+    ["Chassis", order.chassisNumber || "Not recorded"],
+    ["Dealer Notes", order.dealerNotes || "No additional notes"],
+  ];
+
+  const tableStartY = cardY + cardHeight - 36;
+  infoRows.forEach(([label, value], idx) => {
+    const y = tableStartY - idx * 34;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(labelSize);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text(label, margin + 18, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(valueSize);
+    doc.setTextColor(accent.r, accent.g, accent.b);
+    doc.text(value || "", margin + 140, y, { maxWidth: cardWidth - 170 });
+  });
+
+  const badgeY = cardY + 20;
+  doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
+  doc.roundedRect(margin + 18, badgeY, 160, 26, 6, 6, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(accent.r, accent.g, accent.b);
+  doc.text("Snowy River Show Team", margin + 26, badgeY + 18);
+
+  const signatureY = badgeY - 26;
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(slate.r, slate.g, slate.b);
+  doc.text("Prepared for", margin + 18, signatureY);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(valueSize);
+  doc.setTextColor(accent.r, accent.g, accent.b);
+  doc.text(recipient.memberName, margin + 18, signatureY - 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(slate.r, slate.g, slate.b);
+  doc.text(recipient.email || "", margin + 18, signatureY - 34);
+
+  const barcodeY = margin + 100;
+  const barcodeWidth = drawBarcode(doc, {
+    orderId: order.orderId || "Unknown",
+    x: margin,
+    y: barcodeY,
+    height: 42,
+    barWidth: 1.05,
+    color: accent,
+  });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(slate.r, slate.g, slate.b);
+  doc.text(sanitizeOrderIdForBarcode(order.orderId), margin, barcodeY - 18);
+
+  const panelX = margin + barcodeWidth + 20;
+  const panelWidth = pageWidth - margin * 2 - barcodeWidth - 26;
+  doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
+  doc.roundedRect(panelX, barcodeY - 6, panelWidth, 72, 10, 10, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(accent.r, accent.g, accent.b);
+  doc.text("Delivery readiness", panelX + 12, barcodeY + 44);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(slate.r, slate.g, slate.b);
+  doc.text(
+    "Approved dealer confirmation locks in the chassis, options, and schedule.",
+    panelX + 12,
+    barcodeY + 26,
+    { maxWidth: panelWidth - 24 }
+  );
+  doc.text(
+    "Our Snowy River team will now prepare the next steps and keep you informed.",
+    panelX + 12,
+    barcodeY + 10,
+    { maxWidth: panelWidth - 24 }
+  );
+
+  return doc.output("datauristring");
+};
   const handleConfirm = async (order: ShowOrder) => {
     setSavingOrderId(order.orderId);
     try {
@@ -188,7 +442,7 @@ export default function ShowManagement() {
         return;
       }
 
-      const pdfAttachment = buildOrderPdf({
+      const pdfAttachment = await buildOrderPdf({
         order: latestOrder,
         show: showMap[latestOrder.showId],
         dealerName: dealerDisplayName,
