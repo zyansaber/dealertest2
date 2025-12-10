@@ -213,5 +213,3 @@ export const fetchTeamMembers = async (): Promise<TeamMember[]> => {
 };
 
 export { showDatabase };
-
-export { showDatabase };
