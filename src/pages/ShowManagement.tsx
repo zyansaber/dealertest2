@@ -207,7 +207,8 @@ export default function ShowManagement() {
       toast.success("Order confirmed and notification sent");
     } catch (error) {
       console.error(error);
-      toast.error("Failed to confirm order");
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to confirm order: ${message}`);
     } finally {
       setSavingOrderId(null);
     }
