@@ -9,9 +9,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Sidebar from "@/components/Sidebar";
 import { prettifyDealerName, normalizeDealerSlug } from "@/lib/dealerUtils";
 import { dealerNameToSlug } from "@/lib/firebase";
-import { subscribeToShows, subscribeToShowOrders, updateShowOrder } from "@/lib/showDatabase";
+import {
+  fetchShowOrderById,
+  fetchTeamMembers,
+  subscribeToShows,
+  subscribeToShowOrders,
+  updateShowOrder,
+} from "@/lib/showDatabase";
+import { sendDealerConfirmationEmail } from "@/lib/email";
 import type { ShowOrder } from "@/types/showOrder";
 import type { ShowRecord } from "@/types/show";
+import type { TeamMember } from "@/types/teamMember";
 import { CheckCircle2, Clock3 } from "lucide-react";
 
 export default function ShowManagement() {
@@ -23,8 +31,10 @@ export default function ShowManagement() {
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [showsLoading, setShowsLoading] = useState(true);
+  const [teamMembersLoading, setTeamMembersLoading] = useState(true);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
   const [chassisDrafts, setChassisDrafts] = useState<Record<string, string>>({});
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
 
   useEffect(() => {
     const unsub = subscribeToShowOrders((data) => {
@@ -40,6 +50,22 @@ export default function ShowManagement() {
       setShowsLoading(false);
     });
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    const loadTeamMembers = async () => {
+      try {
+        const data = await fetchTeamMembers();
+        setTeamMembers(data);
+      } catch (error) {
+        console.error(error);
+        toast.error("Failed to load team members");
+      } finally {
+        setTeamMembersLoading(false);
+      }
+    };
+
+    void loadTeamMembers();
   }, []);
 
   const showMap = useMemo(() => {
@@ -72,11 +98,113 @@ export default function ShowManagement() {
     [ordersForDealer]
   );
 
+  const findSalesperson = (name?: string | null) => {
+    if (!name) return null;
+    const normalizedName = name.trim().toLowerCase();
+    return teamMembers.find((member) => member.memberName.trim().toLowerCase() === normalizedName) || null;
+  };
+
+  const escapePdfText = (value: string) => value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+
+  const buildOrderPdf = (params: { order: ShowOrder; show?: ShowRecord; dealerName: string; recipient: TeamMember }) => {
+    const { order, show, dealerName, recipient } = params;
+    const lines = [
+      "Dealer Confirmation",
+      `Dealer: ${dealerName}`,
+      `Show: ${show?.name || order.showId || "Unknown show"}`,
+      `Salesperson: ${order.salesperson || recipient.memberName}`,
+      `Order ID: ${order.orderId}`,
+      `Status: ${order.status || "Pending"}`,
+      `Model: ${order.model || "Not set"}`,
+      `Order Type: ${order.orderType || "Not set"}`,
+      `Date: ${order.date || "Not set"}`,
+      `Chassis: ${order.chassisNumber || "Not recorded"}`,
+    ];
+
+    const contentLines = lines.map((line, index) => `${index === 0 ? "" : "T*\n"}(${escapePdfText(line)}) Tj`).join("\n");
+
+    const contentStream = `BT\n/F1 18 Tf\n50 760 Td\n20 TL\n${contentLines}\nET`;
+    const encoder = new TextEncoder();
+    const contentLength = encoder.encode(contentStream).length;
+
+    const objects = [
+      "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n",
+      "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n",
+      "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>endobj\n",
+      `4 0 obj<< /Length ${contentLength} >>stream\n${contentStream}\nendstream\nendobj\n`,
+      "5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n",
+    ];
+
+    let pdf = "%PDF-1.4\n";
+    const offsets: number[] = [];
+    let currentOffset = encoder.encode(pdf).length;
+
+    objects.forEach((obj) => {
+      offsets.push(currentOffset);
+      pdf += obj;
+      currentOffset += encoder.encode(obj).length;
+    });
+
+    const xrefStart = currentOffset;
+    pdf += "xref\n0 6\n0000000000 65535 f \n";
+    offsets.forEach((offset) => {
+      pdf += `${offset.toString().padStart(10, "0")} 00000 n \n`;
+    });
+    pdf += "trailer<< /Size 6 /Root 1 0 R >>\nstartxref\n";
+    pdf += `${xrefStart}\n%%EOF`;
+
+    const bytes = encoder.encode(pdf);
+    let binary = "";
+    bytes.forEach((byte) => {
+      binary += String.fromCharCode(byte);
+    });
+
+    const base64 = btoa(binary);
+    return `data:application/pdf;base64,${base64}`;
+  };
+
   const handleConfirm = async (order: ShowOrder) => {
     setSavingOrderId(order.orderId);
     try {
+      const latestOrder = await fetchShowOrderById(order.orderId);
+      if (!latestOrder) {
+        toast.error("Unable to find this order in the database");
+        return;
+      }
+
+      if ((latestOrder.status || "").toLowerCase() !== "approved") {
+        toast.error("Order must be approved before dealer confirmation");
+        return;
+      }
+
+      if (teamMembersLoading) {
+        toast.error("Team member list is still loading. Please try again in a moment.");
+        return;
+      }
+
+      const salesperson = findSalesperson(latestOrder.salesperson);
+      if (!salesperson?.email) {
+        toast.error("Unable to find the salesperson's email in team members");
+        return;
+      }
+
+      const pdfAttachment = buildOrderPdf({
+        order: latestOrder,
+        show: showMap[latestOrder.showId],
+        dealerName: dealerDisplayName,
+        recipient: salesperson,
+      });
+
+      await sendDealerConfirmationEmail({
+        teamMember: salesperson,
+        order: latestOrder,
+        show: showMap[latestOrder.showId],
+        dealerName: dealerDisplayName,
+        pdfAttachment,
+      });
+
       await updateShowOrder(order.orderId, { dealerConfirm: true });
-      toast.success("Order confirmed for dealer");
+      toast.success("Order confirmed and notification sent");
     } catch (error) {
       console.error(error);
       toast.error("Failed to confirm order");
