@@ -589,39 +589,47 @@ export default function ShowManagement() {
         return;
       }
 
-      if ((latestOrder.status || "").toLowerCase() !== "approved") {
-        toast.error("Order must be approved before dealer confirmation");
-        return;
-      }
+      const isApproved = (latestOrder.status || "").toLowerCase() === "approved";
 
-      if (teamMembersLoading) {
-        toast.error("Team member list is still loading. Please try again in a moment.");
-        return;
-      }
+      let emailSent = false;
 
-      const salesperson = findSalesperson(latestOrder.salesperson);
-      if (!salesperson?.email) {
-        toast.error("Unable to find the salesperson's email in team members");
-        return;
-      }
-      
-      const pdfAttachment = await buildOrderPdf({
-        order: latestOrder,
-        show: showMap[latestOrder.showId],
-        dealerName: dealerDisplayName,
-        recipient: salesperson,
-      });
+      if (isApproved) {
+        if (teamMembersLoading) {
+          toast.error("Team member list is still loading. Please try again in a moment.");
+          return;
+        }
 
-      await sendDealerConfirmationEmail({
-        teamMember: salesperson,
-        order: latestOrder,
-        show: showMap[latestOrder.showId],
-        dealerName: dealerDisplayName,
-        pdfAttachment,
-      });
+        const salesperson = findSalesperson(latestOrder.salesperson);
+        if (!salesperson?.email) {
+          toast.error("Unable to find the salesperson's email in team members");
+          return;
+        }
+
+        const pdfAttachment = await buildOrderPdf({
+          order: latestOrder,
+          show: showMap[latestOrder.showId],
+          dealerName: dealerDisplayName,
+          recipient: salesperson,
+        });
+
+        await sendDealerConfirmationEmail({
+          teamMember: salesperson,
+          order: latestOrder,
+          show: showMap[latestOrder.showId],
+          dealerName: dealerDisplayName,
+          pdfAttachment,
+        });
+
+        emailSent = true;
+      }
 
       await updateShowOrder(order.orderId, { dealerConfirm: true });
-      toast.success("Order confirmed and notification sent");
+
+      if (emailSent) {
+        toast.success("Order confirmed and notification sent");
+      } else {
+        toast.success("Order confirmed (email not sent because order is not approved)");
+      }
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -646,7 +654,7 @@ export default function ShowManagement() {
   };
 
   const isLoading = ordersLoading || showsLoading;
-
+  
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
@@ -686,7 +694,7 @@ export default function ShowManagement() {
                     <TableRow>
                       <TableHead className="font-semibold">Order ID</TableHead>
                       <TableHead className="font-semibold">Show</TableHead>
-                      <TableHead className="font-semibold">Show Dealer Slug</TableHead>
+                      <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Date</TableHead>
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Salesperson</TableHead>
@@ -699,14 +707,12 @@ export default function ShowManagement() {
                   <TableBody>
                     {ordersForDealer.map((order) => {
                       const show = showMap[order.showId];
-                      const showDealerSlug = getShowDealerSlug(show);
-                      const normalizedShowDealerSlug = normalizeDealerSlug(showDealerSlug);
                       const chassisValue = chassisDrafts[order.orderId] ?? order.chassisNumber ?? "";
                       return (
                         <TableRow key={order.orderId}>
                           <TableCell className="font-semibold text-slate-900">{order.orderId}</TableCell>
                           <TableCell>{show?.name || order.showId || "Unknown show"}</TableCell>
-                          <TableCell className="text-slate-700">{normalizedShowDealerSlug || "-"}</TableCell>
+                          <TableCell className="text-slate-700">{order.customerName || "-"}</TableCell>
                           <TableCell>{order.date || "-"}</TableCell>
                           <TableCell>{order.model || "-"}</TableCell>
                           <TableCell>{order.salesperson || "-"}</TableCell>
@@ -730,7 +736,7 @@ export default function ShowManagement() {
                                 disabled={savingOrderId === order.orderId}
                                 className="h-8 rounded px-2 text-xs bg-emerald-600 hover:bg-emerald-700"
                               >
-                                {savingOrderId === order.orderId ? "Saving..." : "Order confirmation"}
+                                {savingOrderId === order.orderId ? "Saving..." : "Show Manager Confirmation"}
                               </Button>
                             )}
                           </TableCell>
