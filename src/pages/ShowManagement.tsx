@@ -256,167 +256,183 @@ export default function ShowManagement() {
   };
 
 
-const buildOrderPdf = async (params: {
-  order: ShowOrder;
-  show?: ShowRecord;
-  dealerName: string;
-  recipient: TeamMember;
-}) => {
-  const { order, show, dealerName, recipient } = params;
-  const JsPDF = await ensureJsPdf();
-  const doc = new JsPDF("p", "pt", "a4");
+  const buildOrderPdf = async (params: {
+    order: ShowOrder;
+    show?: ShowRecord;
+    dealerName: string;
+    recipient: TeamMember;
+  }) => {
+    const { order, show, dealerName, recipient } = params;
+    const JsPDF = await ensureJsPdf();
+    const doc = new JsPDF("p", "pt", "a4");
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 42;
-  const accent: RgbColor = { r: 33, g: 46, b: 71 };
-  const softAccent: RgbColor = { r: 224, g: 237, b: 250 };
-  const slate: RgbColor = { r: 64, g: 73, b: 86 };
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 48;
+    const accent: RgbColor = { r: 33, g: 46, b: 71 };
+    const softAccent: RgbColor = { r: 224, g: 237, b: 250 };
+    const slate: RgbColor = { r: 64, g: 73, b: 86 };
 
-  const headerHeight = 140;
-  const headerY = pageHeight - margin - headerHeight;
+    let cursorY = margin;
 
-  doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
-  doc.setDrawColor(accent.r, accent.g, accent.b);
-  doc.setLineWidth(1.5);
-  doc.roundedRect(margin, headerY, pageWidth - margin * 2, headerHeight, 12, 12, "FD");
+    const headerHeight = 160;
+    doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
+    doc.setDrawColor(accent.r, accent.g, accent.b);
+    doc.setLineWidth(1.5);
+    doc.roundedRect(margin, cursorY, pageWidth - margin * 2, headerHeight, 12, 12, "FD");
 
-  const logoUrl = await loadLogoDataUrl();
-  if (logoUrl) {
-    const logoWidth = 140;
-    const logoHeight = 80;
-    doc.addImage(logoUrl, "PNG", margin + 18, headerY + headerHeight / 2 - logoHeight / 2, logoWidth, logoHeight);
-  }
+    const logoUrl = await loadLogoDataUrl();
+    if (logoUrl) {
+      const logoWidth = 150;
+      const logoHeight = 90;
+      const logoY = cursorY + headerHeight / 2 - logoHeight / 2;
+      doc.addImage(logoUrl, "PNG", margin + 18, logoY, logoWidth, logoHeight);
+    }
 
-  const titleX = margin + 320;
-  const titleY = headerY + headerHeight - 32;
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(accent.r, accent.g, accent.b);
-  doc.setFontSize(20);
-  doc.text("Snowy River", titleX, titleY);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(16);
-  doc.setTextColor(slate.r, slate.g, slate.b);
-  doc.text("Dealer Confirmation", titleX, titleY - 26);
-
-  doc.setFontSize(11);
-  doc.text("Thank you for partnering with Snowy River. This confirmation secures the", titleX, titleY - 52);
-  doc.text("approved order and prepares our team to deliver with confidence.", titleX, titleY - 68);
-
-  const detailsY = headerY - 30;
-  const rowHeight = 24;
-  const labelSize = 11;
-  const valueSize = 13;
-
-  const drawRow = (label: string, value: string, index: number) => {
-    const y = detailsY - index * rowHeight;
+    const textX = margin + 200;
+    const textWidth = pageWidth - textX - margin;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(labelSize);
-    doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text(label, margin, y);
+    doc.setTextColor(accent.r, accent.g, accent.b);
+    doc.setFontSize(22);
+    doc.text("Snowy River", textX, cursorY + 48, { maxWidth: textWidth });
+
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(16);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text("Dealer Confirmation", textX, cursorY + 74, { maxWidth: textWidth });
+
+    doc.setFontSize(11);
+    doc.text(
+      "Thank you for partnering with Snowy River. This confirmation secures the approved order and prepares our team to deliver with confidence.",
+      textX,
+      cursorY + 98,
+      { maxWidth: textWidth }
+    );
+
+    cursorY += headerHeight + 28;
+
+    const labelSize = 11;
+    const valueSize = 13;
+    const rowHeight = 26;
+    const detailRows: Array<[string, string]> = [
+      ["Dealer", dealerName],
+      ["Show", show?.name || order.showId || "Unknown show"],
+      ["Salesperson", order.salesperson || recipient.memberName],
+      ["Order ID", order.orderId || "Unavailable"],
+      ["Status", order.status || "Pending"],
+      ["Order Type", order.orderType || "Not set"],
+    ];
+
+    detailRows.forEach(([label, value]) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(labelSize);
+      doc.setTextColor(slate.r, slate.g, slate.b);
+      doc.text(label, margin, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(valueSize);
+      doc.setTextColor(accent.r, accent.g, accent.b);
+      doc.text(value || "", margin + 150, cursorY, { maxWidth: pageWidth - margin * 2 - 160 });
+      cursorY += rowHeight;
+    });
+
+    cursorY += 18;
+
+    const cardWidth = pageWidth - margin * 2;
+    const cardHeight = 220;
+    const cardY = cursorY;
+    doc.setDrawColor(softAccent.r, softAccent.g, softAccent.b);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(margin, cardY, cardWidth, cardHeight, 12, 12, "FD");
+
+    const badgeY = cardY + 20;
+    doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
+    doc.roundedRect(margin + 18, badgeY, 180, 28, 6, 6, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(accent.r, accent.g, accent.b);
+    doc.text("Snowy River Show Team", margin + 28, badgeY + 19);
+
+    const preparedY = badgeY + 44;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text("Prepared for", margin + 18, preparedY);
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(valueSize);
     doc.setTextColor(accent.r, accent.g, accent.b);
-    doc.text(value || "", margin + 150, y);
+    doc.text(recipient.memberName, margin + 18, preparedY + 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text(recipient.email || "", margin + 18, preparedY + 32);
+
+    let infoY = cardY + 120;
+    const infoX = margin + 18;
+    const valueX = margin + 150;
+    const lineHeight = 14;
+
+    const drawInfoRow = (label: string, value: string) => {
+      const lines = doc.splitTextToSize(value || "", cardWidth - 170);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(labelSize);
+      doc.setTextColor(slate.r, slate.g, slate.b);
+      doc.text(label, infoX, infoY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(valueSize);
+      doc.setTextColor(accent.r, accent.g, accent.b);
+      doc.text(lines, valueX, infoY, { maxWidth: cardWidth - 170 });
+      infoY += Math.max(rowHeight, lines.length * lineHeight) + 6;
+    };
+
+    drawInfoRow("Model", order.model || "Not set");
+    drawInfoRow("Date", order.date || "Not set");
+    drawInfoRow("Chassis", order.chassisNumber || "Not recorded");
+    drawInfoRow("Dealer Notes", order.dealerNotes || "No additional notes");
+
+    cursorY = cardY + cardHeight + 32;
+
+    const barcodeY = cursorY;
+    const barcodeWidth = drawBarcode(doc, {
+      orderId: order.orderId || "Unknown",
+      x: margin,
+      y: barcodeY,
+      height: 48,
+      barWidth: 1.05,
+      color: accent,
+    });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text(sanitizeOrderIdForBarcode(order.orderId), margin, barcodeY - 18);
+
+    const panelX = margin + barcodeWidth + 20;
+    const panelWidth = pageWidth - margin * 2 - barcodeWidth - 26;
+    const panelHeight = 84;
+    doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
+    doc.roundedRect(panelX, barcodeY - 10, panelWidth, panelHeight, 10, 10, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(accent.r, accent.g, accent.b);
+    doc.text("Delivery readiness", panelX + 12, barcodeY + 48);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(slate.r, slate.g, slate.b);
+    doc.text(
+      "Approved dealer confirmation locks in the chassis, options, and schedule.",
+      panelX + 12,
+      barcodeY + 30,
+      { maxWidth: panelWidth - 24 }
+    );
+    doc.text(
+      "Our Snowy River team will now prepare the next steps and keep you informed.",
+      panelX + 12,
+      barcodeY + 14,
+      { maxWidth: panelWidth - 24 }
+    );
+
+    return doc.output("datauristring");
   };
-
-  drawRow("Dealer", dealerName, 0);
-  drawRow("Show", show?.name || order.showId || "Unknown show", 1);
-  drawRow("Salesperson", order.salesperson || recipient.memberName, 2);
-  drawRow("Order ID", order.orderId || "Unavailable", 3);
-  drawRow("Status", order.status || "Pending", 4);
-  drawRow("Order Type", order.orderType || "Not set", 5);
-
-  const cardY = detailsY - rowHeight * 7;
-  const cardHeight = 186;
-  const cardWidth = pageWidth - margin * 2;
-  doc.setDrawColor(softAccent.r, softAccent.g, softAccent.b);
-  doc.setFillColor(255, 255, 255);
-  doc.roundedRect(margin, cardY, cardWidth, cardHeight, 12, 12, "FD");
-
-  const infoRows: Array<[string, string]> = [
-    ["Model", order.model || "Not set"],
-    ["Date", order.date || "Not set"],
-    ["Chassis", order.chassisNumber || "Not recorded"],
-    ["Dealer Notes", order.dealerNotes || "No additional notes"],
-  ];
-
-  const tableStartY = cardY + cardHeight - 36;
-  infoRows.forEach(([label, value], idx) => {
-    const y = tableStartY - idx * 34;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(labelSize);
-    doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text(label, margin + 18, y);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(valueSize);
-    doc.setTextColor(accent.r, accent.g, accent.b);
-    doc.text(value || "", margin + 140, y, { maxWidth: cardWidth - 170 });
-  });
-
-  const badgeY = cardY + 20;
-  doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
-  doc.roundedRect(margin + 18, badgeY, 160, 26, 6, 6, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(accent.r, accent.g, accent.b);
-  doc.text("Snowy River Show Team", margin + 26, badgeY + 18);
-
-  const signatureY = badgeY - 26;
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(slate.r, slate.g, slate.b);
-  doc.text("Prepared for", margin + 18, signatureY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(valueSize);
-  doc.setTextColor(accent.r, accent.g, accent.b);
-  doc.text(recipient.memberName, margin + 18, signatureY - 18);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(slate.r, slate.g, slate.b);
-  doc.text(recipient.email || "", margin + 18, signatureY - 34);
-
-  const barcodeY = margin + 100;
-  const barcodeWidth = drawBarcode(doc, {
-    orderId: order.orderId || "Unknown",
-    x: margin,
-    y: barcodeY,
-    height: 42,
-    barWidth: 1.05,
-    color: accent,
-  });
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(slate.r, slate.g, slate.b);
-  doc.text(sanitizeOrderIdForBarcode(order.orderId), margin, barcodeY - 18);
-
-  const panelX = margin + barcodeWidth + 20;
-  const panelWidth = pageWidth - margin * 2 - barcodeWidth - 26;
-  doc.setFillColor(softAccent.r, softAccent.g, softAccent.b);
-  doc.roundedRect(panelX, barcodeY - 6, panelWidth, 72, 10, 10, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(accent.r, accent.g, accent.b);
-  doc.text("Delivery readiness", panelX + 12, barcodeY + 44);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.setTextColor(slate.r, slate.g, slate.b);
-  doc.text(
-    "Approved dealer confirmation locks in the chassis, options, and schedule.",
-    panelX + 12,
-    barcodeY + 26,
-    { maxWidth: panelWidth - 24 }
-  );
-  doc.text(
-    "Our Snowy River team will now prepare the next steps and keep you informed.",
-    panelX + 12,
-    barcodeY + 10,
-    { maxWidth: panelWidth - 24 }
-  );
-
-  return doc.output("datauristring");
-};
   const handleConfirm = async (order: ShowOrder) => {
     setSavingOrderId(order.orderId);
     try {
