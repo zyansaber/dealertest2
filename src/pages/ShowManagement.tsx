@@ -341,7 +341,7 @@ export default function ShowManagement() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(15);
     doc.setTextColor(slate.r, slate.g, slate.b);
-    doc.text("Dealer Confirmation", headerTextX, cursorY + 72, { maxWidth: headerTextWidth });
+    doc.text("Show Commission Proof", headerTextX, cursorY + 72, { maxWidth: headerTextWidth });
 
     doc.setFontSize(10.5);
     doc.setTextColor(lightSlate.r, lightSlate.g, lightSlate.b);
