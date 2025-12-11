@@ -16,12 +16,14 @@ import {
   parseFlexibleDateToDate,
   subscribeToShows,
   subscribeToShowOrders,
+  subscribeToShowTasks,
   updateShowOrder,
 } from "@/lib/showDatabase";
 import { sendDealerConfirmationEmail } from "@/lib/email";
 import type { ShowOrder } from "@/types/showOrder";
 import type { ShowRecord } from "@/types/show";
 import type { TeamMember } from "@/types/teamMember";
+import type { ShowTask } from "@/types/showTask";
 import type { ShowDealerMapping } from "@/lib/firebase";
 import { CheckCircle2, Clock3 } from "lucide-react";
 
@@ -214,10 +216,12 @@ export default function ShowManagement() {
   const [showsLoading, setShowsLoading] = useState(true);
   const [mappingsLoading, setMappingsLoading] = useState(true);
   const [teamMembersLoading, setTeamMembersLoading] = useState(true);
+  const [tasksLoading, setTasksLoading] = useState(true);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
   const [chassisDrafts, setChassisDrafts] = useState<Record<string, string>>({});
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
+  const [showTasks, setShowTasks] = useState<ShowTask[]>([]);
 
   useEffect(() => {
     const unsub = subscribeToShowOrders((data) => {
@@ -239,6 +243,14 @@ export default function ShowManagement() {
     const unsub = subscribeShowDealerMappings((data) => {
       setShowMappings(data || {});
       setMappingsLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToShowTasks((data) => {
+      setShowTasks(data);
+      setTasksLoading(false);
     });
     return unsub;
   }, []);
@@ -324,14 +336,31 @@ export default function ShowManagement() {
       .map((show) => {
         const mappingKey = dealerNameToSlug(stringifyDealerField(show.dealership));
         const mappedSlug = mappingKey ? showMappings[mappingKey]?.dealerSlug || "" : "";
-        const match = resolveShowDealer(show);
         const startDate = parseFlexibleDateToDate(show.startDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
         const finishDate = parseFlexibleDateToDate(show.finishDate)?.getTime() ?? startDate;
 
-        return { show, match, startDate, finishDate, mappedSlug: mappedSlug ? normalizeDealerSlug(mappedSlug) : "" };
+        return {
+          show,
+          startDate,
+          finishDate,
+          mappedSlug: mappedSlug ? normalizeDealerSlug(mappedSlug) : "",
+        };
       })
+      .filter((item) => item.mappedSlug && item.mappedSlug === dealerSlug)
       .sort((a, b) => a.startDate - b.startDate);
-  }, [resolveShowDealer, showMappings, shows]);
+  }, [dealerSlug, showMappings, shows]);
+
+  const tasksByShowId = useMemo(() => {
+    const grouped: Record<string, ShowTask[]> = {};
+    showTasks.forEach((task) => {
+      if (!task.eventId) return;
+      if (!grouped[task.eventId]) {
+        grouped[task.eventId] = [];
+      }
+      grouped[task.eventId].push(task);
+    });
+    return grouped;
+  }, [showTasks]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
@@ -715,7 +744,7 @@ export default function ShowManagement() {
     }
   };
 
-  const showListLoading = showsLoading || mappingsLoading;
+  const showListLoading = showsLoading || mappingsLoading || tasksLoading;
   const isLoading = ordersLoading || showsLoading || mappingsLoading;
   
   return (
@@ -741,8 +770,8 @@ export default function ShowManagement() {
             <div className="space-y-1">
               <CardTitle className="text-lg">Show lineup for {dealerDisplayName}</CardTitle>
               <p className="text-sm text-slate-600">
-                Shows are mapped with <code>showDealerMappings</code> first, then by handover/dealership for fallback. All
-                shows are listed to help validate slug alignment and timing.
+                Shows are filtered by their <code>showDealerMappings</code> slug and display their related tasks. Each row
+                surfaces the schedule alongside tasks pulled from <code>showTasks</code>.
               </p>
             </div>
             <Badge variant="secondary" className="px-3 py-1 text-sm">
@@ -758,69 +787,89 @@ export default function ShowManagement() {
               <div className="py-8 text-center text-slate-500">No shows available.</div>
             ) : (
               <div className="overflow-x-auto">
-                <Table className="min-w-[1080px] text-sm">
+                <Table className="min-w-[840px] text-sm">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Show</TableHead>
-                      <TableHead className="font-semibold">Dealership</TableHead>
-                      <TableHead className="font-semibold">Handover Dealer</TableHead>
-                      <TableHead className="font-semibold">showDealerMappings Slug</TableHead>
-                      <TableHead className="font-semibold">Resolved Dealer Slug</TableHead>
                       <TableHead className="font-semibold">Schedule</TableHead>
-                      <TableHead className="font-semibold">Match Source</TableHead>
+                      <TableHead className="font-semibold">Tasks</TableHead>
                       <TableHead className="font-semibold text-right">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {showsWithMatch.map(({ show, match, mappedSlug }) => (
-                      <TableRow key={show.id || show.name}>
-                        <TableCell className="font-semibold text-slate-900">
-                          <div className="space-y-0.5">
-                            <div>{stringifyDisplayField(show.name) || "Untitled show"}</div>
-                            {stringifyDisplayField(show.siteLocation) && (
-                              <div className="text-xs text-slate-500">{stringifyDisplayField(show.siteLocation)}</div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-slate-800">{stringifyDealerField(show.dealership)}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-slate-800">{stringifyDealerField(show.handoverDealer)}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-slate-800">{mappedSlug || ""}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-slate-800">{match.slug || ""}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium text-slate-900">{formatShowDate(show.startDate)}</div>
-                            <div className="text-xs text-slate-500">to {formatShowDate(show.finishDate)}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={match.source === "mapping" ? "default" : "secondary"}>
-                            {match.source === "mapping" ? "showDealerMappings" : "Handover/Dealership"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="space-y-1">
-                            {stringifyDisplayField(show.status) && (
-                              <div className="text-sm font-medium text-slate-900">{stringifyDisplayField(show.status)}</div>
-                            )}
-                            {(stringifyDisplayField(show.eventOrganiser) || stringifyDisplayField(show.standSize)) && (
-                              <div className="text-xs text-slate-500">
-                                {[stringifyDisplayField(show.eventOrganiser), stringifyDisplayField(show.standSize)]
-                                  .filter(Boolean)
-                                  .join(" • ")}
+                    {showsWithMatch.map(({ show }) => {
+                      const tasksForShow = tasksByShowId[show.id] || [];
+                      return (
+                        <TableRow key={show.id || show.name}>
+                          <TableCell className="font-semibold text-slate-900">
+                            <div className="space-y-0.5">
+                              <div>{stringifyDisplayField(show.name) || "Untitled show"}</div>
+                              {stringifyDisplayField(show.siteLocation) && (
+                                <div className="text-xs text-slate-500">{stringifyDisplayField(show.siteLocation)}</div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium text-slate-900">{formatShowDate(show.startDate)}</div>
+                              <div className="text-xs text-slate-500">to {formatShowDate(show.finishDate)}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {tasksLoading ? (
+                              <div className="flex items-center gap-2 text-slate-600">
+                                <Clock3 className="h-4 w-4 animate-spin" /> Loading tasks...
+                              </div>
+                            ) : tasksForShow.length === 0 ? (
+                              <div className="text-slate-500">No tasks for this show.</div>
+                            ) : (
+                              <div className="space-y-2">
+                                {tasksForShow.map((task) => (
+                                  <div key={task.id} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="space-y-1">
+                                        <div className="font-medium text-slate-900">
+                                          {stringifyDisplayField(task.taskName) || task.id}
+                                        </div>
+                                        {(stringifyDisplayField(task.dueDate) || stringifyDisplayField(task.assignedTo)) && (
+                                          <div className="text-xs text-slate-500">
+                                            {[stringifyDisplayField(task.dueDate), stringifyDisplayField(task.assignedTo)]
+                                              .filter(Boolean)
+                                              .join(" • ")}
+                                          </div>
+                                        )}
+                                        {stringifyDisplayField(task.notes) && (
+                                          <div className="text-xs text-slate-500">{stringifyDisplayField(task.notes)}</div>
+                                        )}
+                                      </div>
+                                      {stringifyDisplayField(task.status) && (
+                                        <Badge variant="secondary" className="self-start">
+                                          {stringifyDisplayField(task.status)}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="space-y-1">
+                              {stringifyDisplayField(show.status) && (
+                                <div className="text-sm font-medium text-slate-900">{stringifyDisplayField(show.status)}</div>
+                              )}
+                              {(stringifyDisplayField(show.eventOrganiser) || stringifyDisplayField(show.standSize)) && (
+                                <div className="text-xs text-slate-500">
+                                  {[stringifyDisplayField(show.eventOrganiser), stringifyDisplayField(show.standSize)]
+                                    .filter(Boolean)
+                                    .join(" • ")}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
