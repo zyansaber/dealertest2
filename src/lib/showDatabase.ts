@@ -5,15 +5,23 @@ import type { ShowOrder } from "@/types/showOrder";
 import type { TeamMember } from "@/types/teamMember";
 import type { ShowTask } from "@/types/showTask";
 
+const requireEnv = (key: string, context: string) => {
+  const value = import.meta.env?.[key];
+  if (!value) {
+    throw new Error(`Missing environment variable ${key} for ${context}`);
+  }
+  return value;
+};
+
 const showFirebaseConfig = {
-  apiKey: "AIzaSyCxOWHjnnyjILF_zZFC0gVha9rx8nrpGwE",
-  authDomain: "snowyrivercaravanshow.firebaseapp.com",
-  databaseURL: "https://snowyrivercaravanshow-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "snowyrivercaravanshow",
-  storageBucket: "snowyrivercaravanshow.firebasestorage.app",
-  messagingSenderId: "694283393601",
-  appId: "1:694283393601:web:7881e6874d48a689c7c4c0",
-  measurementId: "G-30FVX1JBT8",
+  apiKey: requireEnv("VITE_SHOW_FIREBASE_API_KEY", "show database Firebase config"),
+  authDomain: requireEnv("VITE_SHOW_FIREBASE_AUTH_DOMAIN", "show database Firebase config"),
+  databaseURL: requireEnv("VITE_SHOW_FIREBASE_DATABASE_URL", "show database Firebase config"),
+  projectId: requireEnv("VITE_SHOW_FIREBASE_PROJECT_ID", "show database Firebase config"),
+  storageBucket: requireEnv("VITE_SHOW_FIREBASE_STORAGE_BUCKET", "show database Firebase config"),
+  messagingSenderId: requireEnv("VITE_SHOW_FIREBASE_MESSAGING_SENDER_ID", "show database Firebase config"),
+  appId: requireEnv("VITE_SHOW_FIREBASE_APP_ID", "show database Firebase config"),
+  measurementId: requireEnv("VITE_SHOW_FIREBASE_MEASUREMENT_ID", "show database Firebase config"),
 };
 
 const ensureShowApp = () => {
