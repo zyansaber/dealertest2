@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Factory,
@@ -9,6 +9,7 @@ import {
   ClipboardList,
   ChevronLeft,
   ChevronRight,
+  Circle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,15 @@ import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import type { ScheduleItem } from "@/types";
 import { isFinanceReportEnabled, normalizeDealerSlug } from "@/lib/dealerUtils";
+import {
+  dealerNameToSlug,
+  subscribeShowDealerMappings,
+  type ShowDealerMapping,
+} from "@/lib/firebase";
+import { subscribeToShowOrders, subscribeToShowTasks, subscribeToShows } from "@/lib/showDatabase";
+import type { ShowOrder } from "@/types/showOrder";
+import type { ShowRecord } from "@/types/show";
+import type { ShowTask } from "@/types/showTask";
 
 interface SidebarProps {
   orders: ScheduleItem[];
@@ -27,7 +37,6 @@ interface SidebarProps {
   showStats?: boolean;
   isGroup?: boolean;
   includedDealers?: Array<{ slug: string; name: string }> | null;
-  showManagementPending?: number;
 }
 
 type NavigationItem = {
@@ -36,6 +45,8 @@ type NavigationItem = {
   icon: LucideIcon;
   end?: boolean;
   badge?: number;
+  children?: NavigationItem[];
+  isSubItem?: boolean;
 };
 
 /** ---- 安全工具函数：统一兜底，避免 undefined.toLowerCase 报错 ---- */
@@ -51,7 +62,6 @@ export default function Sidebar({
   showStats = true,
   isGroup = false,
   includedDealers = null,
-  showManagementPending,
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { dealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
@@ -83,6 +93,104 @@ export default function Sidebar({
   }, [selectedDealer, hideOtherDealers, currentDealerName]);
 
   const normalizedDealerSlug = normalizeDealerSlug(dealerSlug);
+
+  const [showOrders, setShowOrders] = useState<ShowOrder[]>([]);
+  const [showRecords, setShowRecords] = useState<ShowRecord[]>([]);
+  const [showTasks, setShowTasks] = useState<ShowTask[]>([]);
+  const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
+
+  useEffect(() => {
+    if (!dealerSlug) return;
+
+    const unsubOrders = subscribeToShowOrders((data) => setShowOrders(data || []));
+    const unsubShows = subscribeToShows((data) => setShowRecords(data || []));
+    const unsubTasks = subscribeToShowTasks((data) => setShowTasks(data || []));
+    const unsubMappings = subscribeShowDealerMappings((data) => setShowMappings(data || {}));
+
+    return () => {
+      unsubOrders?.();
+      unsubShows?.();
+      unsubTasks?.();
+      unsubMappings?.();
+    };
+  }, [dealerSlug]);
+
+  const stringifyDisplayField = (value: unknown) => {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value).trim();
+    }
+    if (value && typeof value === "object") {
+      const combined = Object.values(value as Record<string, unknown>)
+        .filter((part) => typeof part === "string" && part.trim())
+        .join(", ");
+      return combined.trim();
+    }
+    return "";
+  };
+
+  const resolveShowDealerSlug = useCallback(
+    (show?: ShowRecord) => {
+      if (!show) return "";
+
+      const mappingKey = dealerNameToSlug(stringifyDisplayField(show.dealership));
+      const mappedSlug = mappingKey && showMappings[mappingKey]?.dealerSlug;
+      if (mappedSlug) {
+        return normalizeDealerSlug(mappedSlug);
+      }
+
+      const fallbackSlug = dealerNameToSlug(
+        stringifyDisplayField(show.handoverDealer) || stringifyDisplayField(show.dealership)
+      );
+      return normalizeDealerSlug(fallbackSlug);
+    },
+    [showMappings]
+  );
+
+  const showMap = useMemo(() => {
+    const map: Record<string, ShowRecord> = {};
+    showRecords.forEach((show) => {
+      if (show.id) {
+        map[show.id] = show;
+      }
+    });
+    return map;
+  }, [showRecords]);
+
+  const showsForDealer = useMemo(() => {
+    return showRecords.filter((show) => resolveShowDealerSlug(show) === normalizedDealerSlug);
+  }, [normalizedDealerSlug, resolveShowDealerSlug, showRecords]);
+
+  const relevantShowIds = useMemo(
+    () => showsForDealer.map((show) => show.id).filter(Boolean) as string[],
+    [showsForDealer]
+  );
+
+  const ordersForDealer = useMemo(() => {
+    return showOrders.filter((order) => {
+      if (!order.orderId) return false;
+      const show = showMap[order.showId];
+      const showSlug = resolveShowDealerSlug(show);
+      return !!showSlug && showSlug === normalizedDealerSlug;
+    });
+  }, [normalizedDealerSlug, resolveShowDealerSlug, showMap, showOrders]);
+
+  const tasksForDealer = useMemo(() => {
+    if (relevantShowIds.length === 0) return [];
+    return showTasks.filter((task) => task.eventId && relevantShowIds.includes(task.eventId));
+  }, [relevantShowIds, showTasks]);
+
+  const pendingDealerConfirmations = useMemo(
+    () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
+    [ordersForDealer]
+  );
+
+  const incompleteTaskCount = useMemo(() => {
+    return tasksForDealer.filter((task) => {
+      const status = (task.status || "").toLowerCase();
+      if (!status) return true;
+      return !(status.includes("complete") || status.includes("done"));
+    }).length;
+  }, [tasksForDealer]);
 
   // 获取当前页面类型（dashboard, dealerorders, inventorystock, unsigned, yard）
   const getCurrentPage = () => {
@@ -139,10 +247,64 @@ export default function Sidebar({
       path: `${basePath}/show-management`,
       label: "Show Management",
       icon: ClipboardList,
-      end: true,
-      badge: showManagementPending && showManagementPending > 0 ? showManagementPending : undefined,
+      end: false,
+      children: [
+        {
+          path: `${basePath}/show-management/tasks`,
+          label: "Task (Show lineup for Geelong)",
+          icon: Circle,
+          end: true,
+          isSubItem: true,
+          badge: incompleteTaskCount > 0 ? incompleteTaskCount : undefined,
+        },
+        {
+          path: `${basePath}/show-management/orders`,
+          label: "Show Order",
+          icon: Circle,
+          end: true,
+          isSubItem: true,
+          badge: pendingDealerConfirmations > 0 ? pendingDealerConfirmations : undefined,
+        },
+      ],
     });
   }
+
+  const renderNavItem = (item: NavigationItem) => (
+    <NavLink key={item.path} to={item.path} end={item.end}>
+      {({ isActive }) => (
+        <Button
+          variant="ghost"
+          className={`flex w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+            isCollapsed ? "justify-center px-2" : item.isSubItem ? "pl-9" : ""
+          } ${
+            isActive
+              ? "bg-slate-800 text-white shadow-inner"
+              : "text-slate-200 hover:bg-slate-800 hover:text-white"
+          } ${item.isSubItem ? "text-[13px]" : ""}`}
+        >
+          <div className={`relative ${item.isSubItem ? "text-slate-400" : ""}`}>
+            <item.icon className={`${item.isSubItem ? "h-4 w-4" : "h-5 w-5"}`} />
+            {isCollapsed && item.badge && (
+              <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white">
+                {item.badge}
+              </span>
+            )}
+          </div>
+          {!isCollapsed && (
+            <span className="flex items-center gap-2">
+              <span>{item.label}</span>
+              {item.badge && (
+                <Badge variant="destructive" className="ml-1 h-5 px-2 text-xs">
+                  {item.badge}
+                </Badge>
+              )}
+            </span>
+          )}
+          {isCollapsed && <span className="sr-only">{item.label}</span>}
+        </Button>
+      )}
+    </NavLink>
+  );
 
   if (!isGroup && isFinanceReportEnabled(normalizedDealerSlug)) {
     navigationItems.push({
@@ -215,40 +377,14 @@ export default function Sidebar({
           <div className="border-b border-slate-800 px-2 py-3">
             <nav className="space-y-1">
               {navigationItems.map((item) => (
-                <NavLink key={item.path} to={item.path} end={item.end}>
-                  {({ isActive }) => (
-                    <Button
-                      variant="ghost"
-                      className={`flex w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                        isCollapsed ? "justify-center px-2" : ""
-                      } ${
-                        isActive
-                          ? "bg-slate-800 text-white shadow-inner"
-                          : "text-slate-200 hover:bg-slate-800 hover:text-white"
-                      }`}
-                      >
-                        <div className="relative">
-                          <item.icon className="h-5 w-5" />
-                          {isCollapsed && item.badge && (
-                            <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white">
-                              {item.badge}
-                            </span>
-                          )}
-                        </div>
-                      {!isCollapsed && (
-                        <span className="flex items-center gap-2">
-                          <span>{item.label}</span>
-                          {item.badge && (
-                            <Badge variant="destructive" className="ml-1 h-5 px-2 text-xs">
-                              {item.badge}
-                            </Badge>
-                          )}
-                        </span>
-                      )}
-                      {isCollapsed && <span className="sr-only">{item.label}</span>}
-                    </Button>
+                <div key={item.path} className="space-y-1">
+                  {renderNavItem(item)}
+                  {item.children && (
+                    <div className={isCollapsed ? "space-y-1" : "space-y-1 pl-3"}>
+                      {item.children.map((child) => renderNavItem(child))}
+                    </div>
                   )}
-                </NavLink>
+                </div>
               ))}
             </nav>
           </div>
