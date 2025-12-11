@@ -122,6 +122,35 @@ const toBase64 = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const toOptimizedBase64 = async (file: File) => {
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    const image = await loadImageElement(dataUrl);
+    const maxDimension = 1400;
+    const largestSide = Math.max(image.width || maxDimension, image.height || maxDimension);
+    const scale = Math.min(1, maxDimension / largestSide);
+
+    if (scale < 1) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const ctx = canvas.getContext("2d");
+
+      if (ctx) {
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const mimeType = file.type.includes("png") ? "image/png" : "image/jpeg";
+        const compressed = canvas.toDataURL(mimeType, mimeType === "image/jpeg" ? 0.82 : undefined);
+        const base64 = compressed.split(",")[1];
+        if (base64) return base64;
+      }
+    }
+  } catch (error) {
+    console.warn("Using original image for OCR", error);
+  }
+
+  return toBase64(file);
+};
+
 const extractChassis = (text: string) => {
   const regex = /[A-Za-z]{3}[0-9]{6}/g;
   const matches = [...text.matchAll(regex)].map((m) => m[0].toUpperCase());
@@ -297,7 +326,7 @@ const OcrPage = () => {
 
       setStatus("scanning");
       setError(null);
-      setOcrText("Scanning…");
+      setOcrText("Preparing optimized scan…");
       setBestCode(null);
       setMatches([]);
       setCapturedFile(file);
@@ -310,7 +339,7 @@ const OcrPage = () => {
       });
 
       try {
-        const base64 = await toBase64(file);
+        const base64 = await toOptimizedBase64(file);
         const ai = { apiKey };
         const model = getGenerativeModel(ai, { model: GEMINI_MODEL });
 
@@ -332,7 +361,7 @@ const OcrPage = () => {
               ],
             },
           ],
-          generationConfig: { temperature: 0 },
+          generationConfig: { temperature: 0, maxOutputTokens: 256 },
         });
 
         const text = response.response.text().trim();
@@ -412,8 +441,8 @@ const OcrPage = () => {
               <PenLine className="h-5 w-5" />
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-semibold text-emerald-100">Chassis intake</p>
-              <p className="text-xs text-slate-200">Scan, verify, sign, and submit</p>
+              <p className="text-sm font-semibold text-emerald-100">Caravan Receiving</p>
+              <p className="text-xs text-slate-200">Scan POD, verify chassis, sign digitally</p>
             </div>
           </div>
           {matchedDealerSlug && (
@@ -427,42 +456,42 @@ const OcrPage = () => {
           <CardContent className="p-0">
             <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
               <div className="flex flex-col gap-4 bg-slate-950/50 p-4 sm:p-6">
-                <div className="flex items-center justify-between text-xs text-slate-200">
-                  <span className="flex items-center gap-2 text-sm font-semibold text-white">
-                    <Camera className="h-4 w-4 text-emerald-300" />
-                    Capture chassis
-                  </span>
-                  <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-200">HD / stabilized</span>
-                </div>
+              <div className="flex items-center justify-between text-xs text-slate-200">
+                <span className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <Camera className="h-4 w-4 text-emerald-300" />
+                  POD paper
+                </span>
+                <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-slate-200">Guided capture</span>
+              </div>
 
-                <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900 to-slate-950 shadow-inner">
-                  <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 text-[11px] text-emerald-100 ring-1 ring-emerald-400/30">
-                    <ScanLine className="h-3.5 w-3.5" />
-                    Smart scan
+              <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900 to-slate-950 shadow-inner">
+                <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 text-[11px] text-emerald-100 ring-1 ring-emerald-400/30">
+                  <ScanLine className="h-3.5 w-3.5" />
+                  OCR tuned for POD
+                </div>
+                {previewUrl ? (
+                  <img src={previewUrl} alt="POD preview" className="h-[380px] w-full object-cover" />
+                ) : (
+                  <div className="flex h-[380px] items-center justify-center px-4 text-center text-sm text-slate-400">
+                    Capture the POD paper to begin OCR
                   </div>
-                  {previewUrl ? (
-                    <img src={previewUrl} alt="preview" className="h-[380px] w-full object-cover" />
-                  ) : (
-                    <div className="flex h-[380px] items-center justify-center text-sm text-slate-400">
-                      Tap "Start scan"
-                    </div>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent px-4 pb-4 pt-10">
-                    <div className="flex items-center gap-2 text-xs text-slate-200">
-                      <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                      {status === "scanning" ? "Recognizing…" : previewUrl ? "Image captured" : "Waiting to scan"}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="gap-2 bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
-                        onClick={handleSelectPhoto}
-                        disabled={status === "scanning"}
-                      >
-                        {status === "scanning" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                        {status === "scanning" ? "Scanning" : previewUrl ? "Rescan" : "Start scan"}
-                      </Button>
+                )}
+                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent px-4 pb-4 pt-10">
+                  <div className="flex items-center gap-2 text-xs text-slate-200">
+                    <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    {status === "scanning" ? "Optimizing & recognizing…" : previewUrl ? "POD ready" : "Awaiting capture"}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gap-2 bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
+                      onClick={handleSelectPhoto}
+                      disabled={status === "scanning"}
+                    >
+                      {status === "scanning" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                      {status === "scanning" ? "Scanning" : previewUrl ? "Retake POD" : "Capture POD"}
+                    </Button>
                       <input
                         ref={inputRef}
                         type="file"
@@ -504,7 +533,7 @@ const OcrPage = () => {
               <div className="flex flex-col gap-4 bg-white/5 p-4 sm:p-6">
                 <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 shadow-inner">
                   <div className="flex items-center justify-between text-xs text-slate-200">
-                    <span className="text-sm font-semibold text-white">OCR result (editable)</span>
+                    <span className="text-sm font-semibold text-white">OCR review (editable)</span>
                     {status === "scanning" && (
                       <span className="flex items-center gap-2 text-[11px] text-slate-200">
                         <Loader2 className="h-3 w-3 animate-spin" /> Recognizing
@@ -547,7 +576,7 @@ const OcrPage = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
                       <PenLine className="h-4 w-4 text-emerald-300" />
-                      Signature (required)
+                      Receiver signature (required)
                     </div>
                     <Button variant="ghost" size="sm" className="text-xs text-slate-200 hover:bg-white/5" onClick={clearSignature}>
                       Clear
@@ -568,7 +597,7 @@ const OcrPage = () => {
 
                 <div className="sticky bottom-4 z-10 rounded-2xl border border-emerald-500/40 bg-emerald-500/20 p-3 shadow-lg shadow-emerald-500/30 backdrop-blur">
                   <div className="flex items-center justify-between text-xs text-emerald-50">
-                    <span>Save and submit</span>
+                    <span>Save POD & receive</span>
                     <span className="rounded-full bg-white/15 px-2 py-1 text-[11px] text-white">
                       {matchedDealerSlug || "No match"}
                     </span>
@@ -580,7 +609,7 @@ const OcrPage = () => {
                     onClick={handleReceive}
                   >
                     {receiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Submit
+                    Submit POD
                   </Button>
                 </div>
               </div>
