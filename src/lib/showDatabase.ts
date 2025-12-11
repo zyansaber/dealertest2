@@ -3,6 +3,7 @@ import { DataSnapshot, get, getDatabase, off, onValue, ref, update } from "fireb
 import type { ShowRecord } from "@/types/show";
 import type { ShowOrder } from "@/types/showOrder";
 import type { TeamMember } from "@/types/teamMember";
+import type { ShowTask } from "@/types/showTask";
 
 const showFirebaseConfig = {
   apiKey: "AIzaSyCxOWHjnnyjILF_zZFC0gVha9rx8nrpGwE",
@@ -150,6 +151,34 @@ export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) =
 
   onValue(ordersRef, handler);
   return () => off(ordersRef, "value", handler);
+};
+
+export const subscribeToShowTasks = (callback: (tasks: ShowTask[]) => void) => {
+  const tasksRef = ref(showDatabase, "showTasks");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const raw = snapshot.val();
+    const list: any[] = raw
+      ? Array.isArray(raw)
+        ? raw.filter(Boolean)
+        : Object.entries(raw).map(([key, value]) => ({ id: key, ...(value as any) }))
+      : [];
+
+    const normalized: ShowTask[] = list.map((item) => ({
+      id: item.id || item.taskId || "",
+      eventId: item.eventId || item.showId || "",
+      taskName: item.taskName || item.name || "",
+      status: item.status || "",
+      assignedTo: item.assignedTo || item.assignee || "",
+      dueDate: item.dueDate || "",
+      notes: item.notes || "",
+    }));
+
+    callback(normalized.filter((item) => item.id && item.eventId));
+  };
+
+  onValue(tasksRef, handler);
+  return () => off(tasksRef, "value", handler);
 };
 
 export const updateShowOrder = async (orderId: string, updates: Partial<ShowOrder>) => {
