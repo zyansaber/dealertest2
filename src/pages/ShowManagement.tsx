@@ -269,9 +269,20 @@ export default function ShowManagement() {
     return map;
   }, [shows]);
 
+  const stringifyDealerField = (value: unknown) => {
+    if (typeof value === "string") return value.trim();
+    if (value && typeof value === "object") {
+      const combined = Object.values(value as Record<string, unknown>)
+        .filter((part) => typeof part === "string" && part.trim())
+        .join(", ");
+      return combined.trim();
+    }
+    return "";
+  };
+
   const getShowDealerSlug = (show?: ShowRecord) => {
-    const preferredDealer = (show?.handoverDealer ?? "").trim();
-    const fallbackDealer = (show?.dealership ?? "").trim();
+    const preferredDealer = stringifyDealerField(show?.handoverDealer);
+    const fallbackDealer = stringifyDealerField(show?.dealership);
     return dealerNameToSlug(preferredDealer || fallbackDealer);
   };
 
@@ -279,7 +290,7 @@ export default function ShowManagement() {
     (show?: ShowRecord) => {
       if (!show) return { slug: "", source: "none" as const };
 
-      const mappingKey = dealerNameToSlug(show.dealership || "");
+      const mappingKey = dealerNameToSlug(stringifyDealerField(show.dealership));
       const mappedSlug = mappingKey && showMappings[mappingKey]?.dealerSlug;
       if (mappedSlug) {
         return { slug: normalizeDealerSlug(mappedSlug), source: "mapping" as const };
@@ -307,7 +318,7 @@ export default function ShowManagement() {
   const showsWithMatch = useMemo(() => {
     return shows
       .map((show) => {
-        const mappingKey = dealerNameToSlug(show.dealership || "");
+        const mappingKey = dealerNameToSlug(stringifyDealerField(show.dealership));
         const mappedSlug = mappingKey ? showMappings[mappingKey]?.dealerSlug || "" : "";
         const match = resolveShowDealer(show);
         const startDate = parseFlexibleDateToDate(show.startDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
@@ -768,10 +779,10 @@ export default function ShowManagement() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="text-slate-800">{show.dealership || ""}</div>
+                          <div className="text-slate-800">{stringifyDealerField(show.dealership)}</div>
                         </TableCell>
                         <TableCell>
-                          <div className="text-slate-800">{show.handoverDealer || ""}</div>
+                          <div className="text-slate-800">{stringifyDealerField(show.handoverDealer)}</div>
                         </TableCell>
                         <TableCell>
                           <div className="text-slate-800">{mappedSlug || ""}</div>
