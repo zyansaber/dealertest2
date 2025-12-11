@@ -269,8 +269,10 @@ export default function ShowManagement() {
     return map;
   }, [shows]);
 
-  const stringifyDealerField = (value: unknown) => {
-    if (typeof value === "string") return value.trim();
+  const stringifyDisplayField = (value: unknown) => {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value).trim();
+    }
     if (value && typeof value === "object") {
       const combined = Object.values(value as Record<string, unknown>)
         .filter((part) => typeof part === "string" && part.trim())
@@ -279,6 +281,8 @@ export default function ShowManagement() {
     }
     return "";
   };
+
+  const stringifyDealerField = (value: unknown) => stringifyDisplayField(value);
 
   const getShowDealerSlug = (show?: ShowRecord) => {
     const preferredDealer = stringifyDealerField(show?.handoverDealer);
@@ -772,9 +776,9 @@ export default function ShowManagement() {
                       <TableRow key={show.id || show.name}>
                         <TableCell className="font-semibold text-slate-900">
                           <div className="space-y-0.5">
-                            <div>{show.name || "Untitled show"}</div>
-                            {show.siteLocation && (
-                              <div className="text-xs text-slate-500">{show.siteLocation}</div>
+                            <div>{stringifyDisplayField(show.name) || "Untitled show"}</div>
+                            {stringifyDisplayField(show.siteLocation) && (
+                              <div className="text-xs text-slate-500">{stringifyDisplayField(show.siteLocation)}</div>
                             )}
                           </div>
                         </TableCell>
@@ -803,10 +807,14 @@ export default function ShowManagement() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="space-y-1">
-                            {show.status && <div className="text-sm font-medium text-slate-900">{show.status}</div>}
-                            {(show.eventOrganiser || show.standSize) && (
+                            {stringifyDisplayField(show.status) && (
+                              <div className="text-sm font-medium text-slate-900">{stringifyDisplayField(show.status)}</div>
+                            )}
+                            {(stringifyDisplayField(show.eventOrganiser) || stringifyDisplayField(show.standSize)) && (
                               <div className="text-xs text-slate-500">
-                                {[show.eventOrganiser, show.standSize].filter(Boolean).join(" • ")}
+                                {[stringifyDisplayField(show.eventOrganiser), stringifyDisplayField(show.standSize)]
+                                  .filter(Boolean)
+                                  .join(" • ")}
                               </div>
                             )}
                           </div>
@@ -858,16 +866,18 @@ export default function ShowManagement() {
                       return (
                         <TableRow key={order.orderId}>
                           <TableCell className="font-semibold text-slate-900">{order.orderId}</TableCell>
-                          <TableCell>{show?.name || order.showId || "Unknown show"}</TableCell>
-                          <TableCell className="text-slate-700">{order.customerName || "-"}</TableCell>
-                          <TableCell>{order.date || "-"}</TableCell>
-                          <TableCell>{order.model || "-"}</TableCell>
-                          <TableCell>{order.salesperson || "-"}</TableCell>
-                          <TableCell>{order.orderType || "-"}</TableCell>
+                          <TableCell>
+                            {stringifyDisplayField(show?.name) || order.showId || "Unknown show"}
+                          </TableCell>
+                          <TableCell className="text-slate-700">{stringifyDisplayField(order.customerName) || "-"}</TableCell>
+                          <TableCell>{stringifyDisplayField(order.date) || "-"}</TableCell>
+                          <TableCell>{stringifyDisplayField(order.model) || "-"}</TableCell>
+                          <TableCell>{stringifyDisplayField(order.salesperson) || "-"}</TableCell>
+                          <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Badge variant="secondary" className="bg-slate-100 text-slate-800">
-                                {order.status || "Pending"}
+                                {stringifyDisplayField(order.status) || "Pending"}
                               </Badge>
                             </div>
                           </TableCell>
