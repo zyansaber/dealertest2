@@ -253,7 +253,7 @@ export default function Sidebar({
       children: [
         {
           path: `${basePath}/show-management/tasks`,
-          label: "Task (Show lineup for Geelong)",
+          label: "Task",
           icon: Circle,
           end: true,
           isSubItem: true,
@@ -292,7 +292,7 @@ export default function Sidebar({
         isActive
           ? "bg-slate-800 text-white shadow-inner"
           : "text-slate-200 hover:bg-slate-800 hover:text-white"
-      } ${item.isSubItem ? "text-[13px]" : ""} ${item.isDisabled ? "cursor-default opacity-80" : ""}`}
+      } ${item.isSubItem ? "text-[13px]" : ""} ${item.isDisabled ? "cursor-default opacity-0" : ""}`}
     >
       <div className={`relative ${item.isSubItem ? "text-slate-400" : ""}`}>
         <item.icon className={`${item.isSubItem ? "h-4 w-4" : "h-5 w-5"}`} />
