@@ -304,18 +304,19 @@ export default function ShowManagement() {
     });
   }, [dealerSlug, orders, resolveShowDealer, showMap]);
 
-  const showsForDealer = useMemo(() => {
+  const showsWithMatch = useMemo(() => {
     return shows
       .map((show) => {
+        const mappingKey = dealerNameToSlug(show.dealership || "");
+        const mappedSlug = mappingKey ? showMappings[mappingKey]?.dealerSlug || "" : "";
         const match = resolveShowDealer(show);
         const startDate = parseFlexibleDateToDate(show.startDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
         const finishDate = parseFlexibleDateToDate(show.finishDate)?.getTime() ?? startDate;
 
-        return { show, match, startDate, finishDate };
+        return { show, match, startDate, finishDate, mappedSlug: mappedSlug ? normalizeDealerSlug(mappedSlug) : "" };
       })
-      .filter((item) => item.match.slug && item.match.slug === dealerSlug)
       .sort((a, b) => a.startDate - b.startDate);
-  }, [dealerSlug, resolveShowDealer, shows]);
+  }, [resolveShowDealer, showMappings, shows]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
@@ -725,56 +726,63 @@ export default function ShowManagement() {
             <div className="space-y-1">
               <CardTitle className="text-lg">Show lineup for {dealerDisplayName}</CardTitle>
               <p className="text-sm text-slate-600">
-                优先根据 <code>showDealerMappings</code> 将 Snowy River 数据中的 dealership 映射到当前 dealer slug，再结合
-                handover dealer 信息做补充，便于快速看到相关 show 的时间安排。
+                Shows are mapped with <code>showDealerMappings</code> first, then by handover/dealership for fallback. All
+                shows are listed to help validate slug alignment and timing.
               </p>
             </div>
             <Badge variant="secondary" className="px-3 py-1 text-sm">
-              {showsForDealer.length} shows
+              {showsWithMatch.length} shows
             </Badge>
           </CardHeader>
           <CardContent>
             {showListLoading ? (
               <div className="flex items-center gap-2 text-slate-600">
-                <Clock3 className="h-4 w-4 animate-spin" /> 正在读取 show 数据...
+                <Clock3 className="h-4 w-4 animate-spin" /> Loading shows...
               </div>
-            ) : showsForDealer.length === 0 ? (
-              <div className="py-8 text-center text-slate-500">暂无与该 dealer 匹配的 show。</div>
+            ) : showsWithMatch.length === 0 ? (
+              <div className="py-8 text-center text-slate-500">No shows available.</div>
             ) : (
               <div className="overflow-x-auto">
-                <Table className="min-w-[960px] text-sm">
+                <Table className="min-w-[1080px] text-sm">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Show</TableHead>
                       <TableHead className="font-semibold">Dealership</TableHead>
+                      <TableHead className="font-semibold">Handover Dealer</TableHead>
+                      <TableHead className="font-semibold">showDealerMappings Slug</TableHead>
+                      <TableHead className="font-semibold">Resolved Dealer Slug</TableHead>
                       <TableHead className="font-semibold">Schedule</TableHead>
-                      <TableHead className="font-semibold">匹配方式</TableHead>
-                      <TableHead className="font-semibold text-right">其他信息</TableHead>
+                      <TableHead className="font-semibold">Match Source</TableHead>
+                      <TableHead className="font-semibold text-right">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {showsForDealer.map(({ show, match }) => (
+                    {showsWithMatch.map(({ show, match, mappedSlug }) => (
                       <TableRow key={show.id || show.name}>
                         <TableCell className="font-semibold text-slate-900">
                           <div className="space-y-0.5">
-                            <div>{show.name || "未命名的 Show"}</div>
+                            <div>{show.name || "Untitled show"}</div>
                             {show.siteLocation && (
                               <div className="text-xs text-slate-500">{show.siteLocation}</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="space-y-0.5">
-                            <div className="text-slate-800">{show.dealership || "-"}</div>
-                            {show.handoverDealer && (
-                              <div className="text-xs text-slate-500">Handover: {show.handoverDealer}</div>
-                            )}
-                          </div>
+                          <div className="text-slate-800">{show.dealership || ""}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-slate-800">{show.handoverDealer || ""}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-slate-800">{mappedSlug || ""}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-slate-800">{match.slug || ""}</div>
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
                             <div className="font-medium text-slate-900">{formatShowDate(show.startDate)}</div>
-                            <div className="text-xs text-slate-500">至 {formatShowDate(show.finishDate)}</div>
+                            <div className="text-xs text-slate-500">to {formatShowDate(show.finishDate)}</div>
                           </div>
                         </TableCell>
                         <TableCell>
