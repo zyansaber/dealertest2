@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -206,7 +206,7 @@ const drawBarcode = (
 };
 
 export default function ShowManagement() {
-  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
+  const { dealerSlug: rawDealerSlug, section } = useParams<{ dealerSlug: string; section?: string }>();
   const dealerSlug = normalizeDealerSlug(rawDealerSlug);
   const dealerDisplayName = prettifyDealerName(dealerSlug);
 
@@ -746,7 +746,13 @@ export default function ShowManagement() {
 
   const showListLoading = showsLoading || mappingsLoading || tasksLoading;
   const isLoading = ordersLoading || showsLoading || mappingsLoading;
-  
+
+  if (!section) {
+    return <Navigate to={`/dealer/${dealerSlug}/show-management/tasks`} replace />;
+  }
+
+  const view = section === "orders" ? "orders" : "tasks";
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar
@@ -756,7 +762,6 @@ export default function ShowManagement() {
         hideOtherDealers
         currentDealerName={dealerDisplayName}
         showStats={false}
-        showManagementPending={pendingConfirmationCount}
       />
 
       <main className="flex-1 p-6">
@@ -765,7 +770,8 @@ export default function ShowManagement() {
           <p className="text-slate-600">Manage show orders assigned to {dealerDisplayName}.</p>
         </div>
 
-        <Card className="mb-6">
+        {view === "tasks" && (
+          <Card className="mb-6">
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div className="space-y-1">
               <CardTitle className="text-lg">Show lineup for {dealerDisplayName}</CardTitle>
@@ -791,9 +797,6 @@ export default function ShowManagement() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Show</TableHead>
-                      <TableHead className="font-semibold">Schedule</TableHead>
-                      <TableHead className="font-semibold">Tasks</TableHead>
-                      <TableHead className="font-semibold text-right">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -853,6 +856,9 @@ export default function ShowManagement() {
                               </div>
                             )}
                           </TableCell>
+                              </div>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             <div className="space-y-1">
                               {stringifyDisplayField(show.status) && (
@@ -875,16 +881,18 @@ export default function ShowManagement() {
               </div>
             )}
           </CardContent>
-        </Card>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+        {view === "orders" && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Orders</CardTitle>
             <Badge variant="outline" className="text-slate-700">
               Pending dealer confirmations: {pendingConfirmationCount}
             </Badge>
           </CardHeader>
-          <CardContent>
+            <CardContent>
             {isLoading ? (
               <div className="flex items-center gap-2 text-slate-600">
                 <Clock3 className="h-4 w-4 animate-spin" /> Loading orders...
@@ -973,8 +981,9 @@ export default function ShowManagement() {
                 </Table>
               </div>
             )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
   );
