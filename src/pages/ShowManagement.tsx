@@ -797,6 +797,9 @@ export default function ShowManagement() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Show</TableHead>
+                      <TableHead className="font-semibold">Schedule</TableHead>
+                      <TableHead className="font-semibold">Tasks</TableHead>
+                      <TableHead className="font-semibold text-right">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -853,9 +856,6 @@ export default function ShowManagement() {
                                     </div>
                                   </div>
                                 ))}
-                              </div>
-                            )}
-                          </TableCell>
                               </div>
                             )}
                           </TableCell>
