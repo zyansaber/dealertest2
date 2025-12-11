@@ -251,7 +251,7 @@ export default function Sidebar({
       children: [
         {
           path: `${basePath}/show-management/tasks`,
-          label: "Task (Show lineup for Geelong)",
+          label: "Task",
           icon: Circle,
           end: true,
           isSubItem: true,
