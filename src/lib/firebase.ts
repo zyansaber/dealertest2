@@ -22,14 +22,22 @@ import type {
 } from "@/types";
 import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig } from "@/types/tierConfig";
 
+const requireEnv = (key: string, context: string) => {
+  const value = import.meta.env?.[key];
+  if (!value) {
+    throw new Error(`Missing environment variable ${key} for ${context}`);
+  }
+  return value;
+};
+
 const firebaseConfig = {
-  apiKey: "AIzaSyBcczqGj5X1_w9aCX1lOK4-kgz49Oi03Bg",
-  authDomain: "scheduling-dd672.firebaseapp.com",
-  databaseURL: "https://scheduling-dd672-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "scheduling-dd672",
-  storageBucket: "scheduling-dd672.firebasestorage.app",
-  messagingSenderId: "432092773012",
-  appId: "1:432092773012:web:ebc7203ea570b0da2ad281",
+  apiKey: requireEnv("VITE_FIREBASE_API_KEY", "primary Firebase config"),
+  authDomain: requireEnv("VITE_FIREBASE_AUTH_DOMAIN", "primary Firebase config"),
+  databaseURL: requireEnv("VITE_FIREBASE_DATABASE_URL", "primary Firebase config"),
+  projectId: requireEnv("VITE_FIREBASE_PROJECT_ID", "primary Firebase config"),
+  storageBucket: requireEnv("VITE_FIREBASE_STORAGE_BUCKET", "primary Firebase config"),
+  messagingSenderId: requireEnv("VITE_FIREBASE_MESSAGING_SENDER_ID", "primary Firebase config"),
+  appId: requireEnv("VITE_FIREBASE_APP_ID", "primary Firebase config"),
 };
 
 const app = initializeApp(firebaseConfig);
