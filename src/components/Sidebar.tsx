@@ -47,6 +47,7 @@ type NavigationItem = {
   badge?: number;
   children?: NavigationItem[];
   isSubItem?: boolean;
+  isDisabled?: boolean;
 };
 
 /** ---- 安全工具函数：统一兜底，避免 undefined.toLowerCase 报错 ---- */
@@ -247,11 +248,12 @@ export default function Sidebar({
       path: `${basePath}/show-management`,
       label: "Show Management",
       icon: ClipboardList,
+      isDisabled: true,
       end: false,
       children: [
         {
           path: `${basePath}/show-management/tasks`,
-          label: "Task",
+          label: "Task (Show lineup for Geelong)",
           icon: Circle,
           end: true,
           isSubItem: true,
@@ -269,42 +271,65 @@ export default function Sidebar({
     });
   }
 
-  const renderNavItem = (item: NavigationItem) => (
-    <NavLink key={item.path} to={item.path} end={item.end}>
-      {({ isActive }) => (
-        <Button
-          variant="ghost"
-          className={`flex w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-            isCollapsed ? "justify-center px-2" : item.isSubItem ? "pl-9" : ""
-          } ${
-            isActive
-              ? "bg-slate-800 text-white shadow-inner"
-              : "text-slate-200 hover:bg-slate-800 hover:text-white"
-          } ${item.isSubItem ? "text-[13px]" : ""}`}
-        >
-          <div className={`relative ${item.isSubItem ? "text-slate-400" : ""}`}>
-            <item.icon className={`${item.isSubItem ? "h-4 w-4" : "h-5 w-5"}`} />
-            {isCollapsed && item.badge && (
-              <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white">
-                {item.badge}
-              </span>
-            )}
-          </div>
-          {!isCollapsed && (
-            <span className="flex items-center gap-2">
-              <span>{item.label}</span>
-              {item.badge && (
-                <Badge variant="destructive" className="ml-1 h-5 px-2 text-xs">
-                  {item.badge}
-                </Badge>
-              )}
-            </span>
-          )}
-          {isCollapsed && <span className="sr-only">{item.label}</span>}
-        </Button>
-      )}
-    </NavLink>
+  const isItemActive = useCallback(
+    (item: NavigationItem) => {
+      if (item.end) {
+        return location.pathname === item.path;
+      }
+      return location.pathname.startsWith(item.path);
+    },
+    [location.pathname]
   );
+
+  const renderButtonContent = (item: NavigationItem, isActive: boolean) => (
+    <Button
+      variant="ghost"
+      disabled={item.isDisabled}
+      aria-disabled={item.isDisabled}
+      className={`flex w-full items-center justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+        isCollapsed ? "justify-center px-2" : item.isSubItem ? "pl-9" : ""
+      } ${
+        isActive
+          ? "bg-slate-800 text-white shadow-inner"
+          : "text-slate-200 hover:bg-slate-800 hover:text-white"
+      } ${item.isSubItem ? "text-[13px]" : ""} ${item.isDisabled ? "cursor-default opacity-80" : ""}`}
+    >
+      <div className={`relative ${item.isSubItem ? "text-slate-400" : ""}`}>
+        <item.icon className={`${item.isSubItem ? "h-4 w-4" : "h-5 w-5"}`} />
+        {isCollapsed && item.badge && (
+          <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white">
+            {item.badge}
+          </span>
+        )}
+      </div>
+      {!isCollapsed && (
+        <span className="flex items-center gap-2">
+          <span>{item.label}</span>
+          {item.badge && (
+            <Badge variant="destructive" className="ml-1 h-5 px-2 text-xs">
+              {item.badge}
+            </Badge>
+          )}
+        </span>
+      )}
+      {isCollapsed && <span className="sr-only">{item.label}</span>}
+    </Button>
+  );
+
+  const renderNavItem = (item: NavigationItem) => {
+    if (item.isDisabled) {
+      const isActive = isItemActive(item);
+      return (
+        <div key={item.path}>{renderButtonContent(item, isActive)}</div>
+      );
+    }
+
+    return (
+      <NavLink key={item.path} to={item.path} end={item.end}>
+        {({ isActive }) => renderButtonContent(item, isActive)}
+      </NavLink>
+    );
+  };
 
   if (!isGroup && isFinanceReportEnabled(normalizedDealerSlug)) {
     navigationItems.push({
