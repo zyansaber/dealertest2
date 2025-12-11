@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -8,10 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Sidebar from "@/components/Sidebar";
 import { prettifyDealerName, normalizeDealerSlug } from "@/lib/dealerUtils";
-import { dealerNameToSlug } from "@/lib/firebase";
+import { dealerNameToSlug, subscribeShowDealerMappings } from "@/lib/firebase";
 import {
   fetchShowOrderById,
   fetchTeamMembers,
+  formatShowDate,
+  parseFlexibleDateToDate,
   subscribeToShows,
   subscribeToShowOrders,
   updateShowOrder,
@@ -20,6 +22,7 @@ import { sendDealerConfirmationEmail } from "@/lib/email";
 import type { ShowOrder } from "@/types/showOrder";
 import type { ShowRecord } from "@/types/show";
 import type { TeamMember } from "@/types/teamMember";
+import type { ShowDealerMapping } from "@/lib/firebase";
 import { CheckCircle2, Clock3 } from "lucide-react";
 
 declare global {
@@ -209,10 +212,12 @@ export default function ShowManagement() {
   const [shows, setShows] = useState<ShowRecord[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [showsLoading, setShowsLoading] = useState(true);
+  const [mappingsLoading, setMappingsLoading] = useState(true);
   const [teamMembersLoading, setTeamMembersLoading] = useState(true);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
   const [chassisDrafts, setChassisDrafts] = useState<Record<string, string>>({});
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
 
   useEffect(() => {
     const unsub = subscribeToShowOrders((data) => {
@@ -226,6 +231,14 @@ export default function ShowManagement() {
     const unsub = subscribeToShows((data) => {
       setShows(data);
       setShowsLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeShowDealerMappings((data) => {
+      setShowMappings(data || {});
+      setMappingsLoading(false);
     });
     return unsub;
   }, []);
@@ -262,14 +275,47 @@ export default function ShowManagement() {
     return dealerNameToSlug(preferredDealer || fallbackDealer);
   };
 
+  const resolveShowDealer = useCallback(
+    (show?: ShowRecord) => {
+      if (!show) return { slug: "", source: "none" as const };
+
+      const mappingKey = dealerNameToSlug(show.dealership || "");
+      const mappedSlug = mappingKey && showMappings[mappingKey]?.dealerSlug;
+      if (mappedSlug) {
+        return { slug: normalizeDealerSlug(mappedSlug), source: "mapping" as const };
+      }
+
+      const inferredSlug = normalizeDealerSlug(getShowDealerSlug(show));
+      if (inferredSlug) {
+        return { slug: inferredSlug, source: "inferred" as const };
+      }
+
+      return { slug: "", source: "none" as const };
+    },
+    [showMappings]
+  );
+
   const ordersForDealer = useMemo(() => {
     return orders.filter((order) => {
       if (!order.orderId) return false;
       const show = showMap[order.showId];
-      const showDealerSlug = normalizeDealerSlug(getShowDealerSlug(show));
+      const showDealerSlug = resolveShowDealer(show).slug;
       return !!showDealerSlug && showDealerSlug === dealerSlug;
     });
-  }, [dealerSlug, orders, showMap]);
+  }, [dealerSlug, orders, resolveShowDealer, showMap]);
+
+  const showsForDealer = useMemo(() => {
+    return shows
+      .map((show) => {
+        const match = resolveShowDealer(show);
+        const startDate = parseFlexibleDateToDate(show.startDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const finishDate = parseFlexibleDateToDate(show.finishDate)?.getTime() ?? startDate;
+
+        return { show, match, startDate, finishDate };
+      })
+      .filter((item) => item.match.slug && item.match.slug === dealerSlug)
+      .sort((a, b) => a.startDate - b.startDate);
+  }, [dealerSlug, resolveShowDealer, shows]);
 
   const pendingConfirmationCount = useMemo(
     () => ordersForDealer.filter((order) => !order.dealerConfirm).length,
@@ -653,7 +699,8 @@ export default function ShowManagement() {
     }
   };
 
-  const isLoading = ordersLoading || showsLoading;
+  const showListLoading = showsLoading || mappingsLoading;
+  const isLoading = ordersLoading || showsLoading || mappingsLoading;
   
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -672,6 +719,87 @@ export default function ShowManagement() {
           <h1 className="text-2xl font-semibold text-slate-900">Show Management</h1>
           <p className="text-slate-600">Manage show orders assigned to {dealerDisplayName}.</p>
         </div>
+
+        <Card className="mb-6">
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="text-lg">Show lineup for {dealerDisplayName}</CardTitle>
+              <p className="text-sm text-slate-600">
+                优先根据 <code>showDealerMappings</code> 将 Snowy River 数据中的 dealership 映射到当前 dealer slug，再结合
+                handover dealer 信息做补充，便于快速看到相关 show 的时间安排。
+              </p>
+            </div>
+            <Badge variant="secondary" className="px-3 py-1 text-sm">
+              {showsForDealer.length} shows
+            </Badge>
+          </CardHeader>
+          <CardContent>
+            {showListLoading ? (
+              <div className="flex items-center gap-2 text-slate-600">
+                <Clock3 className="h-4 w-4 animate-spin" /> 正在读取 show 数据...
+              </div>
+            ) : showsForDealer.length === 0 ? (
+              <div className="py-8 text-center text-slate-500">暂无与该 dealer 匹配的 show。</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[960px] text-sm">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-semibold">Show</TableHead>
+                      <TableHead className="font-semibold">Dealership</TableHead>
+                      <TableHead className="font-semibold">Schedule</TableHead>
+                      <TableHead className="font-semibold">匹配方式</TableHead>
+                      <TableHead className="font-semibold text-right">其他信息</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {showsForDealer.map(({ show, match }) => (
+                      <TableRow key={show.id || show.name}>
+                        <TableCell className="font-semibold text-slate-900">
+                          <div className="space-y-0.5">
+                            <div>{show.name || "未命名的 Show"}</div>
+                            {show.siteLocation && (
+                              <div className="text-xs text-slate-500">{show.siteLocation}</div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <div className="text-slate-800">{show.dealership || "-"}</div>
+                            {show.handoverDealer && (
+                              <div className="text-xs text-slate-500">Handover: {show.handoverDealer}</div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium text-slate-900">{formatShowDate(show.startDate)}</div>
+                            <div className="text-xs text-slate-500">至 {formatShowDate(show.finishDate)}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={match.source === "mapping" ? "default" : "secondary"}>
+                            {match.source === "mapping" ? "showDealerMappings" : "Handover/Dealership"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="space-y-1">
+                            {show.status && <div className="text-sm font-medium text-slate-900">{show.status}</div>}
+                            {(show.eventOrganiser || show.standSize) && (
+                              <div className="text-xs text-slate-500">
+                                {[show.eventOrganiser, show.standSize].filter(Boolean).join(" • ")}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
