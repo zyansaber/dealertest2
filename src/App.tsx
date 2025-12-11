@@ -122,7 +122,12 @@ const App = () => (
               <ShowManagement />
             </ProtectedDealerRoute>
           } />
-
+          <Route path="/dealer/:dealerSlug/show-management/:section" element={
+            <ProtectedDealerRoute>
+              <ShowManagement />
+            </ProtectedDealerRoute>
+          } />
+          
           <Route path="/dealer/:dealerSlug/finance-report" element={
             <ProtectedDealerRoute>
               <FinanceReport />
