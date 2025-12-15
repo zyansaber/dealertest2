@@ -4,10 +4,9 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "@/lib/firebase";
 
 type ProductRegistrationData = {
-  // Legacy camelCase fields still validated by the callable
-  email?: string;
-  chassisNumber?: string;
-
+  /**
+   * Salesforce field names
+   */
   First_Name__c?: string;
   Last_Name__c?: string;
   Email__c: string;
@@ -25,6 +24,27 @@ type ProductRegistrationData = {
   Dealership_Purchased_From__c?: string;
   Handover_Date__c?: string;
   VIN__c?: string;
+
+  /**
+   * CamelCase fallbacks that some callable versions expect
+   */
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  mobileNumber?: string;
+  phoneNumber?: string;
+  streetAddress?: string;
+  suburb?: string;
+  syncWithSap?: string;
+  country?: string;
+  postcode?: string;
+  stateRegion?: string;
+  chassisNumber?: string;
+  brand?: string;
+  model?: string;
+  dealershipPurchasedFrom?: string;
+  handoverDate?: string;
+  vin?: string;
 };
 
 type SubmitProductRegistrationResult = {
@@ -509,13 +529,29 @@ const SalesforceTest = () => {
     Postcode__c: sharedForm.postcode,
     State_Region__c: selectedRegion?.productValue ?? "",
     Chassis_Number__c: sharedForm.chassisNumber,
-    chassisNumber: sharedForm.chassisNumber,
     Brand__c: sharedForm.brand,
     Model__c: sharedForm.model,
     Dealership_Purchased_From__c: sharedForm.dealershipCode,
     Handover_Date__c: sharedForm.handoverDate,
     VIN__c: sharedForm.vin,
+    // camelCase mirrors
+    firstName: sharedForm.firstName,
+    lastName: sharedForm.lastName,
     email: sharedForm.email,
+    mobileNumber: sharedForm.mobile,
+    phoneNumber: sharedForm.phone,
+    streetAddress: sharedForm.streetAddress,
+    suburb: sharedForm.suburb,
+    syncWithSap: "true",
+    country: sharedForm.country,
+    postcode: sharedForm.postcode,
+    stateRegion: selectedRegion?.productValue ?? "",
+    chassisNumber: sharedForm.chassisNumber,
+    brand: sharedForm.brand,
+    model: sharedForm.model,
+    dealershipPurchasedFrom: sharedForm.dealershipCode,
+    handoverDate: sharedForm.handoverDate,
+    vin: sharedForm.vin,
   });
 
   const buildCustomerPayload = (): CustomerDetailsPayload => ({
