@@ -4,22 +4,23 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "@/lib/firebase";
 
 type ProductRegistrationData = {
-  firstName?: string;
-  lastName?: string;
-  email: string;
-  mobile?: string;
-  phone?: string;
-  streetAddress?: string;
-  suburb?: string;
-  country?: string;
-  postcode?: string;
-  stateRegion?: string;
-  chassisNumber: string;
-  brand?: string;
-  model?: string;
-  dealershipCode?: string;
-  handoverDate?: string;
-  vin?: string;
+  First_Name__c?: string;
+  Last_Name__c?: string;
+  Email__c: string;
+  Mobile_Number__c?: string;
+  Phone_Number__c?: string;
+  Street_Address__c?: string;
+  Suburb__c?: string;
+  Sync_with_SAP__c?: string;
+  Country__c?: string;
+  Postcode__c?: string;
+  State_Region__c?: string;
+  Chassis_Number__c: string;
+  Brand__c?: string;
+  Model__c?: string;
+  Dealership_Purchased_From__c?: string;
+  Handover_Date__c?: string;
+  VIN__c?: string;
 };
 
 type SubmitProductRegistrationResult = {
@@ -492,22 +493,23 @@ const SalesforceTest = () => {
   };
 
   const buildProductPayload = (): ProductRegistrationData => ({
-    firstName: sharedForm.firstName,
-    lastName: sharedForm.lastName,
-    email: sharedForm.email,
-    mobile: sharedForm.mobile,
-    phone: sharedForm.phone,
-    streetAddress: sharedForm.streetAddress,
-    suburb: sharedForm.suburb,
-    country: sharedForm.country,
-    postcode: sharedForm.postcode,
-    stateRegion: selectedRegion?.productValue ?? "",
-    chassisNumber: sharedForm.chassisNumber,
-    brand: sharedForm.brand,
-    model: sharedForm.model,
-    dealershipCode: sharedForm.dealershipCode,
-    handoverDate: sharedForm.handoverDate,
-    vin: sharedForm.vin,
+    First_Name__c: sharedForm.firstName,
+    Last_Name__c: sharedForm.lastName,
+    Email__c: sharedForm.email,
+    Mobile_Number__c: sharedForm.mobile,
+    Phone_Number__c: sharedForm.phone,
+    Street_Address__c: sharedForm.streetAddress,
+    Suburb__c: sharedForm.suburb,
+    Sync_with_SAP__c: "true",
+    Country__c: sharedForm.country,
+    Postcode__c: sharedForm.postcode,
+    State_Region__c: selectedRegion?.productValue ?? "",
+    Chassis_Number__c: sharedForm.chassisNumber,
+    Brand__c: sharedForm.brand,
+    Model__c: sharedForm.model,
+    Dealership_Purchased_From__c: sharedForm.dealershipCode,
+    Handover_Date__c: sharedForm.handoverDate,
+    VIN__c: sharedForm.vin,
   });
 
   const buildCustomerPayload = (): CustomerDetailsPayload => ({
