@@ -1,3 +1,6 @@
++729
+-585
+
 import { useMemo, useState } from "react";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
@@ -331,9 +334,9 @@ const DEALERSHIP_PURCHASED_FROM_REGENT: Option[] = [
 
 const BRAND_OPTIONS: Option[] = [
   { label: "Select", value: "" },
-  { label: "Regent", value: "Regent" },
-  { label: "Snowy River", value: "Snowy River" },
+  { label: "Snowy", value: "Snowy" },
   { label: "Newgen", value: "Newgen" },
+  { label: "Regent", value: "Regent" },
 ];
 
 type SharedForm = {
@@ -372,7 +375,7 @@ const SalesforceTest = () => {
     phone: "",
     handoverDate: "2025-01-05",
     chassisNumber: "ABC123456",
-    brand: "Snowy River",
+    brand: "Snowy",
     model: "SRT19",
     country: "AU",
     regionCode: "VIC",
@@ -457,12 +460,12 @@ const SalesforceTest = () => {
 
   const modelOptions = useMemo(() => {
     switch (sharedForm.brand) {
-      case "Regent":
-        return REGENT_MODEL;
-      case "Snowy River":
+      case "Snowy":
         return SNOWY_MODEL;
       case "Newgen":
         return NEWGEN_MODEL;
+      case "Regent":
+        return REGENT_MODEL;
       default:
         return [{ label: "Select", value: "" }];
     }
@@ -470,12 +473,12 @@ const SalesforceTest = () => {
 
   const dealershipOptions = useMemo(() => {
     switch (sharedForm.brand) {
-      case "Regent":
-        return DEALERSHIP_PURCHASED_FROM_REGENT;
-      case "Snowy River":
+      case "Snowy":
         return DEALERSHIP_PURCHASED_FROM_SNOWY;
       case "Newgen":
         return DEALERSHIP_PURCHASED_FROM_NEWGEN;
+      case "Regent":
+        return DEALERSHIP_PURCHASED_FROM_REGENT;
       default:
         return DEALERSHIP_PURCHASED_FROM;
     }
