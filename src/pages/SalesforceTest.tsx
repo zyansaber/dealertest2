@@ -4,6 +4,10 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "@/lib/firebase";
 
 type ProductRegistrationData = {
+  // Legacy camelCase fields still validated by the callable
+  email?: string;
+  chassisNumber?: string;
+
   First_Name__c?: string;
   Last_Name__c?: string;
   Email__c: string;
@@ -505,11 +509,13 @@ const SalesforceTest = () => {
     Postcode__c: sharedForm.postcode,
     State_Region__c: selectedRegion?.productValue ?? "",
     Chassis_Number__c: sharedForm.chassisNumber,
+    chassisNumber: sharedForm.chassisNumber,
     Brand__c: sharedForm.brand,
     Model__c: sharedForm.model,
     Dealership_Purchased_From__c: sharedForm.dealershipCode,
     Handover_Date__c: sharedForm.handoverDate,
     VIN__c: sharedForm.vin,
+    email: sharedForm.email,
   });
 
   const buildCustomerPayload = (): CustomerDetailsPayload => ({
