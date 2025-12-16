@@ -11,6 +11,7 @@ type ProductRegistrationData = {
   Last_Name__c?: string;
   Email__c: string;
   Mobile_Number__c?: string;
+  Mobile__c?: string;
   Phone_Number__c?: string;
   Phone__c?: string;
   Street_Address__c?: string;
@@ -33,6 +34,7 @@ type ProductRegistrationData = {
   lastName?: string;
   email?: string;
   mobileNumber?: string;
+  mobile?: string;
   phoneNumber?: string;
   phone?: string;
   streetAddress?: string;
@@ -523,6 +525,7 @@ const SalesforceTest = () => {
     Last_Name__c: sharedForm.lastName,
     Email__c: sharedForm.email,
     Mobile_Number__c: sharedForm.mobile,
+    Mobile__c: sharedForm.mobile,
     Phone_Number__c: sharedForm.phone,
     Phone__c: sharedForm.phone,
     Street_Address__c: sharedForm.streetAddress,
@@ -542,6 +545,7 @@ const SalesforceTest = () => {
     lastName: sharedForm.lastName,
     email: sharedForm.email,
     mobileNumber: sharedForm.mobile,
+    mobile: sharedForm.mobile,
     phoneNumber: sharedForm.phone,
     phone: sharedForm.phone,
     streetAddress: sharedForm.streetAddress,
@@ -682,6 +686,16 @@ const SalesforceTest = () => {
       phone: sharedForm.phone,
     }),
     [sharedForm.phone],
+  );
+
+  const mobileOnlyPayload = useMemo(
+    () => ({
+      Mobile_Number__c: sharedForm.mobile,
+      Mobile__c: sharedForm.mobile,
+      mobileNumber: sharedForm.mobile,
+      mobile: sharedForm.mobile,
+    }),
+    [sharedForm.mobile],
   );
 
   return (
@@ -909,6 +923,12 @@ const SalesforceTest = () => {
           <div className="font-semibold">电话字段检查（仅显示将随注册传送的电话相关字段）</div>
           <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
             {JSON.stringify(phoneOnlyPayload, null, 2)}
+          </pre>
+        </div>
+        <div className="mt-3 rounded-md border bg-slate-50 p-3 text-sm">
+          <div className="font-semibold">手机字段检查（仅显示将随注册传送的手机相关字段）</div>
+          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+            {JSON.stringify(mobileOnlyPayload, null, 2)}
           </pre>
         </div>
 
