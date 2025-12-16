@@ -1,6 +1,6 @@
 // src/components/ProductRegistrationForm.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -459,7 +459,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
   };
 
   const runChainedSubmissionAndUpload = async () => {
-    setChainedStatus("步骤 1/2：通过 Callable 创建 Product_Registered__c...");
+    setChainedStatus("Step 1/2: create Product_Registered__c via callable...");
     setCallableResult("");
     setCallableUploadResult("");
     try {
@@ -468,14 +468,14 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
       const { success, salesforceId } = registrationResponse.data;
       if (!success || !salesforceId) {
-        throw new Error("submitProductRegistration 未返回 salesforceId");
+        throw new Error("submitProductRegistration did not return salesforceId");
       }
 
       setProofPayload((prev) => ({ ...prev, productRegisteredId: salesforceId }));
 
       const base64Data = proofPayload.base64Data || "";
       if (!base64Data) {
-        throw new Error("请先选择购买凭证文件或填写 base64 内容");
+        throw new Error("Please select a proof file or provide base64 data");
       }
 
       const uploadPayload: UploadProofPayload = {
@@ -484,14 +484,14 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
         productRegisteredId: salesforceId,
       };
 
-      setChainedStatus(`步骤 2/2：已获得 ${salesforceId}，准备上传购买凭证...`);
+      setChainedStatus(`Step 2/2: received ${salesforceId}, uploading proof...`);
       const uploadResponse = await uploadProofOfPurchaseFn(uploadPayload);
       setCallableUploadResult(JSON.stringify(uploadResponse.data, null, 2));
-      setChainedStatus("完成：已创建 Product_Registered__c 并上传购买凭证。");
+      setChainedStatus("Done: Product_Registered__c created and proof uploaded.");
     } catch (error: any) {
       const code = error?.code ?? "unknown";
       const message = error?.message ?? String(error);
-      setChainedStatus(`流程失败 (${code}): ${message}`);
+      setChainedStatus(`Flow failed (${code}): ${message}`);
     }
   };
 
@@ -512,7 +512,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const refreshCustomerJobStatus = async () => {
     if (!customerJobId) {
-      setCustomerJobStatus("请先提交以获得 jobId");
+      setCustomerJobStatus("Submit first to receive a jobId");
       return;
     }
     setCustomerJobStatus("Checking status...");
@@ -643,11 +643,14 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>Product Registration & Handover</DialogTitle>
+          <DialogDescription>
+            Complete the customer and vehicle details, then submit the registration, proof upload, and customer queue.
+          </DialogDescription>
         </DialogHeader>
 
         <div ref={printRef} className="space-y-6">
           <div className="rounded-md border p-4 bg-slate-50">
-            <div className="text-sm font-semibold">Vehicle Info (自动填充)</div>
+            <div className="text-sm font-semibold">Vehicle Info (auto-filled)</div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
               <div>
                 <Label>Chassis Number</Label>
@@ -668,7 +671,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
               <div>
                 <Label>Dealer (SAP code)</Label>
                 <Select
-                  value={sharedForm.dealershipCode}
+                  value={sharedForm.dealershipCode || undefined}
                   onValueChange={(v) => handleSharedChange("dealershipCode", v)}
                   disabled={!preferredDealershipValue}
                 >
@@ -684,14 +687,14 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                   </SelectContent>
                 </Select>
                 {!preferredDealershipValue && (
-                  <p className="text-xs text-amber-600 mt-1">Admin 未设置 SAP code 时允许手动选择。</p>
+                  <p className="text-xs text-amber-600 mt-1">Manual selection is allowed when no SAP code is set in Admin.</p>
                 )}
               </div>
             </div>
           </div>
 
           <div className="rounded-md border p-4">
-            <div className="text-sm font-semibold">客户信息</div>
+            <div className="text-sm font-semibold">Customer Information</div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <Label>First Name</Label>
@@ -702,7 +705,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                 <Input value={sharedForm.lastName} onChange={(e) => handleSharedChange("lastName", e.target.value)} />
               </div>
               <div className="md:col-span-2">
-                <Label>Email（必填）</Label>
+                <Label>Email (required)</Label>
                 <Input value={sharedForm.email} onChange={(e) => handleSharedChange("email", e.target.value)} placeholder="john@test.com" />
               </div>
               <div>
@@ -738,7 +741,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
               </div>
               <div>
                 <Label>State / Region</Label>
-                <Select value={sharedForm.regionCode} onValueChange={(v) => handleSharedChange("regionCode", v)}>
+                <Select value={sharedForm.regionCode || undefined} onValueChange={(v) => handleSharedChange("regionCode", v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select state / region" />
                   </SelectTrigger>
@@ -759,11 +762,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
           </div>
 
           <div className="rounded-md border p-4">
-            <div className="text-sm font-semibold">品牌与经销商</div>
+            <div className="text-sm font-semibold">Brand & Dealership</div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <Label>Brand</Label>
-                <Select value={sharedForm.brand} onValueChange={handleBrandChange}>
+                <Select value={sharedForm.brand || undefined} onValueChange={handleBrandChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select brand" />
                   </SelectTrigger>
@@ -778,7 +781,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
               </div>
               <div>
                 <Label>Model</Label>
-                <Select value={sharedForm.model} onValueChange={(v) => handleSharedChange("model", v)} disabled>
+                <Select value={sharedForm.model || undefined} onValueChange={(v) => handleSharedChange("model", v)} disabled>
                   <SelectTrigger className="bg-slate-100">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
@@ -790,12 +793,12 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-500 mt-1">Model 由库存自动填充。</p>
+                <p className="text-xs text-slate-500 mt-1">Model is auto-filled from inventory.</p>
               </div>
               <div>
                 <Label>Dealership（SAP code）</Label>
                 <Select
-                  value={sharedForm.dealershipCode}
+                  value={sharedForm.dealershipCode || undefined}
                   onValueChange={(v) => handleSharedChange("dealershipCode", v)}
                   disabled={Boolean(preferredDealershipValue)}
                 >
@@ -812,41 +815,41 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                 </Select>
                 <p className="text-xs text-slate-500 mt-1">
                   {preferredDealershipValue
-                    ? "Admin 已指定默认经销商，可直接使用"
-                    : "Admin 未指定时可手动选择"}
+                    ? "Admin has set a default dealership; it will be used automatically"
+                    : "If no default is set, you may choose manually"}
                 </p>
               </div>
             </div>
           </div>
 
           <div className="rounded-md border p-4 bg-white">
-            <div className="text-sm font-semibold">Firebase Callable：Product Registration & Proof Upload</div>
+            <div className="text-sm font-semibold">Firebase Callable: Product Registration & Proof Upload</div>
             <p className="text-xs text-muted-foreground mt-1">
-              使用当前表单生成 payload；State/Region 自动匹配 Salesforce 需要的前缀，购买凭证上传会使用返回的 Product_Registered__c Id。
+              Uses this form to build the payload; State/Region is automatically prefixed for Salesforce, and proof upload uses the returned Product_Registered__c Id.
             </p>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <Label>Product_Registered__c Id（自动填充）</Label>
+                <Label>Product_Registered__c Id (auto-filled)</Label>
                 <Input
                   value={proofPayload.productRegisteredId}
                   onChange={(e) => setProofPayload((prev) => ({ ...prev, productRegisteredId: e.target.value }))}
-                  placeholder="来自 submitProductRegistration 的 salesforceId"
+                  placeholder="salesforceId returned by submitProductRegistration"
                 />
               </div>
               <div>
-                <Label>凭证文件名</Label>
+                <Label>Proof file name</Label>
                 <Input
                   value={proofPayload.fileName}
                   onChange={(e) => setProofPayload((prev) => ({ ...prev, fileName: e.target.value }))}
                 />
               </div>
               <div>
-                <Label>选择凭证文件（会转 base64）</Label>
+                <Label>Select proof file (converted to base64)</Label>
                 <Input type="file" onChange={(e) => handleProofFileChange(e.target.files?.[0] ?? null)} />
                 <span className="text-xs text-muted-foreground">{proofFile?.name ?? "No file selected"}</span>
               </div>
               <div>
-                <Label>或直接粘贴 base64</Label>
+                <Label>Or paste base64 directly</Label>
                 <Textarea
                   rows={3}
                   value={proofPayload.base64Data}
@@ -856,34 +859,34 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
             </div>
 
             <div className="mt-3 rounded-md border bg-slate-50 p-3 text-sm">
-              <div className="font-semibold">电话字段检查</div>
+              <div className="font-semibold">Phone field preview</div>
               <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{JSON.stringify(phoneOnlyPayload, null, 2)}</pre>
             </div>
             <div className="mt-3 rounded-md border bg-slate-50 p-3 text-sm">
-              <div className="font-semibold">手机字段检查</div>
+              <div className="font-semibold">Mobile field preview</div>
               <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{JSON.stringify(mobileOnlyPayload, null, 2)}</pre>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">
               <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={runCallableSubmission} type="button">
-                仅提交 Product_Registered__c
+                Submit Product_Registered__c only
               </Button>
               <Button className="bg-purple-600 hover:bg-purple-700" onClick={runCallableUpload} type="button">
-                仅上传购买凭证
+                Upload proof only
               </Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={runChainedSubmissionAndUpload} type="button">
-                提交注册并上传凭证（串联）
+                Submit registration and upload proof (chained)
               </Button>
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <div className="text-sm font-semibold">submitProductRegistration 返回</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{callableResult || "等待提交"}</pre>
+                <div className="text-sm font-semibold">submitProductRegistration response</div>
+                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{callableResult || "Waiting to submit"}</pre>
               </div>
               <div>
-                <div className="text-sm font-semibold">uploadProofOfPurchase 返回</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{callableUploadResult || "等待上传"}</pre>
+                <div className="text-sm font-semibold">uploadProofOfPurchase response</div>
+                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{callableUploadResult || "Waiting to upload"}</pre>
                 {chainedStatus && <p className="mt-2 text-xs text-slate-700">{chainedStatus}</p>}
               </div>
             </div>
@@ -891,7 +894,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
           <div className="rounded-md border p-4 bg-white">
             <div className="text-sm font-semibold">Customer Details → Firebase Callable + Cloud Tasks</div>
-            <p className="text-xs text-muted-foreground mt-1">使用同一套字段；State_AU__c / State_NZ__c 使用无前缀的值。</p>
+            <p className="text-xs text-muted-foreground mt-1">Uses the same fields; State_AU__c / State_NZ__c expect unprefixed values.</p>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <Label>Origin_Type</Label>
@@ -917,21 +920,21 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
             <div className="mt-4 flex flex-wrap gap-3">
               <Button className="bg-blue-600 hover:bg-blue-700" onClick={submitCustomerDetails} type="button">
-                提交 Customer Details
+                Submit Customer Details
               </Button>
               <Button className="bg-slate-700 hover:bg-slate-800" onClick={refreshCustomerJobStatus} type="button">
-                查询队列状态
+                Check queue status
               </Button>
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <div className="text-sm font-semibold">enqueuePostCustomerDetails 返回</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{customerDetailsResult || "等待提交"}</pre>
+                <div className="text-sm font-semibold">enqueuePostCustomerDetails response</div>
+                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{customerDetailsResult || "Waiting to submit"}</pre>
               </div>
               <div>
-                <div className="text-sm font-semibold">getPostCustomerDetailsJob 返回</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{customerJobStatus || "等待查询"}</pre>
+                <div className="text-sm font-semibold">getPostCustomerDetailsJob response</div>
+                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{customerJobStatus || "Waiting to query"}</pre>
               </div>
             </div>
           </div>
@@ -941,7 +944,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
               Download PDF
             </Button>
             <Button className="bg-indigo-600 hover:bg-indigo-700" disabled={submitting || !canSubmitHandover()} onClick={handleSubmitAssist} type="button">
-              {submitting ? "Submitting..." : "保存 Handover 记录"}
+              {submitting ? "Submitting..." : "Save handover record"}
             </Button>
             {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
           </div>
