@@ -1,6 +1,3 @@
-+729
--585
-
 import { useMemo, useState } from "react";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
@@ -15,6 +12,7 @@ type ProductRegistrationData = {
   Email__c: string;
   Mobile_Number__c?: string;
   Phone_Number__c?: string;
+  Phone__c?: string;
   Street_Address__c?: string;
   Suburb__c?: string;
   Sync_with_SAP__c?: string;
@@ -36,6 +34,7 @@ type ProductRegistrationData = {
   email?: string;
   mobileNumber?: string;
   phoneNumber?: string;
+  phone?: string;
   streetAddress?: string;
   suburb?: string;
   syncWithSap?: string;
@@ -525,6 +524,7 @@ const SalesforceTest = () => {
     Email__c: sharedForm.email,
     Mobile_Number__c: sharedForm.mobile,
     Phone_Number__c: sharedForm.phone,
+    Phone__c: sharedForm.phone,
     Street_Address__c: sharedForm.streetAddress,
     Suburb__c: sharedForm.suburb,
     Sync_with_SAP__c: "true",
@@ -543,6 +543,7 @@ const SalesforceTest = () => {
     email: sharedForm.email,
     mobileNumber: sharedForm.mobile,
     phoneNumber: sharedForm.phone,
+    phone: sharedForm.phone,
     streetAddress: sharedForm.streetAddress,
     suburb: sharedForm.suburb,
     syncWithSap: "true",
@@ -672,6 +673,16 @@ const SalesforceTest = () => {
       setCustomerJobStatus(`Error (${code}): ${message}`);
     }
   };
+
+  const phoneOnlyPayload = useMemo(
+    () => ({
+      Phone_Number__c: sharedForm.phone,
+      Phone__c: sharedForm.phone,
+      phoneNumber: sharedForm.phone,
+      phone: sharedForm.phone,
+    }),
+    [sharedForm.phone],
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -892,6 +903,13 @@ const SalesforceTest = () => {
               onChange={(e) => setProofPayload((prev) => ({ ...prev, base64Data: e.target.value }))}
             />
           </label>
+        </div>
+
+        <div className="mt-3 rounded-md border bg-slate-50 p-3 text-sm">
+          <div className="font-semibold">电话字段检查（仅显示将随注册传送的电话相关字段）</div>
+          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+            {JSON.stringify(phoneOnlyPayload, null, 2)}
+          </pre>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
