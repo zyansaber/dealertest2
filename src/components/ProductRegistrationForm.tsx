@@ -239,6 +239,22 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const functions = useMemo(() => getFunctions(app, "us-central1"), []);
 
+const formatCallableError = (error: any) => {
+    const code = error?.code ?? "unknown";
+    const message = error?.message ?? String(error);
+    const details = error?.details ?? error?.rawError ?? error?.info ?? error?.response?.data;
+    const detailsText =
+      details && typeof details === "object"
+        ? JSON.stringify(details)
+        : details
+          ? String(details)
+          : null;
+    return {
+      code,
+      message: detailsText ? `${message}. Details: ${detailsText}` : message,
+    };
+  };
+
   const submitProductRegistrationFn = useMemo(
     () => httpsCallable<ProductRegistrationData, SubmitProductRegistrationResult>(functions, "submitProductRegistration"),
     [functions],
@@ -424,8 +440,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       setChainedStatus("Done: Product_Registered__c created and proof uploaded.");
       return { salesforceId };
     } catch (error: any) {
-      const code = error?.code ?? "unknown";
-      const message = error?.message ?? String(error);
+      const { code, message } = formatCallableError(error);
       setChainedStatus(`Flow failed (${code}): ${message}`);
       throw error;
     }
@@ -444,8 +459,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       const customerResponse = await submitCustomerDetails();
       setSubmitMsg(`All steps completed. Customer job status: ${customerResponse.status}`);
     } catch (error: any) {
-      const code = error?.code ?? "unknown";
-      const message = error?.message ?? String(error);
+      const { code, message } = formatCallableError(error);
       setSubmitMsg(`Submit failed (${code}): ${message}`);
     } finally {
       setSubmitting(false);
