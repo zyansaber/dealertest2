@@ -642,15 +642,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                   <SelectTrigger>
                     <SelectValue placeholder="Select state / region" />
                   </SelectTrigger>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>State / Region</Label>
-                <Select value={sharedForm.regionCode || undefined} onValueChange={(v) => handleSharedChange("regionCode", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select state / region" />
-                  </SelectTrigger>
                   <SelectContent>
                     {regionOptions.map((option) => (
                       <SelectItem key={`${option.productValue}-${option.customerValue}`} value={option.customerValue}>
