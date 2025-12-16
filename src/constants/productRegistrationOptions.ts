@@ -10,17 +10,14 @@ export type RegionOption = {
 };
 
 export const COUNTRY: Option[] = [
-  { label: "Select", value: "" },
   { label: "Australia", value: "AU" },
   { label: "New Zealand", value: "NZ" },
 ];
 
 export const EMPTY_STATE: RegionOption[] = [
-  { label: "Select", customerValue: "", productValue: "" },
 ];
 
 export const AU_STATE: RegionOption[] = [
-  { label: "Select", customerValue: "", productValue: "" },
   { label: "New South Wales", customerValue: "NSW", productValue: "AU-NSW" },
   { label: "Victoria", customerValue: "VIC", productValue: "AU-VIC" },
   { label: "Queensland", customerValue: "QLD", productValue: "AU-QLD" },
@@ -32,7 +29,6 @@ export const AU_STATE: RegionOption[] = [
 ];
 
 export const NZ_STATE: RegionOption[] = [
-  { label: "Select", customerValue: "", productValue: "" },
   { label: "Northland", customerValue: "NTL", productValue: "NZ-NTL" },
   { label: "Auckland", customerValue: "AUK", productValue: "NZ-AUK" },
   { label: "Waikato", customerValue: "WKO", productValue: "NZ-WKO" },
@@ -53,7 +49,6 @@ export const NZ_STATE: RegionOption[] = [
 ];
 
 export const REGENT_MODEL: Option[] = [
-  { label: "Select", value: "" },
   { label: "RDC196", value: "RDC196" },
   { label: "RDC206", value: "RDC206" },
   { label: "RDC210", value: "RDC210" },
@@ -66,7 +61,6 @@ export const REGENT_MODEL: Option[] = [
 ];
 
 export const SNOWY_MODEL: Option[] = [
-  { label: "Select", value: "" },
   { label: "SRC-14", value: "SRC14" },
   { label: "SRC-16", value: "SRC16" },
   { label: "SRC-17", value: "SRC17" },
@@ -110,7 +104,6 @@ export const SNOWY_MODEL: Option[] = [
 ];
 
 export const NEWGEN_MODEL: Option[] = [
-  { label: "Select", value: "" },
   { label: "NG13", value: "NG13" },
   { label: "NG15", value: "NG15" },
   { label: "NG17", value: "NG17" },
@@ -140,7 +133,6 @@ export const NEWGEN_MODEL: Option[] = [
 ];
 
 export const DEALERSHIP_PURCHASED_FROM: Option[] = [
-  { label: "Select", value: "" },
   { label: "Green RV - Forest Glen", value: "204642" },
   { label: "Green RV - Slacks Creek\t", value: "204670" },
   { label: "QCCC - Gympie", value: "3137" },
@@ -167,7 +159,6 @@ export const DEALERSHIP_PURCHASED_FROM: Option[] = [
 ];
 
 export const DEALERSHIP_PURCHASED_FROM_NEWGEN: Option[] = [
-  { label: "Select", value: "" },
   { label: "Newgen Caravan - Gympie", value: "3137" },
   { label: "Newgen Caravan - Newcastle", value: "3133" },
   { label: "Sherrif Caravans & Traliers - Prospect Vale", value: "204671" },
@@ -178,7 +169,6 @@ export const DEALERSHIP_PURCHASED_FROM_NEWGEN: Option[] = [
 ];
 
 export const DEALERSHIP_PURCHASED_FROM_SNOWY: Option[] = [
-  { label: "Select", value: "" },
   { label: "Green RV - Forest Glen", value: "204642" },
   { label: "Green RV - Slacks Creek\t", value: "204670" },
   { label: "Snowy River - Newcastle", value: "3133" },
@@ -208,7 +198,6 @@ export const DEALERSHIP_PURCHASED_FROM_SNOWY: Option[] = [
 ];
 
 export const DEALERSHIP_PURCHASED_FROM_REGENT: Option[] = [
-  { label: "Select", value: "" },
   { label: "Green RV - Forest Glen", value: "204642" },
   { label: "Green RV - Slacks Creek\t", value: "204670" },
   { label: "QCCC - Gympie", value: "3137" },
@@ -234,7 +223,6 @@ export const DEALERSHIP_PURCHASED_FROM_REGENT: Option[] = [
 ];
 
 export const BRAND_OPTIONS: Option[] = [
-  { label: "Select", value: "" },
   { label: "Snowy", value: "Snowy" },
   { label: "Newgen", value: "Newgen" },
   { label: "Regent", value: "Regent" },
