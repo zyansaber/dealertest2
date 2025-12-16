@@ -195,6 +195,7 @@ export const DEALERSHIP_PURCHASED_FROM_SNOWY: Option[] = [
   { label: "Snowy River Launceston", value: "3126" },
   { label: "Destiny RV - South Australia", value: "503257" },
   { label: "Snowy River Wangaratta", value: "504620" },
+  { label: "Newgen Caravan - Newcastle", value: "3133" },
 ];
 
 export const DEALERSHIP_PURCHASED_FROM_REGENT: Option[] = [
