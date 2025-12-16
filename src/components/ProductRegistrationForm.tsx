@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { app, saveHandover, subscribeDealerConfig } from "@/lib/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
@@ -189,7 +188,7 @@ const guessBrand = (model?: string | null) => {
     return "Snowy";
   }
   if (upper.startsWith("NG")) return "Newgen";
-  if (upper.startsWith("RD") || upper.startsWith("RC")) return "Regent";
+  if (upper.startsWith("1") || upper.startsWith("2")) return "Regent";
   return "";
 };
 
@@ -281,6 +280,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       brand: prev.brand || guessBrand(initial?.model),
     }));
   }, [initial?.chassis, initial?.model, initial?.vinnumber, initial?.handoverAt, preferredDealershipValue]);
+
+  useEffect(() => {
+    const guessed = guessBrand(sharedForm.model);
+    setSharedForm((prev) => (guessed && prev.brand !== guessed ? { ...prev, brand: guessed } : prev));
+  }, [sharedForm.model]);
 
   const regionOptions = useMemo(() => regionOptionsByCountry(sharedForm.country), [sharedForm.country]);
   const selectedRegion = useMemo(
@@ -451,7 +455,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
       const base64Data = proofPayload.base64Data || "";
       if (!base64Data) {
-        throw new Error("Please select a proof file or provide base64 data");
+        throw new Error("Please select a proof file");
       }
 
       const uploadPayload: UploadProofPayload = {
@@ -587,7 +591,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
+      <DialogContent className="max-w-6xl w-[1100px]">
         <DialogHeader>
           <DialogTitle>Product Registration & Handover</DialogTitle>
           <DialogDescription>
@@ -598,7 +602,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
         <div ref={printRef} className="space-y-6">
           <div className="rounded-md border p-4 bg-slate-50">
             <div className="text-sm font-semibold">Vehicle Info (auto-filled)</div>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <div>
                 <Label>Chassis Number</Label>
                 <Input value={sharedForm.chassisNumber} readOnly disabled className="bg-slate-100" />
@@ -773,17 +777,8 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
             <div className="text-sm font-semibold">Proof of purchase</div>
             <p className="text-xs text-muted-foreground mt-1">Registration and proof upload will run together after clicking Submit.</p>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <Label>Product_Registered__c Id (auto-filled)</Label>
-                <Input value={proofPayload.productRegisteredId} readOnly placeholder="Filled after submit" />
-                <p className="text-xs text-slate-500 mt-1">Returned from registration and forwarded automatically.</p>
-              </div>
-              <div>
-                <Label>Proof file name</Label>
-                <Input value={proofPayload.fileName} onChange={(e) => setProofPayload((prev) => ({ ...prev, fileName: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Select proof file (converted to base64)</Label>
+              <div className="md:col-span-2">
+                <Label>Select proof file</Label>
                 <Input type="file" onChange={(e) => handleProofFileChange(e.target.files?.[0] ?? null)} />
                 <span className="text-xs text-muted-foreground">{proofFile?.name ?? "No file selected"}</span>
                 {filePreviewUrl && (
@@ -796,14 +791,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                     )}
                   </div>
                 )}
-              </div>
-              <div>
-                <Label>Or paste base64 directly</Label>
-                <Textarea
-                  rows={3}
-                  value={proofPayload.base64Data}
-                  onChange={(e) => setProofPayload((prev) => ({ ...prev, base64Data: e.target.value }))}
-                />
+                <p className="text-xs text-slate-500 mt-1">File name and registration id are handled automatically.</p>
               </div>
             </div>
 
