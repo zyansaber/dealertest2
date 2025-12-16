@@ -220,20 +220,18 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     vin: initial?.vinnumber ?? "",
   });
 
-  const [customerExtras, setCustomerExtras] = useState({
-    originType: "Z01",
-    lifecycleStage: "Customer",
-    formNameSapSync: "[SNOWYRIVER] Product Registration",
-    formsSubmitted: "Product Registration Form",
-    source: "webapp",
-  });
+  const customerExtras = useMemo(
+    () => ({
+      originType: "Z01",
+      lifecycleStage: "Customer",
+      formNameSapSync: "[SNOWYRIVER] Product Registration",
+      formsSubmitted: "Product Registration Form",
+      source: "webapp",
+    }),
+    [],
+  );
 
-  const [callableResult, setCallableResult] = useState<string>("");
-  const [callableUploadResult, setCallableUploadResult] = useState<string>("");
   const [chainedStatus, setChainedStatus] = useState<string>("");
-  const [customerDetailsResult, setCustomerDetailsResult] = useState<string>("");
-  const [customerJobId, setCustomerJobId] = useState<string>("");
-  const [customerJobStatus, setCustomerJobStatus] = useState<string>("");
 
   const [proofPayload, setProofPayload] = useState<UploadProofPayload>({
     fileName: "proof-of-purchase.pdf",
@@ -241,6 +239,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     productRegisteredId: "",
   });
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
@@ -260,11 +259,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const enqueueCustomerDetailsFn = useMemo(
     () => httpsCallable<CustomerDetailsPayload, CustomerDetailsJob>(functions, "enqueuePostCustomerDetails"),
-    [functions],
-  );
-
-  const getCustomerDetailsJobFn = useMemo(
-    () => httpsCallable<{ jobId: string }, CustomerDetailsJob>(functions, "getPostCustomerDetailsJob"),
     [functions],
   );
 
@@ -364,10 +358,22 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const handleProofFileChange = async (file: File | null) => {
     setProofFile(file);
-    if (!file) return;
+    if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+    if (!file) {
+      setFilePreviewUrl(null);
+      setProofPayload((prev) => ({ ...prev, base64Data: "" }));
+      return;
+    }
     const base64Data = await toBase64(file);
+    setFilePreviewUrl(URL.createObjectURL(file));
     setProofPayload((prev) => ({ ...prev, base64Data, fileName: file.name }));
   };
+
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+    };
+  }, [filePreviewUrl]);
 
   const buildProductPayload = (): ProductRegistrationData => ({
     First_Name__c: sharedForm.firstName,
@@ -431,40 +437,10 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     chassisNumber: sharedForm.chassisNumber,
   });
 
-  const runCallableSubmission = async () => {
-    setCallableResult("Submitting via Firebase Function...");
-    try {
-      const response = await submitProductRegistrationFn(buildProductPayload());
-      setCallableResult(JSON.stringify(response.data, null, 2));
-      if (response.data.salesforceId) {
-        setProofPayload((prev) => ({ ...prev, productRegisteredId: response.data.salesforceId ?? "" }));
-      }
-    } catch (error: any) {
-      const code = error?.code ?? "unknown";
-      const message = error?.message ?? String(error);
-      setCallableResult(`Error (${code}): ${message}`);
-    }
-  };
-
-  const runCallableUpload = async () => {
-    setCallableUploadResult("Uploading via Firebase Function...");
-    try {
-      const response = await uploadProofOfPurchaseFn(proofPayload);
-      setCallableUploadResult(JSON.stringify(response.data, null, 2));
-    } catch (error: any) {
-      const code = error?.code ?? "unknown";
-      const message = error?.message ?? String(error);
-      setCallableUploadResult(`Error (${code}): ${message}`);
-    }
-  };
-
   const runChainedSubmissionAndUpload = async () => {
     setChainedStatus("Step 1/2: create Product_Registered__c via callable...");
-    setCallableResult("");
-    setCallableUploadResult("");
     try {
       const registrationResponse = await submitProductRegistrationFn(buildProductPayload());
-      setCallableResult(JSON.stringify(registrationResponse.data, null, 2));
 
       const { success, salesforceId } = registrationResponse.data;
       if (!success || !salesforceId) {
@@ -485,66 +461,37 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       };
 
       setChainedStatus(`Step 2/2: received ${salesforceId}, uploading proof...`);
-      const uploadResponse = await uploadProofOfPurchaseFn(uploadPayload);
-      setCallableUploadResult(JSON.stringify(uploadResponse.data, null, 2));
+      await uploadProofOfPurchaseFn(uploadPayload);
       setChainedStatus("Done: Product_Registered__c created and proof uploaded.");
+      return { salesforceId };
     } catch (error: any) {
       const code = error?.code ?? "unknown";
       const message = error?.message ?? String(error);
       setChainedStatus(`Flow failed (${code}): ${message}`);
+      throw error;
     }
   };
 
   const submitCustomerDetails = async () => {
-    setCustomerDetailsResult("Submitting to Firebase queue...");
+    const response = await enqueueCustomerDetailsFn(buildCustomerPayload());
+    return response.data;
+  };
+
+  const handleCombinedSubmit = async () => {
+    setSubmitting(true);
+    setSubmitMsg("Submitting registration, proof, and customer details...");
     try {
-      const response = await enqueueCustomerDetailsFn(buildCustomerPayload());
-      const { jobId, status } = response.data;
-      setCustomerDetailsResult(JSON.stringify(response.data, null, 2));
-      setCustomerJobId(jobId);
-      setCustomerJobStatus(status);
+      await runChainedSubmissionAndUpload();
+      const customerResponse = await submitCustomerDetails();
+      setSubmitMsg(`All steps completed. Customer job status: ${customerResponse.status}`);
     } catch (error: any) {
       const code = error?.code ?? "unknown";
       const message = error?.message ?? String(error);
-      setCustomerDetailsResult(`Error (${code}): ${message}`);
+      setSubmitMsg(`Submit failed (${code}): ${message}`);
+    } finally {
+      setSubmitting(false);
     }
   };
-
-  const refreshCustomerJobStatus = async () => {
-    if (!customerJobId) {
-      setCustomerJobStatus("Submit first to receive a jobId");
-      return;
-    }
-    setCustomerJobStatus("Checking status...");
-    try {
-      const response = await getCustomerDetailsJobFn({ jobId: customerJobId });
-      setCustomerJobStatus(JSON.stringify(response.data, null, 2));
-    } catch (error: any) {
-      const code = error?.code ?? "unknown";
-      const message = error?.message ?? String(error);
-      setCustomerJobStatus(`Error (${code}): ${message}`);
-    }
-  };
-
-  const phoneOnlyPayload = useMemo(
-    () => ({
-      Phone_Number__c: sharedForm.phone,
-      Phone__c: sharedForm.phone,
-      phoneNumber: sharedForm.phone,
-      phone: sharedForm.phone,
-    }),
-    [sharedForm.phone],
-  );
-
-  const mobileOnlyPayload = useMemo(
-    () => ({
-      Mobile_Number__c: sharedForm.mobile,
-      Mobile__c: sharedForm.mobile,
-      mobileNumber: sharedForm.mobile,
-      mobile: sharedForm.mobile,
-    }),
-    [sharedForm.mobile],
-  );
 
   const canSubmitHandover = () => {
     const dealerSlug = (initial?.dealerSlug || "").trim();
@@ -823,30 +770,32 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
           </div>
 
           <div className="rounded-md border p-4 bg-white">
-            <div className="text-sm font-semibold">Firebase Callable: Product Registration & Proof Upload</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Uses this form to build the payload; State/Region is automatically prefixed for Salesforce, and proof upload uses the returned Product_Registered__c Id.
-            </p>
+            <div className="text-sm font-semibold">Proof of purchase</div>
+            <p className="text-xs text-muted-foreground mt-1">Registration and proof upload will run together after clicking Submit.</p>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <Label>Product_Registered__c Id (auto-filled)</Label>
-                <Input
-                  value={proofPayload.productRegisteredId}
-                  onChange={(e) => setProofPayload((prev) => ({ ...prev, productRegisteredId: e.target.value }))}
-                  placeholder="salesforceId returned by submitProductRegistration"
-                />
+                <Input value={proofPayload.productRegisteredId} readOnly placeholder="Filled after submit" />
+                <p className="text-xs text-slate-500 mt-1">Returned from registration and forwarded automatically.</p>
               </div>
               <div>
                 <Label>Proof file name</Label>
-                <Input
-                  value={proofPayload.fileName}
-                  onChange={(e) => setProofPayload((prev) => ({ ...prev, fileName: e.target.value }))}
-                />
+                <Input value={proofPayload.fileName} onChange={(e) => setProofPayload((prev) => ({ ...prev, fileName: e.target.value }))} />
               </div>
               <div>
                 <Label>Select proof file (converted to base64)</Label>
                 <Input type="file" onChange={(e) => handleProofFileChange(e.target.files?.[0] ?? null)} />
                 <span className="text-xs text-muted-foreground">{proofFile?.name ?? "No file selected"}</span>
+                {filePreviewUrl && (
+                  <div className="mt-2 rounded border bg-slate-50 p-2">
+                    <div className="text-xs font-semibold">File preview</div>
+                    {proofFile?.type?.startsWith("image/") ? (
+                      <img src={filePreviewUrl} alt="Proof preview" className="mt-2 max-h-48 w-full object-contain" />
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-600">Preview available after selection (non-image files will download when opened).</p>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <Label>Or paste base64 directly</Label>
@@ -858,85 +807,19 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
               </div>
             </div>
 
-            <div className="mt-3 rounded-md border bg-slate-50 p-3 text-sm">
-              <div className="font-semibold">Phone field preview</div>
-              <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{JSON.stringify(phoneOnlyPayload, null, 2)}</pre>
-            </div>
-            <div className="mt-3 rounded-md border bg-slate-50 p-3 text-sm">
-              <div className="font-semibold">Mobile field preview</div>
-              <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{JSON.stringify(mobileOnlyPayload, null, 2)}</pre>
-            </div>
-
             <div className="mt-4 flex flex-wrap gap-3">
-              <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={runCallableSubmission} type="button">
-                Submit Product_Registered__c only
-              </Button>
-              <Button className="bg-purple-600 hover:bg-purple-700" onClick={runCallableUpload} type="button">
-                Upload proof only
-              </Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={runChainedSubmissionAndUpload} type="button">
-                Submit registration and upload proof (chained)
+              <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting} onClick={handleCombinedSubmit} type="button">
+                {submitting ? "Submitting..." : "Submit"}
               </Button>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <div className="text-sm font-semibold">submitProductRegistration response</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{callableResult || "Waiting to submit"}</pre>
+            {submitMsg && (
+              <div className="mt-3 rounded-md border bg-slate-50 p-3 text-xs text-slate-800">
+                <div className="font-semibold">Submit status</div>
+                <p className="mt-1 whitespace-pre-wrap break-words">{submitMsg}</p>
+                {chainedStatus && <p className="mt-1 text-slate-600">{chainedStatus}</p>}
               </div>
-              <div>
-                <div className="text-sm font-semibold">uploadProofOfPurchase response</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{callableUploadResult || "Waiting to upload"}</pre>
-                {chainedStatus && <p className="mt-2 text-xs text-slate-700">{chainedStatus}</p>}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-md border p-4 bg-white">
-            <div className="text-sm font-semibold">Customer Details → Firebase Callable + Cloud Tasks</div>
-            <p className="text-xs text-muted-foreground mt-1">Uses the same fields; State_AU__c / State_NZ__c expect unprefixed values.</p>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <Label>Origin_Type</Label>
-                <Input value={customerExtras.originType} onChange={(e) => setCustomerExtras((prev) => ({ ...prev, originType: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Lifecycle_Stage</Label>
-                <Input value={customerExtras.lifecycleStage} onChange={(e) => setCustomerExtras((prev) => ({ ...prev, lifecycleStage: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Form_Name_SAP_Sync</Label>
-                <Input value={customerExtras.formNameSapSync} onChange={(e) => setCustomerExtras((prev) => ({ ...prev, formNameSapSync: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Forms_Submitted</Label>
-                <Input value={customerExtras.formsSubmitted} onChange={(e) => setCustomerExtras((prev) => ({ ...prev, formsSubmitted: e.target.value }))} />
-              </div>
-              <div>
-                <Label>source</Label>
-                <Input value={customerExtras.source} onChange={(e) => setCustomerExtras((prev) => ({ ...prev, source: e.target.value }))} />
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Button className="bg-blue-600 hover:bg-blue-700" onClick={submitCustomerDetails} type="button">
-                Submit Customer Details
-              </Button>
-              <Button className="bg-slate-700 hover:bg-slate-800" onClick={refreshCustomerJobStatus} type="button">
-                Check queue status
-              </Button>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <div className="text-sm font-semibold">enqueuePostCustomerDetails response</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{customerDetailsResult || "Waiting to submit"}</pre>
-              </div>
-              <div>
-                <div className="text-sm font-semibold">getPostCustomerDetailsJob response</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded bg-slate-100 p-3 text-xs text-slate-800">{customerJobStatus || "Waiting to query"}</pre>
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
