@@ -19,6 +19,7 @@ import {
   dealerNameToSlug
 } from "@/lib/firebase";
 import { isDealerGroup } from "@/types/dealer";
+import { ALL_DEALERSHIP_OPTIONS } from "@/constants/productRegistrationOptions";
 
 export default function Admin() {
   const [dealerConfigs, setDealerConfigs] = useState<any>({});
@@ -157,6 +158,21 @@ export default function Admin() {
     } catch (error) {
       console.error("Failed to remove:", error);
       toast.error("Failed to remove. Please try again.");
+    }
+  };
+
+  const updateProductRegistrationDealerName = async (dealerSlug: string, value: string) => {
+    const config = dealerConfigs[dealerSlug];
+    if (!config) return;
+    try {
+      await setDealerConfig(dealerSlug, {
+        ...config,
+        productRegistrationDealerName: value,
+      });
+      toast.success("Product Registration dealer saved");
+    } catch (error) {
+      console.error("Failed to save product registration dealer:", error);
+      toast.error("Failed to save dealer name. Please try again.");
     }
   };
 
@@ -353,7 +369,23 @@ export default function Admin() {
                                 Regenerate
                               </Button>
                             </div>
-                            
+
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                              <Label className="text-sm font-medium min-w-[240px]">Product Registration Form 所用 dealername</Label>
+                              <select
+                                className="border border-slate-200 rounded px-3 py-2 text-sm flex-1"
+                                value={config.productRegistrationDealerName || ""}
+                                onChange={(e) => updateProductRegistrationDealerName(dealerSlug, e.target.value)}
+                              >
+                                <option value="">Select</option>
+                                {ALL_DEALERSHIP_OPTIONS.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
                             <div className="flex items-center gap-2">
                               <Label className="text-sm font-medium">Dealer URL:</Label>
                               <div className="flex-1 flex items-center gap-2">
