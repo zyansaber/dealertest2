@@ -100,7 +100,7 @@ const toOptimizedBase64 = async (file: File) => {
   });
 };
 
-const normalizeText = (value: string) => value.toLowerCase();
+const normalizeText = (value: string | null | undefined) => (value ?? "").toString().toLowerCase();
 
 const keywordsFromText = (value: string) =>
   normalizeText(value)
@@ -150,12 +150,14 @@ const rankShows = (query: string, shows: FinanceShowRecord[]) => {
   return ranked.length ? ranked : shows.slice(0, 6);
 };
 
-const findOrdersForShowIds = (orders: InternalSalesOrderRecord[], showIds: string[]) => {
-  const normalizedIds = showIds.map((id) => id.toLowerCase()).filter(Boolean);
+const findOrdersForShowIds = (orders: InternalSalesOrderRecord[], showIds: (string | undefined)[]) => {
+  const normalizedIds = showIds
+    .map((id) => (id ?? "").toString().toLowerCase())
+    .filter((value) => Boolean(value.trim()));
   if (!normalizedIds.length) return [] as InternalSalesOrderRecord[];
 
   return orders.filter((order) => {
-    const candidate = (order.showId || order.showI || "").toLowerCase();
+    const candidate = `${order.showId || order.showI || ""}`.toLowerCase();
     return candidate && normalizedIds.includes(candidate);
   });
 };
@@ -420,66 +422,80 @@ const FinanceChatPlayground = () => {
 
   const handleQuickFill = (text: string) => setInput(text);
 
-  const renderMessage = (message: ChatMessage) => (
-    <div
-      key={message.id}
-      className={`flex flex-col gap-2 rounded-2xl border border-white/5 px-3 py-2 shadow-sm backdrop-blur ${
-        message.role === "assistant" ? "bg-white/5" : "bg-emerald-500/10"
-      }`}
-    >
-      <div className="flex items-center gap-2 text-xs text-slate-300">
-        {message.role === "assistant" ? (
-          <Bot className="h-4 w-4 text-emerald-300" />
-        ) : (
-          <MessageCircle className="h-4 w-4 text-sky-300" />
+  const renderMessage = (message: ChatMessage) => {
+    const isAssistant = message.role === "assistant";
+
+    return (
+      <div key={message.id} className={`flex w-full ${isAssistant ? "justify-start" : "justify-end"}`}>
+        {isAssistant && (
+          <div className="mr-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200">
+            <Bot className="h-4 w-4" />
+          </div>
         )}
-        <span>{message.role === "assistant" ? "财务 AI" : "你"}</span>
-      </div>
-      <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-50">{message.content}</div>
-      {message.ocrText && (
-        <div className="rounded-xl border border-dashed border-emerald-400/40 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-100">
-          OCR: {message.ocrText}
+
+        <div
+          className={`max-w-[78%] space-y-2 rounded-2xl border px-4 py-3 shadow-sm ${
+            isAssistant
+              ? "border-slate-100 bg-white text-slate-900"
+              : "border-sky-100 bg-sky-50 text-slate-900"
+          }`}
+        >
+          <div className="text-xs font-semibold text-slate-500">
+            {isAssistant ? "财务 AI" : "你"}
+          </div>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">{message.content}</div>
+
+          {message.ocrText && (
+            <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              OCR: {message.ocrText}
+            </div>
+          )}
+
+          {message.imageUrl && (
+            <img
+              src={message.imageUrl}
+              alt="attachment"
+              className="max-h-56 w-auto rounded-xl border border-slate-100 object-contain"
+            />
+          )}
         </div>
-      )}
-      {message.imageUrl && (
-        <img
-          src={message.imageUrl}
-          alt="attachment"
-          className="max-h-52 w-auto rounded-xl border border-white/10 object-contain"
-        />
-      )}
-    </div>
-  );
+
+        {!isAssistant && (
+          <div className="ml-2 mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600 ring-1 ring-sky-200">
+            <MessageCircle className="h-4 w-4" />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#0b1224,_#020617)] text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-12 pt-8">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/5 bg-white/5 px-4 py-3 shadow-lg backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/40">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200">
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-white">Finance AI Playground</p>
-              <p className="text-xs text-slate-200">
-                独立测试页 · 使用 Gemini + OCR 连接 Snowy River Show finance 数据库
-              </p>
+              <p className="text-base font-semibold text-slate-900">Finance AI 对话测试页</p>
+              <p className="text-xs text-slate-500">白色气泡聊天模式 · Gemini + OCR · Snowy River finance 数据</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge variant="outline" className="border-emerald-400/60 text-emerald-100">
+            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
               数据: {summary.expenses} 费用 / {summary.internalSalesOrders} internalSalesOrders / {summary.shows} shows
             </Badge>
             <Badge
               variant="outline"
-              className={`border-white/20 ${apiKey ? "text-white" : "border-red-500/50 text-red-100"}`}
+              className={`border-slate-200 ${apiKey ? "bg-white text-slate-700" : "border-red-200 bg-red-50 text-red-700"}`}
             >
               {apiKey ? "Gemini 已配置" : "缺少 VITE_GEMINI_API_KEY"}
             </Badge>
             <Button
               size="sm"
               variant="outline"
-              className="gap-2 border-white/20 text-white"
+              className="gap-2 border-slate-200 text-slate-800"
               onClick={loadData}
               disabled={dataStatus === "loading"}
             >
@@ -489,33 +505,33 @@ const FinanceChatPlayground = () => {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-          <Card className="border-white/5 bg-white/5 shadow-2xl backdrop-blur">
+        <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
+          <Card className="border-slate-200 bg-white shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg text-white">
-                <Bot className="h-5 w-5 text-emerald-300" /> 聊天区
+              <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
+                <Bot className="h-5 w-5 text-emerald-500" /> 聊天区
               </CardTitle>
             </CardHeader>
             <CardContent className="flex h-[70vh] flex-col gap-3">
-              <ScrollArea className="h-full rounded-2xl border border-white/5 bg-slate-950/40 p-3">
-                <div ref={scrollRef} className="flex max-h-full flex-col gap-3 overflow-y-auto pr-2">
+              <ScrollArea className="h-full rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div ref={scrollRef} className="flex max-h-full flex-col gap-4 overflow-y-auto pr-2">
                   {messages.map((message) => renderMessage(message))}
                 </div>
               </ScrollArea>
 
               {attachment && (
-                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-50">
+                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
                   <ImageIcon className="mt-1 h-4 w-4" />
                   <div className="flex-1 space-y-1">
                     <p className="font-medium">已附加的票据/照片</p>
-                    <p className="text-xs text-emerald-100">{attachment.file.name}</p>
+                    <p className="text-xs text-emerald-700">{attachment.file.name}</p>
                     {attachment.ocrText && (
-                      <div className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-white">
+                      <div className="rounded-lg border border-emerald-100 bg-white px-2 py-1 text-xs text-emerald-800">
                         OCR: {attachment.ocrText}
                       </div>
                     )}
                     {ocrStatus === "scanning" && (
-                      <div className="flex items-center gap-2 text-xs text-emerald-100">
+                      <div className="flex items-center gap-2 text-xs text-emerald-700">
                         <Loader2 className="h-3 w-3 animate-spin" /> OCR 处理中…
                       </div>
                     )}
@@ -523,18 +539,18 @@ const FinanceChatPlayground = () => {
                   <img
                     src={attachment.previewUrl}
                     alt="attachment preview"
-                    className="h-20 w-20 rounded-lg border border-white/10 object-cover"
+                    className="h-20 w-20 rounded-lg border border-emerald-100 object-cover"
                   />
                 </div>
               )}
 
-              <div className="space-y-3 rounded-2xl border border-white/5 bg-slate-950/50 p-3 shadow-inner">
-                <div className="flex flex-wrap gap-2 text-xs text-slate-300">
-                  <span className="font-semibold text-white">快捷示例:</span>
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-inner">
+                <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                  <span className="font-semibold text-slate-800">快捷示例:</span>
                   <Button
                     size="sm"
                     variant="secondary"
-                    className="h-8 rounded-full bg-white/10 text-xs text-white"
+                    className="h-8 rounded-full bg-white text-xs text-slate-800 shadow-sm"
                     onClick={() =>
                       handleQuickFill("我在展会租赁摊位和广告，需要报销，请帮我找对应 glCode 并标注 internalSalesOrderNumber")
                     }
@@ -544,7 +560,7 @@ const FinanceChatPlayground = () => {
                   <Button
                     size="sm"
                     variant="secondary"
-                    className="h-8 rounded-full bg-white/10 text-xs text-white"
+                    className="h-8 rounded-full bg-white text-xs text-slate-800 shadow-sm"
                     onClick={() =>
                       handleQuickFill("我拍了一张维修服务的发票，帮我归类费用并告诉我需要哪个 show 的 internalSalesOrderNumber")
                     }
@@ -557,16 +573,16 @@ const FinanceChatPlayground = () => {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="描述用户需求，或者上传票据后直接发送"
-                  className="min-h-[110px] resize-none border-white/10 bg-slate-900/60 text-white placeholder:text-slate-400"
+                  className="min-h-[110px] resize-none border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"
                   disabled={loading}
                 />
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs text-slate-200">
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
                     <Button
                       type="button"
                       variant="outline"
-                      className="gap-2 border-white/20 text-white"
+                      className="gap-2 border-slate-200 text-slate-800"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={loading}
                     >
@@ -579,13 +595,13 @@ const FinanceChatPlayground = () => {
                       className="hidden"
                       onChange={handleFileChange}
                     />
-                    <div className="flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-[11px] text-slate-200">
+                    <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] text-slate-700">
                       <Database className="h-3.5 w-3.5" /> finance 数据来自 show Firebase
                     </div>
                   </div>
                   <Button
                     type="button"
-                    className="gap-2 bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
+                    className="gap-2 bg-emerald-500 text-white shadow-md shadow-emerald-200 hover:bg-emerald-400"
                     onClick={handleSend}
                     disabled={loading || (!input.trim() && !attachment?.ocrText)}
                   >
@@ -597,85 +613,85 @@ const FinanceChatPlayground = () => {
           </Card>
 
           <div className="space-y-3">
-            <Card className="border-white/5 bg-white/5 shadow-xl backdrop-blur">
+            <Card className="border-slate-200 bg-white shadow-sm">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base text-white">
-                  <Database className="h-4 w-4 text-emerald-300" /> 数据概览
+                <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                  <Database className="h-4 w-4 text-emerald-500" /> 数据概览
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm text-slate-100">
-                <div className="flex flex-wrap gap-2 text-xs text-slate-200">
-                  <Badge variant="secondary" className="bg-white/10 text-white">
+              <CardContent className="space-y-3 text-sm text-slate-800">
+                <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                  <Badge variant="secondary" className="bg-slate-100 text-slate-800">
                     费用: {summary.expenses}
                   </Badge>
-                  <Badge variant="secondary" className="bg-white/10 text-white">
+                  <Badge variant="secondary" className="bg-slate-100 text-slate-800">
                     internalSalesOrders: {summary.internalSalesOrders}
                   </Badge>
-                  <Badge variant="secondary" className="bg-white/10 text-white">
+                  <Badge variant="secondary" className="bg-slate-100 text-slate-800">
                     shows: {summary.shows}
                   </Badge>
                   {dataStatus === "loading" && (
-                    <span className="flex items-center gap-2 text-emerald-100">
+                    <span className="flex items-center gap-2 text-emerald-700">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" /> 数据同步中…
                     </span>
                   )}
                   {dataStatus === "error" && (
-                    <span className="text-red-200">数据加载失败：{dataError}</span>
+                    <span className="text-red-600">数据加载失败：{dataError}</span>
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-3">
-                  <p className="mb-2 text-xs font-semibold text-white">Top 费用匹配</p>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="mb-2 text-xs font-semibold text-slate-900">Top 费用匹配</p>
                   {visibleExpenses.length ? (
                     <div className="space-y-2">
                       {visibleExpenses.map((expense) => (
                         <div
                           key={expense.id}
-                          className="rounded-xl border border-white/5 bg-white/5 p-2 text-xs text-slate-100"
+                          className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-700"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-semibold text-white">{expense.name || "未命名"}</span>
+                            <span className="font-semibold text-slate-900">{expense.name || "未命名"}</span>
                             {expense.glCode ? (
-                              <Badge className="bg-emerald-600 text-xs">glCode: {expense.glCode}</Badge>
+                              <Badge className="bg-emerald-500 text-xs text-white">glCode: {expense.glCode}</Badge>
                             ) : (
-                              <Badge variant="outline" className="border-amber-400/60 text-amber-100">
+                              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">
                                 glCode 未填写
                               </Badge>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-300">{expense.category}</p>
-                          <p className="text-[11px] text-slate-400">{expense.contains || "无关键词"}</p>
+                          <p className="text-[11px] text-slate-500">{expense.category}</p>
+                          <p className="text-[11px] text-slate-500">{expense.contains || "无关键词"}</p>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400">输入一些描述以查看推荐费用。</p>
+                    <p className="text-xs text-slate-500">输入一些描述以查看推荐费用。</p>
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-3">
-                  <p className="mb-2 text-xs font-semibold text-white">可能的展会 / Internal Sales Orders</p>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="mb-2 text-xs font-semibold text-slate-900">可能的展会 / Internal Sales Orders</p>
                   {visibleShows.length ? (
                     <div className="space-y-2">
                       {visibleShows.map((show) => (
                         <div
                           key={show.id}
-                          className="rounded-xl border border-white/5 bg-white/5 p-2 text-xs text-slate-100"
+                          className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-700"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-semibold text-white">{show.name || "未命名 show"}</span>
-                            <Badge variant="outline" className="border-emerald-300/60 text-emerald-100">
+                            <span className="font-semibold text-slate-900">{show.name || "未命名 show"}</span>
+                            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
                               showId: {show.id}
                             </Badge>
                           </div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-300">
+                          <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
                             {show.siteLocation && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
                                 <MapPin className="h-3 w-3" /> {show.siteLocation}
                               </span>
                             )}
                             {(show.startDate || show.finishDate) && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1">
                                 <FileText className="h-3 w-3" />
                                 {[show.startDate, show.finishDate].filter(Boolean).join(" ~ ")}
                               </span>
@@ -688,10 +704,10 @@ const FinanceChatPlayground = () => {
                                 .map((order) => (
                                   <div
                                     key={order.id}
-                                    className="flex items-center justify-between rounded-lg bg-black/30 px-2 py-1 text-[11px] text-slate-200"
+                                    className="flex items-center justify-between rounded-lg bg-slate-100 px-2 py-1 text-[11px] text-slate-700"
                                   >
                                     <span>internalSalesOrderNumber</span>
-                                    <span className="font-mono text-xs text-emerald-200">
+                                    <span className="font-mono text-xs text-emerald-700">
                                       {order.internalSalesOrderNumber || order.orderNumber || "缺失"}
                                     </span>
                                   </div>
@@ -702,19 +718,19 @@ const FinanceChatPlayground = () => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400">提供 show 名称或地点以获取匹配。</p>
+                    <p className="text-xs text-slate-500">提供 show 名称或地点以获取匹配。</p>
                   )}
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-white/5 bg-white/5 shadow-xl backdrop-blur">
+            <Card className="border-slate-200 bg-white shadow-sm">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base text-white">
-                  <Sparkles className="h-4 w-4 text-emerald-300" /> 使用说明
+                <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                  <Sparkles className="h-4 w-4 text-emerald-500" /> 使用说明
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm text-slate-100">
+              <CardContent className="space-y-2 text-sm text-slate-700">
                 <p>· 这是一个独立测试页，不需要登录，直接访问即可。</p>
                 <p>· 支持文本描述 + 图片 OCR，Gemini 会综合判断对应的 finance/expenses 条目。</p>
                 <p>· 想获取 internalSalesOrderNumber，请在输入中提供 show 名称、地点或时间。</p>
