@@ -236,6 +236,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const submittedDealerCodeRef = useRef<string>("");
 
   const functions = useMemo(() => getFunctions(app, "us-central1"), []);
 
@@ -318,6 +319,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     return sharedForm.dealershipCode || "Not set";
   }, [sharedForm.dealershipCode]);
 
+  const withDealerCodeNote = (message: string) => {
+    const dealerCode = submittedDealerCodeRef.current || sharedForm.dealershipCode || "not set";
+    return `${message} (Dealer SAP code: ${dealerCode})`;
+  };
+  
   const toBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -464,14 +470,15 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const handleCombinedSubmit = async () => {
     setSubmitting(true);
-    setSubmitMsg("Submitting registration, proof, and customer details...");
+    submittedDealerCodeRef.current = sharedForm.dealershipCode;
+    setSubmitMsg(withDealerCodeNote("Submitting registration, proof, and customer details..."));
     try {
       await runChainedSubmissionAndUpload();
       const customerResponse = await submitCustomerDetails();
-      setSubmitMsg(`All steps completed. Customer job status: ${customerResponse.status}`);
+      setSubmitMsg(withDealerCodeNote(`All steps completed. Customer job status: ${customerResponse.status}`));
     } catch (error: any) {
       const { code, message } = formatCallableError(error);
-      setSubmitMsg(`Submit failed (${code}): ${message}`);
+      setSubmitMsg(withDealerCodeNote(`Submit failed (${code}): ${message}`));
     } finally {
       setSubmitting(false);
     }
@@ -499,6 +506,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       return;
     }
     setSubmitting(true);
+    submittedDealerCodeRef.current = sharedForm.dealershipCode;
     setSubmitMsg(null);
     try {
       const dealerSlug = (initial?.dealerSlug || "").trim();
@@ -534,7 +542,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       } catch (err) {
         console.error("Post-handover completion failed:", err);
       }
-      setSubmitMsg("Submitted successfully.");
+      setSubmitMsg(withDealerCodeNote("Submitted successfully."));
       setSubmitting(false);
       onOpenChange(false);
     } catch (e) {
@@ -543,7 +551,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
         e instanceof Error && e.message === "Dealer slug missing"
           ? "Dealer information is missing. Please reopen the handover form."
           : "Submit failed. Please try again.";
-      setSubmitMsg(message);
+      setSubmitMsg(withDealerCodeNote(message));
       setSubmitting(false);
     }
   };
@@ -581,6 +589,16 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
         </DialogHeader>
 
         <div ref={printRef} className="space-y-5">
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <div className="font-semibold">Salesforce field: Dealership_Purchased_From__c</div>
+            <p className="mt-1">
+              Uploading SAP code: <span className="font-mono">{sharedForm.dealershipCode || "Not set"}</span>
+            </p>
+            {dealershipLabel && sharedForm.dealershipCode && dealershipLabel !== sharedForm.dealershipCode && (
+              <p className="text-xs text-blue-800">Display name: {dealershipLabel}</p>
+            )}
+          </div>
+
           <div className="rounded-lg border p-4 bg-slate-50 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm font-semibold">Vehicle info (locked)</div>
@@ -611,6 +629,10 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                 <Label>Dealer (SAP code)</Label>
                 <Input value={dealershipLabel} readOnly disabled className="bg-slate-100" />
                 <p className="text-xs text-slate-500 mt-1">Configured per slug in Admin → Dealer (SAP code).</p>
+                <p className="text-xs text-slate-500">Submitting SAP code: {sharedForm.dealershipCode || "Not set"}</p>
+                {dealerConfig?.productRegistrationDealerName && (
+                  <p className="text-xs text-slate-500">Slug value: {dealerConfig.productRegistrationDealerName}</p>
+                )}
               </div>
             </div>
           </div>
