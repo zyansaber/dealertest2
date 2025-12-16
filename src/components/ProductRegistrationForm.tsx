@@ -14,6 +14,7 @@ import {
   EMPTY_STATE,
   NZ_STATE,
   RegionOption,
+} from "@/constants/productRegistrationOptions";
 
 // Types aligned with Salesforce test bench
 export type ProductRegistrationData = {
