@@ -239,7 +239,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const functions = useMemo(() => getFunctions(app, "us-central1"), []);
 
-const formatCallableError = (error: any) => {
+  const formatCallableError = (error: any) => {
     const code = error?.code ?? "unknown";
     const message = error?.message ?? String(error);
     const details = error?.details ?? error?.rawError ?? error?.info ?? error?.response?.data;
@@ -276,7 +276,18 @@ const formatCallableError = (error: any) => {
     return () => unsub();
   }, [initial?.dealerSlug]);
 
-  const preferredDealershipValue = dealerConfig?.productRegistrationDealerName ?? "";
+  const preferredDealershipValue = useMemo(() => {
+    const raw = dealerConfig?.productRegistrationDealerName?.trim();
+    if (!raw) return "";
+
+    const matchByValue = ALL_DEALERSHIP_OPTIONS.find((opt) => opt.value === raw);
+    if (matchByValue) return matchByValue.value;
+
+    const matchByLabel = ALL_DEALERSHIP_OPTIONS.find(
+      (opt) => opt.label.toLowerCase() === raw.toLowerCase(),
+    );
+    return matchByLabel?.value ?? raw;
+  }, [dealerConfig?.productRegistrationDealerName]);
 
   useEffect(() => {
     setSharedForm((prev) => ({
