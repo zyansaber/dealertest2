@@ -185,13 +185,13 @@ const buildAssistantPrompt = (
   }));
 
   const intro =
-    "You are a finance assistant. Map the user's description or OCR text to the best finance/expenses item and return its glCode. If glCode is empty, still share the best match and say glCode missing.";
+    "You are a friendly finance assistant. Use both the user's typed text and any OCR text to find the best finance/expenses item and return its glCode. If glCode is empty, still share the best match and note that glCode is missing.";
 
   const showInstruction =
-    "If the user provides a show name/location/time, use shows + internalSalesOrders to find showId and internalSalesOrderNumber. After you share any glCode, always ask the user which show this belongs to (name or location/time).";
+    "If the user provides a show name/location/time, use shows + internalSalesOrders to find showId and internalSalesOrderNumber. After you share any glCode, always ask the user which show this belongs to (name or location/time) so you can confirm the internal code.";
 
   const formatHint =
-    "Respond briefly in English: 1) expense match + glCode (or note missing); 2) internalSalesOrderNumber if show is clear; 3) always end with a question asking for show name/location/time so you can confirm the internal code.";
+    "Respond briefly in English with a warm tone: 1) best expense match + glCode (or say glCode missing); 2) internalSalesOrderNumber if show info is clear; 3) always end by asking for show name/location/time so you can confirm the internal code.";
 
   return [
     intro,
@@ -214,7 +214,7 @@ const FinanceChatPlayground = () => {
       id: uuid(),
       role: "assistant",
       content:
-        "Hi! I’m your finance assistant. Tell me the expense (or upload an invoice), I’ll map it to finance/expenses and give the glCode. After that, please tell me which show (name or location/time) so I can return the internalSalesOrderNumber.",
+        "Hi! I’m your finance assistant. Tell me the expense (or upload an invoice) and I’ll find the best glCode. Then let me know which show (name or location/time) so I can share the internalSalesOrderNumber.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -423,10 +423,10 @@ const FinanceChatPlayground = () => {
           }`}
         >
           <div className="text-xs font-semibold text-slate-500">{isAssistant ? "Assistant" : "You"}</div>
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-900">{message.content}</div>
+          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-900">{message.content}</div>
 
           {message.ocrText && (
-            <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 break-words">
               OCR: {message.ocrText}
             </div>
           )}
