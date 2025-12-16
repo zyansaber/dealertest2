@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { v4 as uuid } from "uuid";
-import { Bot, Image as ImageIcon, Loader2, MessageCircle, Send, RefreshCw, Database } from "lucide-react";
+import { Bot, Database, Image as ImageIcon, Loader2, MessageCircle, RefreshCw, Send, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { GEMINI_MODEL as DEFAULT_GEMINI_MODEL, generateGeminiText } from "@/lib/geminiClient";
 
 /**
  * =========================
@@ -14,7 +15,7 @@ const RTDB_BASE =
   import.meta.env.VITE_SHOW_RTDB_URL ??
   "https://snowyrivercaravanshow-default-rtdb.asia-southeast1.firebasedatabase.app";
 
-const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-1.5-flash-001";
+const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 /**
@@ -175,28 +176,6 @@ const toOptimizedBase64 = async (file: File) => {
   return base64;
 };
 
-const geminiGenerate = async (apiKey: string, body: any) => {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    GEMINI_MODEL
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  const json = await res.json();
-  if (!res.ok) {
-    const msg = json?.error?.message ?? `Gemini request failed (${res.status})`;
-    throw new Error(msg);
-  }
-
-  const parts = json?.candidates?.[0]?.content?.parts ?? [];
-  const text = parts.map((p: any) => p?.text ?? "").join("");
-  return text.trim();
-};
-
 const safeParseJson = (raw: string): any | null => {
   // 1) try direct
   try {
@@ -355,7 +334,7 @@ const FinanceGeminiChatTest = () => {
       id: uuid(),
       role: "assistant",
       content:
-        "Hey! Upload an invoice/receipt (or just type the expense). I’ll match it to an expense and return the GL code — then I’ll confirm which show it belongs to and give you the internal sales order number.",
+        "Hey! I’m now running on Gemini 2.5 Flash. Upload an invoice/receipt (or just type the expense) and I’ll match it to an expense, return the GL code, confirm the show, and give you the internal sales order number — faster and more accurate than before.",
     },
   ]);
 
@@ -381,7 +360,7 @@ const FinanceGeminiChatTest = () => {
       el.scrollTop = el.scrollHeight;
     });
   };
-
+    
   useEffect(() => {
     scrollToBottom();
   }, [messages, attachment?.ocrText]);
@@ -442,7 +421,7 @@ const FinanceGeminiChatTest = () => {
       generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
     };
 
-    return geminiGenerate(GEMINI_API_KEY, body);
+    return generateGeminiText(GEMINI_API_KEY, body, GEMINI_MODEL);
   };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -558,7 +537,7 @@ const FinanceGeminiChatTest = () => {
         generationConfig: { temperature: 0.25, maxOutputTokens: 700 },
       };
 
-      const raw = await geminiGenerate(GEMINI_API_KEY, body);
+      const raw = await generateGeminiText(GEMINI_API_KEY, body, GEMINI_MODEL);
       const parsed = safeParseJson(raw) as AiPickJson | null;
 
       if (!parsed) {
@@ -596,28 +575,37 @@ const FinanceGeminiChatTest = () => {
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <div className="mx-auto flex h-screen max-w-3xl flex-col gap-4 px-4 py-6">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-lg font-semibold">Finance Gemini Chat (RTDB Test Page)</p>
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50 px-4 py-3 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <p className="text-lg font-semibold">Finance AI (Gemini 2.5 Flash)</p>
             <p className="text-sm text-slate-600">
               Chat + OCR + AI matching (expense → glCode → show → internalSalesOrderNumber)
             </p>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                <Sparkles className="h-3 w-3" />
+                Gemini 2.5 Flash
+              </span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600 ring-1 ring-slate-200">
+                Better show mapping & OCR
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <Database className="h-4 w-4" />
               <span className="truncate">{RTDB_BASE}</span>
-              <span className="ml-2">{headerHint}</span>
+              <span className="ml-2 font-medium text-slate-700">{headerHint}</span>
             </div>
           </div>
 
           <Button
             type="button"
             variant="outline"
-            className="gap-2 border-slate-200"
+            className="mt-1 flex w-full items-center justify-center gap-2 border-slate-200 sm:mt-0 sm:w-auto"
             onClick={loadData}
             disabled={dataStatus === "loading"}
           >
             <RefreshCw className={`h-4 w-4 ${dataStatus === "loading" ? "animate-spin" : ""}`} />
-            Reload
+            Reload data
           </Button>
         </div>
 
