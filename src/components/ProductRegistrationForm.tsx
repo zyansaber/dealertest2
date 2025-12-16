@@ -8,20 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { app, saveHandover, subscribeDealerConfig } from "@/lib/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
-  AU_STATE,
-  BRAND_OPTIONS,
-  COUNTRY,
-  DEALERSHIP_PURCHASED_FROM,
-  DEALERSHIP_PURCHASED_FROM_NEWGEN,
-  DEALERSHIP_PURCHASED_FROM_REGENT,
-  DEALERSHIP_PURCHASED_FROM_SNOWY,
-  EMPTY_STATE,
-  NEWGEN_MODEL,
-  RegionOption,
-  REGENT_MODEL,
-  SNOWY_MODEL,
   ALL_DEALERSHIP_OPTIONS,
-} from "@/constants/productRegistrationOptions";
+  AU_STATE,
+  COUNTRY,
+  EMPTY_STATE,
+  NZ_STATE,
+  RegionOption,
 
 // Types aligned with Salesforce test bench
 export type ProductRegistrationData = {
@@ -292,45 +284,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     [regionOptions, sharedForm.regionCode],
   );
 
-  const modelOptions = useMemo(() => {
-    const opts = (() => {
-      switch (sharedForm.brand) {
-        case "Snowy":
-          return SNOWY_MODEL;
-        case "Newgen":
-          return NEWGEN_MODEL;
-        case "Regent":
-          return REGENT_MODEL;
-        default:
-          return [{ label: "Select", value: "" }];
-      }
-    })();
-    if (sharedForm.model && !opts.some((o) => o.value === sharedForm.model)) {
-      return [{ label: sharedForm.model, value: sharedForm.model }, ...opts];
-    }
-    return opts;
-  }, [sharedForm.brand, sharedForm.model]);
-
-  const dealershipOptions = useMemo(() => {
-    const base = (() => {
-      switch (sharedForm.brand) {
-        case "Snowy":
-          return DEALERSHIP_PURCHASED_FROM_SNOWY;
-        case "Newgen":
-          return DEALERSHIP_PURCHASED_FROM_NEWGEN;
-        case "Regent":
-          return DEALERSHIP_PURCHASED_FROM_REGENT;
-        default:
-          return DEALERSHIP_PURCHASED_FROM;
-      }
-    })();
-    if (sharedForm.dealershipCode && !base.some((o) => o.value === sharedForm.dealershipCode)) {
-      const fallback = ALL_DEALERSHIP_OPTIONS.find((o) => o.value === sharedForm.dealershipCode);
-      if (fallback) return [fallback, ...base];
-      return [{ label: sharedForm.dealershipCode, value: sharedForm.dealershipCode }, ...base];
-    }
-    return base;
-  }, [sharedForm.brand, sharedForm.dealershipCode]);
+  const dealershipLabel = useMemo(() => {
+    const opt = ALL_DEALERSHIP_OPTIONS.find((o) => o.value === sharedForm.dealershipCode);
+    if (opt) return opt.label;
+    return sharedForm.dealershipCode || "Not set";
+  }, [sharedForm.dealershipCode]);
 
   const toBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -354,10 +312,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const handleCountryChange = (value: string) => {
     setSharedForm((prev) => ({ ...prev, country: value, regionCode: "" }));
-  };
-
-  const handleBrandChange = (value: string) => {
-    setSharedForm((prev) => ({ ...prev, brand: value, model: "", dealershipCode: preferredDealershipValue || "" }));
   };
 
   const handleProofFileChange = async (file: File | null) => {
@@ -591,17 +545,21 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl w-[1100px]">
+      <DialogContent className="max-w-7xl w-[1200px] md:max-h-[88vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Product Registration & Handover</DialogTitle>
-          <DialogDescription>
-            Complete the customer and vehicle details, then submit the registration, proof upload, and customer queue.
+          <DialogTitle className="text-xl">Product Registration & Handover</DialogTitle>
+          <DialogDescription className="text-sm text-slate-600">
+            Auto-filled vehicle data with slug-based SAP mapping. Submit once to register the product, upload proof, and queue
+            customer details.
           </DialogDescription>
         </DialogHeader>
 
-        <div ref={printRef} className="space-y-6">
-          <div className="rounded-md border p-4 bg-slate-50">
-            <div className="text-sm font-semibold">Vehicle Info (auto-filled)</div>
+        <div ref={printRef} className="space-y-5">
+          <div className="rounded-lg border p-4 bg-slate-50 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold">Vehicle info (locked)</div>
+              <p className="text-xs text-slate-600">Values come from the schedule and the Admin SAP mapping for this slug.</p>
+            </div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <div>
                 <Label>Chassis Number</Label>
@@ -616,30 +574,17 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                 <Input value={sharedForm.model} readOnly disabled className="bg-slate-100" />
               </div>
               <div>
+                <Label>Brand (auto)</Label>
+                <Input value={sharedForm.brand || "Not set"} readOnly disabled className="bg-slate-100" />
+              </div>
+              <div>
                 <Label>Handover Date</Label>
                 <Input type="date" value={sharedForm.handoverDate} readOnly disabled className="bg-slate-100" />
               </div>
               <div>
                 <Label>Dealer (SAP code)</Label>
-                <Select
-                  value={sharedForm.dealershipCode || undefined}
-                  onValueChange={(v) => handleSharedChange("dealershipCode", v)}
-                  disabled={!preferredDealershipValue}
-                >
-                  <SelectTrigger className="bg-slate-100">
-                    <SelectValue placeholder="Select dealership" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dealershipOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!preferredDealershipValue && (
-                  <p className="text-xs text-amber-600 mt-1">Manual selection is allowed when no SAP code is set in Admin.</p>
-                )}
+                <Input value={dealershipLabel} readOnly disabled className="bg-slate-100" />
+                <p className="text-xs text-slate-500 mt-1">Configured per slug in Admin → Dealer (SAP code).</p>
               </div>
             </div>
           </div>
@@ -696,6 +641,15 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                   <SelectTrigger>
                     <SelectValue placeholder="Select state / region" />
                   </SelectTrigger>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>State / Region</Label>
+                <Select value={sharedForm.regionCode || undefined} onValueChange={(v) => handleSharedChange("regionCode", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select state / region" />
+                  </SelectTrigger>
                   <SelectContent>
                     {regionOptions.map((option) => (
                       <SelectItem key={`${option.productValue}-${option.customerValue}`} value={option.customerValue}>
@@ -712,93 +666,35 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
             </div>
           </div>
 
-          <div className="rounded-md border p-4">
-            <div className="text-sm font-semibold">Brand & Dealership</div>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <Label>Brand</Label>
-                <Select value={sharedForm.brand || undefined} onValueChange={handleBrandChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select brand" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BRAND_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Model</Label>
-                <Select value={sharedForm.model || undefined} onValueChange={(v) => handleSharedChange("model", v)} disabled>
-                  <SelectTrigger className="bg-slate-100">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-slate-500 mt-1">Model is auto-filled from inventory.</p>
-              </div>
-              <div>
-                <Label>Dealership（SAP code）</Label>
-                <Select
-                  value={sharedForm.dealershipCode || undefined}
-                  onValueChange={(v) => handleSharedChange("dealershipCode", v)}
-                  disabled={Boolean(preferredDealershipValue)}
-                >
-                  <SelectTrigger className={preferredDealershipValue ? "bg-slate-100" : undefined}>
-                    <SelectValue placeholder="Select dealership" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dealershipOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-slate-500 mt-1">
-                  {preferredDealershipValue
-                    ? "Admin has set a default dealership; it will be used automatically"
-                    : "If no default is set, you may choose manually"}
-                </p>
-              </div>
+          <div className="rounded-lg border p-4 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold">Proof of purchase & submission</div>
+              <p className="text-xs text-muted-foreground">One click submits registration, proof upload, and customer queue.</p>
             </div>
-          </div>
-
-          <div className="rounded-md border p-4 bg-white">
-            <div className="text-sm font-semibold">Proof of purchase</div>
-            <p className="text-xs text-muted-foreground mt-1">Registration and proof upload will run together after clicking Submit.</p>
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <Label>Select proof file</Label>
+            <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-2 space-y-2">
+                <Label>Upload proof file</Label>
                 <Input type="file" onChange={(e) => handleProofFileChange(e.target.files?.[0] ?? null)} />
-                <span className="text-xs text-muted-foreground">{proofFile?.name ?? "No file selected"}</span>
-                {filePreviewUrl && (
-                  <div className="mt-2 rounded border bg-slate-50 p-2">
-                    <div className="text-xs font-semibold">File preview</div>
-                    {proofFile?.type?.startsWith("image/") ? (
-                      <img src={filePreviewUrl} alt="Proof preview" className="mt-2 max-h-48 w-full object-contain" />
-                    ) : (
-                      <p className="mt-2 text-xs text-slate-600">Preview available after selection (non-image files will download when opened).</p>
-                    )}
-                  </div>
-                )}
-                <p className="text-xs text-slate-500 mt-1">File name and registration id are handled automatically.</p>
+                <div className="text-xs text-muted-foreground">{proofFile?.name ?? "No file selected"}</div>
+                <p className="text-xs text-slate-500">File name and registration id are handled automatically.</p>
               </div>
+              {filePreviewUrl && (
+                <div className="rounded border bg-slate-50 p-3">
+                  <div className="text-xs font-semibold">File preview</div>
+                  {proofFile?.type?.startsWith("image/") ? (
+                    <img src={filePreviewUrl} alt="Proof preview" className="mt-2 max-h-48 w-full object-contain rounded" />
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-600">Preview available after selection (non-image files will download when opened).</p>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting} onClick={handleCombinedSubmit} type="button">
                 {submitting ? "Submitting..." : "Submit"}
               </Button>
+              {submitMsg && <span className="text-xs text-slate-600">{submitMsg}</span>}
             </div>
 
             {submitMsg && (
