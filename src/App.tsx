@@ -33,12 +33,13 @@ import InventoryManagement from "./pages/InventoryManagement";
 import TierConfigEditor from "@/pages/TierConfigEditor";
 import SalesforceTest from "./pages/SalesforceTest";
 import OcrPage from "./pages/OcrPage";
+import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 
 const queryClient = new QueryClient();
 
 const AppShell = () => {
   const location = useLocation();
-  const showAssistant = !location.pathname.startsWith("/ocr");
+  const showAssistant = !location.pathname.startsWith("/ocr") && !location.pathname.startsWith("/finance-ai");
 
   return (
     <>
@@ -51,6 +52,9 @@ const AppShell = () => {
 
         {/* Standalone OCR playground (public) */}
         <Route path="/ocr" element={<OcrPage />} />
+
+        {/* Standalone finance chat playground (public) */}
+        <Route path="/finance-ai" element={<FinanceChatPlayground />} />
 
         {/* 主仪表板（需要密码验证） */}
         <Route
