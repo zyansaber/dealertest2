@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import OrderDetails from "./OrderDetails";
 import { subscribeToSchedule, subscribeToSpecPlan, subscribeToDateTrack, sortOrders } from "@/lib/firebase";
+import { formatDateDDMMYYYY } from "@/lib/firebase";
 import type { ScheduleItem, SpecPlan, DateTrack, FilterOptions } from "@/types";
 
 interface OrderListProps {
@@ -172,6 +173,54 @@ function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlan
   const uniqueProductionStatuses = useMemo(() => {
     return [...new Set(dealerOrders.map(order => order["Regent Production"]))].filter(Boolean).sort();
   }, [dealerOrders]);
+
+  const parseFlexibleDate = useCallback((dateStr: string | null | undefined): Date | null => {
+    if (!dateStr) return null;
+
+    const parts = dateStr.split("/").map((part) => parseInt(part.trim(), 10));
+    if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null;
+
+    const [first, second, third] = parts;
+    const isYearFirst = first > 31 || String(first).length === 4;
+    const year = isYearFirst ? first : third;
+    const month = second - 1;
+    const day = isYearFirst ? third : first;
+
+    const date = new Date(year, month, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }, []);
+
+  const addDays = useCallback((date: Date, days: number): Date => {
+    const copy = new Date(date);
+    copy.setDate(copy.getDate() + days);
+    return copy;
+  }, []);
+
+  const formatDateFromDate = useCallback((date: Date | null): string => {
+    if (!date) return "Not set";
+    const day = date.getDate().toString().padStart(2, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }, []);
+
+  const getDisplayForecastProductionDate = useCallback((order: ScheduleItem): string => {
+    const originalFormatted = formatDateDDMMYYYY(order["Forecast Production Date"]);
+    const isVanOnTheSeaStatus = (order["Regent Production"] || "").trim().toLowerCase() === "van on the sea";
+    if (!isVanOnTheSeaStatus) return originalFormatted;
+
+    const shipmentDateStr = order.Shipment?.split("-")?.[0]?.trim();
+    const shipmentDate = parseFlexibleDate(shipmentDateStr);
+    if (!shipmentDate) return originalFormatted;
+
+    const minForecastDate = addDays(shipmentDate, 3);
+    const forecastDate = parseFlexibleDate(order["Forecast Production Date"]);
+
+    if (!forecastDate) return formatDateFromDate(minForecastDate);
+
+    const shouldUseMinDate = forecastDate.getTime() < minForecastDate.getTime();
+    return formatDateFromDate(shouldUseMinDate ? minForecastDate : forecastDate);
+  }, [addDays, formatDateFromDate, parseFlexibleDate]);
 
   const clearFilters = useCallback(() => {
     setFilters({
@@ -340,6 +389,7 @@ function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlan
                     dateTrack={dateTrack[order.Chassis] || 
                       Object.values(dateTrack).find(dt => dt["Chassis Number"] === order.Chassis)}
                     isStock={isStockVehicle(order.Customer)}
+                    displayForecastProductionDate={getDisplayForecastProductionDate(order)}
                   />
                 ))
               ) : (
