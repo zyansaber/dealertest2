@@ -989,7 +989,7 @@ export default function DealerYard() {
               <div className="mt-4 space-y-3">
                 <div className="flex flex-col gap-3 rounded-xl border-2 border-dashed border-slate-200 bg-white p-4 shadow-sm">
                   <p className="text-sm text-slate-700">
-                    Choose the signed POD (PDF). It will be stored in Firebase Storage at <code className="bg-slate-100 px-1">/deliverydoc</code> using the chassis number as the file name.
+                    Choose the signed POD (PDF). 
                   </p>
                   <Input
                     type="file"
