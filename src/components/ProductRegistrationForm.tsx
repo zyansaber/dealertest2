@@ -704,4 +704,3 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     </Dialog>
   );
 }
-}
