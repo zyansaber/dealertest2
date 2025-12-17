@@ -738,6 +738,7 @@ export async function receiveChassisToYard(
     dealer: sanitizedPGIData.dealer ?? null,
     model: sanitizedPGIData.model ?? null,
     customer: sanitizedPGIData.customer ?? null,
+    type: "Stock",
   });
 
   const pgiRef = ref(database, `pgirecord/${chassis}`);
