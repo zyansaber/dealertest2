@@ -88,7 +88,6 @@ const PRICE_ENABLED_DEALERS = new Set(["frankston", "geelong", "launceston", "st
 const POD_EMAIL_TEMPLATE = "template_br5q8b7";
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || "";
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "";
-const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();
@@ -386,6 +385,7 @@ const readFileAsDataUrl = (file: File) =>
     reader.onerror = () => reject(new Error("Failed to read POD file"));
     reader.readAsDataURL(file);
   });
+
 
 // Days in Yard buckets (updated as requested)
 const yardRangeDefs = [
@@ -848,11 +848,10 @@ export default function DealerYard() {
       return;
     }
 
-    setUploadingPod(true);
+   setUploadingPod(true);
     setPodStatus(null);
     try {
-      const recipientEmail = await resolveCustomerEmail(receiveTarget.chassis, receiveTarget.rec);
-      const shouldEmail = Boolean(recipientEmail && EMAIL_SERVICE_ID && EMAIL_PUBLIC_KEY);
+      const shouldEmail = Boolean(EMAIL_SERVICE_ID && EMAIL_PUBLIC_KEY);
       const attachmentDataUrl = shouldEmail ? await readFileAsDataUrl(podFile) : null;
 
       await uploadDeliveryDocument(receiveTarget.chassis, podFile);
@@ -865,9 +864,6 @@ export default function DealerYard() {
             EMAIL_SERVICE_ID,
             POD_EMAIL_TEMPLATE,
             {
-              to_email: recipientEmail,
-              customer_email: recipientEmail,
-              reply_to: recipientEmail,
               chassis: receiveTarget.chassis,
               dealer: dealerDisplayName,
               message: `Signed POD for chassis ${receiveTarget.chassis} (${dealerDisplayName})`,
@@ -877,13 +873,11 @@ export default function DealerYard() {
             },
             EMAIL_PUBLIC_KEY
           );
-          toast.success(`POD emailed to ${recipientEmail}.`);
+          toast.success("POD emailed via EmailJS.");
         } catch (emailErr) {
           console.error("Failed to send POD email", emailErr);
           toast.error("Vehicle received but failed to send POD email.");
         }
-      } else if (!recipientEmail) {
-        toast.info("Vehicle received. No customer email found, so POD was not emailed.");
       } else if (!EMAIL_SERVICE_ID || !EMAIL_PUBLIC_KEY) {
         toast.info("Vehicle received. EmailJS configuration missing, skipped sending POD email.");
       }
@@ -912,6 +906,7 @@ export default function DealerYard() {
       console.error(e);
       setManualStatus({ type: "err", msg: "Failed to add into Yard." });
     }
+
   };
 
   const handleAddFromSearch = async () => {
