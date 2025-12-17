@@ -16,6 +16,7 @@ import {
   subscribeToHandover,
   uploadDeliveryDocument,
 } from "@/lib/firebase";
+import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
 import { FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
@@ -84,6 +85,10 @@ type HandoverRec = {
 };
 
 const PRICE_ENABLED_DEALERS = new Set(["frankston", "geelong", "launceston", "st-james", "traralgon"]);
+const POD_EMAIL_TEMPLATE = "template_br5q8b7";
+const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || "";
+const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "";
+const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();
@@ -320,6 +325,68 @@ function countTop15(rows: ExcelRow[]) {
   return cnt;
 }
 
+const normalizeEmail = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(EMAIL_REGEX);
+  return match ? match[0] : null;
+};
+
+const findEmailInObject = (source: unknown, depth = 0): string | null => {
+  if (!source || depth > 3) return null;
+
+  if (typeof source === "string") {
+    const match = source.match(EMAIL_REGEX);
+    return match ? match[0] : null;
+  }
+
+  if (typeof source !== "object") return null;
+
+  for (const value of Object.values(source as Record<string, unknown>)) {
+    const found = findEmailInObject(value, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+};
+
+const extractCustomerEmail = (rec: PGIRec | null | undefined): string | null => {
+  if (!rec) return null;
+
+  const directCandidates = [
+    (rec as any)?.customerEmail,
+    (rec as any)?.customer_email,
+    (rec as any)?.customeremail,
+    (rec as any)?.email,
+    (rec as any)?.Email,
+    (rec as any)?.customer?.email,
+  ];
+
+  for (const candidate of directCandidates) {
+    const normalized = normalizeEmail(candidate);
+    if (normalized) return normalized;
+  }
+
+  const nested = findEmailInObject(rec);
+  return normalizeEmail(nested);
+};
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result);
+      } else {
+        reject(new Error("Failed to read POD file"));
+      }
+    };
+    reader.onerror = () => reject(new Error("Failed to read POD file"));
+    reader.readAsDataURL(file);
+  });
+
 // Days in Yard buckets (updated as requested)
 const yardRangeDefs = [
   { label: "0–30", min: 0, max: 30 },
@@ -388,6 +455,18 @@ export default function DealerYard() {
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
+
+  const resolveCustomerEmail = async (chassis: string, rec: PGIRec | null) => {
+    try {
+      const subscription = await getSubscription(chassis);
+      const subEmail = normalizeEmail(subscription?.email);
+      if (subEmail) return subEmail;
+    } catch (error) {
+      console.warn("Failed to fetch subscription email", error);
+    }
+
+    return extractCustomerEmail(rec);
+  };
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -772,9 +851,42 @@ export default function DealerYard() {
     setUploadingPod(true);
     setPodStatus(null);
     try {
+      const recipientEmail = await resolveCustomerEmail(receiveTarget.chassis, receiveTarget.rec);
+      const shouldEmail = Boolean(recipientEmail && EMAIL_SERVICE_ID && EMAIL_PUBLIC_KEY);
+      const attachmentDataUrl = shouldEmail ? await readFileAsDataUrl(podFile) : null;
+
       await uploadDeliveryDocument(receiveTarget.chassis, podFile);
       await receiveChassisToYard(dealerSlug, receiveTarget.chassis, receiveTarget.rec);
       toast.success(`Uploaded signed POD and received ${receiveTarget.chassis} into Stock.`);
+
+      if (shouldEmail && attachmentDataUrl) {
+        try {
+          await emailjs.send(
+            EMAIL_SERVICE_ID,
+            POD_EMAIL_TEMPLATE,
+            {
+              to_email: recipientEmail,
+              customer_email: recipientEmail,
+              reply_to: recipientEmail,
+              chassis: receiveTarget.chassis,
+              dealer: dealerDisplayName,
+              message: `Signed POD for chassis ${receiveTarget.chassis} (${dealerDisplayName})`,
+              pod_attachment: attachmentDataUrl,
+              attachment: attachmentDataUrl,
+              filename: podFile.name || `${receiveTarget.chassis}.pdf`,
+            },
+            EMAIL_PUBLIC_KEY
+          );
+          toast.success(`POD emailed to ${recipientEmail}.`);
+        } catch (emailErr) {
+          console.error("Failed to send POD email", emailErr);
+          toast.error("Vehicle received but failed to send POD email.");
+        }
+      } else if (!recipientEmail) {
+        toast.info("Vehicle received. No customer email found, so POD was not emailed.");
+      } else if (!EMAIL_SERVICE_ID || !EMAIL_PUBLIC_KEY) {
+        toast.info("Vehicle received. EmailJS configuration missing, skipped sending POD email.");
+      }
       setReceiveDialogOpen(false);
       setReceiveTarget(null);
       setPodFile(null);
