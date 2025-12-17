@@ -331,11 +331,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
   const withDealerCodeNote = (message: string) => `${message} (${dealerDebugNote || "Dealer not set"})`;
 
-  const withDealerCodeNote = (message: string) => {
-    const dealerCode = submittedDealerCodeRef.current || sharedForm.dealershipCode || "not set";
-    return `${message} (Dealer SAP code: ${dealerCode})`;
-  };
-  
   const toBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -439,6 +434,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     Forms_Submitted: customerExtras.formsSubmitted,
     source: customerExtras.source,
     chassisNumber: sharedForm.chassisNumber,
+  });
+
+  const runChainedSubmissionAndUpload = async () => {
+    setChainedStatus("Step 1/2: create Product_Registered__c via callable...");
+    try {
       const registrationResponse = await submitProductRegistrationFn(buildProductPayload());
 
       const { success, salesforceId } = registrationResponse.data;
