@@ -18,7 +18,7 @@ import {
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
-import { Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
+import { FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   BarChart,
@@ -344,6 +344,7 @@ export default function DealerYard() {
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
   const [receiveTarget, setReceiveTarget] = useState<null | { chassis: string; rec: PGIRec | null }>(null);
   const [podFile, setPodFile] = useState<File | null>(null);
+  const [podPreviewUrl, setPodPreviewUrl] = useState<string | null>(null);
   const [podStatus, setPodStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
   const [uploadingPod, setUploadingPod] = useState(false);
 
@@ -408,6 +409,16 @@ export default function DealerYard() {
       unsubHandover?.();
     };
   }, [dealerSlug]);
+
+ useEffect(() => {
+    if (!podFile) {
+      setPodPreviewUrl(null);
+      return undefined;
+    }
+    const url = URL.createObjectURL(podFile);
+    setPodPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [podFile]);
 
   useEffect(() => {
     (async () => {
@@ -966,6 +977,7 @@ export default function DealerYard() {
           if (!open) {
             setReceiveTarget(null);
             setPodFile(null);
+            setPodPreviewUrl(null);
             setPodStatus(null);
           }
         }}
@@ -974,23 +986,37 @@ export default function DealerYard() {
           <DialogHeader className="gap-2">
             <DialogTitle className="text-xl">Receive with Signed POD</DialogTitle>
             <DialogDescription className="text-sm text-slate-600">
-              Upload a signed Proof of Delivery to move this unit into Stock. Chassis: <span className="font-semibold text-slate-900">{receiveTarget?.chassis || "-"}</span>
+              Upload a signed Proof of Delivery to move this unit into Stock. Confirm the transport damage pre-check has been completed before signing. Chassis: <span className="font-semibold text-slate-900">{receiveTarget?.chassis || "-"}</span>
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border bg-slate-50/80 p-4 shadow-inner">
-              <div className="flex items-center justify-between gap-3">
-                <div>
+            <div className="rounded-2xl border bg-gradient-to-b from-white to-slate-50 p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
                   <p className="text-base font-semibold text-slate-900">Signed POD upload</p>
-                  <p className="text-sm text-slate-600">Submit a signed PDF. Once validated it will automatically receive into Stock.</p>
+                  <p className="text-sm text-slate-600">Attach the signed Proof of Delivery as a PDF. The file will be stored with the yard record.</p>
                 </div>
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">SIGNED POD</span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  <FileCheck2 className="h-3.5 w-3.5" /> Required
+                </span>
               </div>
-              <div className="mt-4 space-y-3">
-                <div className="flex flex-col gap-3 rounded-xl border-2 border-dashed border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm text-slate-700">
-                    Choose the signed POD (PDF). 
-                  </p>
+
+              <div className="mt-4 space-y-4">
+                <div className="flex flex-col gap-3 rounded-xl border-2 border-dashed border-slate-200 bg-white p-4 shadow-inner">
+                  <div className="flex items-start gap-2 text-sm text-slate-700">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 text-amber-500" />
+                    <div>
+                      Please confirm the transport damage pre-check is complete <span className="font-semibold">before</span> the POD is signed and uploaded.
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                    <p className="font-semibold text-slate-900">Upload checklist</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-600">
+                      <li>Clear signature and dealership stamp are visible.</li>
+                      <li>Chassis number matches: <span className="font-semibold text-slate-900">{receiveTarget?.chassis || "-"}</span>.</li>
+                      <li>Transport pre-check is noted on the document if applicable.</li>
+                    </ul>
+                  </div>
                   <Input
                     type="file"
                     accept="application/pdf"
@@ -1001,14 +1027,26 @@ export default function DealerYard() {
                     }}
                   />
                   {podFile && (
-                    <p className="text-sm text-emerald-700">
-                      Selected: <span className="font-semibold">{podFile.name}</span>
-                    </p>
+                    <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                      <span className="font-semibold">{podFile.name}</span>
+                      <span className="text-xs uppercase tracking-wide">PDF Selected</span>
+                    </div>
                   )}
-                  <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    Ensure the POD is clearly signed and legible before uploading.
-                  </div>
                 </div>
+
+                {podPreviewUrl && (
+                  <div className="rounded-xl border bg-white p-4 shadow-inner">
+                    <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
+                      <span>File preview</span>
+                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                    </div>
+                    <div className="mt-3 h-64 overflow-hidden rounded-lg border bg-slate-900/5">
+                      <iframe title="Signed POD preview" src={podPreviewUrl} className="h-full w-full" />
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600">Review the document to ensure the signatures and pre-check notes are legible before submitting.</p>
+                  </div>
+                )}
+
                 {podStatus && (
                   <div className={`rounded-md border px-3 py-2 text-sm ${podStatus.type === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}>
                     {podStatus.msg}
@@ -1021,7 +1059,7 @@ export default function DealerYard() {
                 >
                   {uploadingPod ? "Uploading..." : "Upload signed POD & Receive to Stock"}
                 </Button>
-                <p className="text-xs text-slate-600">We will keep the signed POD with the yard record as evidence of receipt.</p>
+                <p className="text-xs text-slate-600">We will retain the signed POD as evidence of receipt for auditing and customer assurance.</p>
               </div>
             </div>
 
