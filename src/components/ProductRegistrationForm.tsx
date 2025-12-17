@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { app, saveHandover, subscribeDealerConfig } from "@/lib/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import { toast } from "sonner";
 import {
   ALL_DEALERSHIP_OPTIONS,
   AU_STATE,
@@ -223,8 +224,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     [],
   );
 
-  const [chainedStatus, setChainedStatus] = useState<string>("");
-
   const [proofPayload, setProofPayload] = useState<UploadProofPayload>({
     fileName: "proof-of-purchase.pdf",
     base64Data: "",
@@ -234,7 +233,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
-  const [submitMsg, setSubmitMsg] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
   const submittedDealerCodeRef = useRef<string>("");
 
@@ -318,18 +316,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     if (opt) return opt.label;
     return sharedForm.dealershipCode || "Not set";
   }, [sharedForm.dealershipCode]);
-
-  const dealerDebugNote = useMemo(() => {
-    const dealerCode = submittedDealerCodeRef.current || sharedForm.dealershipCode || "not set";
-    const slugValue = dealerConfig?.productRegistrationDealerName?.trim();
-    const label = dealershipLabel;
-    const pieces = [`SAP code: ${dealerCode}`];
-    if (label && label !== dealerCode) pieces.push(`label: ${label}`);
-    if (slugValue && slugValue !== dealerCode) pieces.push(`slug value: ${slugValue}`);
-    return pieces.join(" | ");
-  }, [dealerConfig?.productRegistrationDealerName, dealershipLabel, sharedForm.dealershipCode]);
-
-  const withDealerCodeNote = (message: string) => `${message} (${dealerDebugNote || "Dealer not set"})`;
 
   const toBase64 = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -438,10 +424,9 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     chassisNumber: sharedForm.chassisNumber,
   });
 
-  const runChainedSubmissionAndUpload = async () => {
-    setChainedStatus("Step 1/2: create Product_Registered__c via callable...");
-    try {
-      const registrationResponse = await submitProductRegistrationFn(buildProductPayload());
+    const runChainedSubmissionAndUpload = async () => {
+      try {
+        const registrationResponse = await submitProductRegistrationFn(buildProductPayload());
 
       const { success, salesforceId } = registrationResponse.data;
       if (!success || !salesforceId) {
@@ -461,40 +446,16 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
         productRegisteredId: salesforceId,
       };
 
-      setChainedStatus(`Step 2/2: received ${salesforceId}, uploading proof...`);
-      await uploadProofOfPurchaseFn(uploadPayload);
-      setChainedStatus("Done: Product_Registered__c created and proof uploaded.");
-      return { salesforceId };
-    } catch (error: any) {
-      const { code, message } = formatCallableError(error);
-      setChainedStatus(`Flow failed (${code}): ${message}`);
-      throw error;
-    }
-  };
+        await uploadProofOfPurchaseFn(uploadPayload);
+        return { salesforceId };
+      } catch (error: any) {
+        throw formatCallableError(error);
+      }
+    };
 
   const submitCustomerDetails = async () => {
     const response = await enqueueCustomerDetailsFn(buildCustomerPayload());
     return response.data;
-  };
-
-  const handleCombinedSubmit = async () => {
-    if (!sharedForm.dealershipCode.trim()) {
-      setSubmitMsg(withDealerCodeNote("Dealer SAP code is missing. Check slug config before submitting."));
-      return;
-    }
-    setSubmitting(true);
-    submittedDealerCodeRef.current = sharedForm.dealershipCode;
-    setSubmitMsg(withDealerCodeNote("Submitting registration, proof, and customer details..."));
-    try {
-      await runChainedSubmissionAndUpload();
-      const customerResponse = await submitCustomerDetails();
-      setSubmitMsg(withDealerCodeNote(`All steps completed. Customer job status: ${customerResponse.status}`));
-    } catch (error: any) {
-      const { code, message } = formatCallableError(error);
-      setSubmitMsg(withDealerCodeNote(`Submit failed (${code}): ${message}`));
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const canSubmitHandover = () => {
@@ -513,62 +474,62 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     );
   };
 
-  const handleSubmitAssist = async () => {
+  const saveHandoverRecord = async () => {
+    const dealerSlug = (initial?.dealerSlug || "").trim();
+    if (!dealerSlug) {
+      throw new Error("Dealer information is missing.");
+    }
+
+    const handoverData = {
+      chassis: sharedForm.chassisNumber,
+      model: sharedForm.model || null,
+      dealerName: initial?.dealerName || dealerConfig?.name || null,
+      dealerSlug,
+      handoverAt: initial?.handoverAt || new Date().toISOString(),
+      vinnumber: sharedForm.vin || null,
+      customer: {
+        firstName: sharedForm.firstName.trim(),
+        lastName: sharedForm.lastName.trim(),
+        email: sharedForm.email.trim(),
+        phone: sharedForm.phone.trim(),
+        address: {
+          street: sharedForm.streetAddress.trim(),
+          suburb: sharedForm.suburb.trim(),
+          country: sharedForm.country === "AU" ? "Australia" : sharedForm.country === "NZ" ? "New Zealand" : sharedForm.country,
+          state: sharedForm.regionCode,
+          postcode: sharedForm.postcode.trim(),
+        },
+      },
+      createdAt: new Date().toISOString(),
+      source: "dealer_assist_form" as const,
+    } as const;
+
+    await saveHandover(dealerSlug, sharedForm.chassisNumber, handoverData);
+    await onCompleted?.({ chassis: sharedForm.chassisNumber, dealerSlug });
+  };
+
+  const handleCombinedSubmit = async () => {
     if (!canSubmitHandover()) {
-      setSubmitMsg("Please complete all required fields.");
+      toast.error("Please complete all required customer and vehicle fields.");
       return;
     }
     if (!sharedForm.dealershipCode.trim()) {
-      setSubmitMsg(withDealerCodeNote("Dealer SAP code is missing. Check slug config before submitting."));
+      toast.error("Dealer code is missing. Check the dealer configuration before submitting.");
       return;
     }
+
     setSubmitting(true);
     submittedDealerCodeRef.current = sharedForm.dealershipCode;
-    setSubmitMsg(null);
     try {
-      const dealerSlug = (initial?.dealerSlug || "").trim();
-      if (!dealerSlug) {
-        throw new Error("Dealer slug missing");
-      }
-      const handoverData = {
-        chassis: sharedForm.chassisNumber,
-        model: sharedForm.model || null,
-        dealerName: initial?.dealerName || dealerConfig?.name || null,
-        dealerSlug,
-        handoverAt: initial?.handoverAt || new Date().toISOString(),
-        vinnumber: sharedForm.vin || null,
-        customer: {
-          firstName: sharedForm.firstName.trim(),
-          lastName: sharedForm.lastName.trim(),
-          email: sharedForm.email.trim(),
-          phone: sharedForm.phone.trim(),
-          address: {
-            street: sharedForm.streetAddress.trim(),
-            suburb: sharedForm.suburb.trim(),
-            country: sharedForm.country === "AU" ? "Australia" : sharedForm.country === "NZ" ? "New Zealand" : sharedForm.country,
-            state: sharedForm.regionCode,
-            postcode: sharedForm.postcode.trim(),
-          },
-        },
-        createdAt: new Date().toISOString(),
-        source: "dealer_assist_form" as const,
-      };
-      await saveHandover(dealerSlug, sharedForm.chassisNumber, handoverData);
-      try {
-        await onCompleted?.({ chassis: sharedForm.chassisNumber, dealerSlug });
-      } catch (err) {
-        console.error("Post-handover completion failed:", err);
-      }
-      setSubmitMsg(withDealerCodeNote("Submitted successfully."));
-      setSubmitting(false);
+      await runChainedSubmissionAndUpload();
+      await submitCustomerDetails();
+      await saveHandoverRecord();
+      toast.success("Handover submitted successfully.");
       onOpenChange(false);
-    } catch (e) {
-      console.error(e);
-      const message =
-        e instanceof Error && e.message === "Dealer slug missing"
-          ? "Dealer information is missing. Please reopen the handover form."
-          : "Submit failed. Please try again.";
-      setSubmitMsg(withDealerCodeNote(message));
+    } catch (error: any) {
+      const { code, message } = formatCallableError(error);
+      toast.error(`Submit failed (${code}): ${message}`);
+    } finally {
       setSubmitting(false);
     }
   };
@@ -587,10 +548,10 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       pdf.addImage(imgData, "PNG", PDF_MARGIN, PDF_MARGIN, imgWidth, Math.min(imgHeight, pageHeight - PDF_MARGIN * 2));
       pdf.save(`handover_${sharedForm.chassisNumber || "chassis"}.pdf`);
-      setSubmitMsg("PDF downloaded.");
+      toast.success("PDF downloaded.");
     } catch (err) {
       console.error("PDF generation failed:", err);
-      setSubmitMsg("PDF generation failed. Please try again.");
+      toast.error("PDF generation failed. Please try again.");
     }
   };
 
@@ -598,31 +559,16 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-7xl w-[1200px] md:max-h-[88vh] overflow-y-auto">
         <div ref={printRef} className="space-y-5">
-          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-            <div className="font-semibold">Uploading to Salesforce</div>
-            <p className="mt-1">
-              Dealership_Purchased_From__c: <span className="font-mono">{sharedForm.dealershipCode || "Not set"}</span>
-            </p>
-            {dealershipLabel && sharedForm.dealershipCode && dealershipLabel !== sharedForm.dealershipCode && (
-              <p className="text-xs text-blue-800">Display name: {dealershipLabel}</p>
-            )}
-            {dealerConfig?.productRegistrationDealerName && (
-              <p className="text-xs text-blue-800">Slug value: {dealerConfig.productRegistrationDealerName}</p>
-            )}
-          </div>
-
           <DialogHeader>
             <DialogTitle className="text-xl">Product Registration & Handover</DialogTitle>
             <DialogDescription className="text-sm text-slate-600">
-              Auto-filled vehicle data with slug-based SAP mapping. Submit once to register the product, upload proof, and queue
-              customer details.
+              Submit to register, upload proof, and hand over.
             </DialogDescription>
           </DialogHeader>
 
           <div className="rounded-lg border p-4 bg-slate-50 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm font-semibold">Vehicle info (locked)</div>
-              <p className="text-xs text-slate-600">Values come from the schedule and the Admin SAP mapping for this slug.</p>
             </div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <div>
@@ -646,13 +592,8 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
                 <Input type="date" value={sharedForm.handoverDate} readOnly disabled className="bg-slate-100" />
               </div>
               <div>
-                <Label>Dealer (SAP code)</Label>
+                <Label>Dealer</Label>
                 <Input value={dealershipLabel} readOnly disabled className="bg-slate-100" />
-                <p className="text-xs text-slate-500 mt-1">Configured per slug in Admin → Dealer (SAP code).</p>
-                <p className="text-xs text-slate-500">Submitting SAP code: {sharedForm.dealershipCode || "Not set"}</p>
-                {dealerConfig?.productRegistrationDealerName && (
-                  <p className="text-xs text-slate-500">Slug value: {dealerConfig.productRegistrationDealerName}</p>
-                )}
               </div>
             </div>
           </div>
@@ -728,14 +669,11 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
           <div className="rounded-lg border p-4 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm font-semibold">Proof of purchase & submission</div>
-              <p className="text-xs text-muted-foreground">One click submits registration, proof upload, and customer queue.</p>
             </div>
             <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
               <div className="lg:col-span-2 space-y-2">
                 <Label>Upload proof file</Label>
                 <Input type="file" onChange={(e) => handleProofFileChange(e.target.files?.[0] ?? null)} />
-                <div className="text-xs text-muted-foreground">{proofFile?.name ?? "No file selected"}</div>
-                <p className="text-xs text-slate-500">File name and registration id are handled automatically.</p>
               </div>
               {filePreviewUrl && (
                 <div className="rounded border bg-slate-50 p-3">
@@ -753,29 +691,17 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
               <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting} onClick={handleCombinedSubmit} type="button">
                 {submitting ? "Submitting..." : "Submit"}
               </Button>
-              {submitMsg && <span className="text-xs text-slate-600">{submitMsg}</span>}
             </div>
-
-            {submitMsg && (
-              <div className="mt-3 rounded-md border bg-slate-50 p-3 text-xs text-slate-800">
-                <div className="font-semibold">Submit status</div>
-                <p className="mt-1 whitespace-pre-wrap break-words">{submitMsg}</p>
-                {chainedStatus && <p className="mt-1 text-slate-600">{chainedStatus}</p>}
-              </div>
-            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
             <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleDownloadPDF} type="button">
               Download PDF
             </Button>
-            <Button className="bg-indigo-600 hover:bg-indigo-700" disabled={submitting || !canSubmitHandover()} onClick={handleSubmitAssist} type="button">
-              {submitting ? "Submitting..." : "Save handover record"}
-            </Button>
-            {submitMsg && <span className="text-sm text-slate-600">{submitMsg}</span>}
           </div>
         </div>
       </DialogContent>
     </Dialog>
   );
+}
 }
