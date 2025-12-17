@@ -319,6 +319,18 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     return sharedForm.dealershipCode || "Not set";
   }, [sharedForm.dealershipCode]);
 
+  const dealerDebugNote = useMemo(() => {
+    const dealerCode = submittedDealerCodeRef.current || sharedForm.dealershipCode || "not set";
+    const slugValue = dealerConfig?.productRegistrationDealerName?.trim();
+    const label = dealershipLabel;
+    const pieces = [`SAP code: ${dealerCode}`];
+    if (label && label !== dealerCode) pieces.push(`label: ${label}`);
+    if (slugValue && slugValue !== dealerCode) pieces.push(`slug value: ${slugValue}`);
+    return pieces.join(" | ");
+  }, [dealerConfig?.productRegistrationDealerName, dealershipLabel, sharedForm.dealershipCode]);
+
+  const withDealerCodeNote = (message: string) => `${message} (${dealerDebugNote || "Dealer not set"})`;
+
   const withDealerCodeNote = (message: string) => {
     const dealerCode = submittedDealerCodeRef.current || sharedForm.dealershipCode || "not set";
     return `${message} (Dealer SAP code: ${dealerCode})`;
@@ -427,11 +439,6 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     Forms_Submitted: customerExtras.formsSubmitted,
     source: customerExtras.source,
     chassisNumber: sharedForm.chassisNumber,
-  });
-
-  const runChainedSubmissionAndUpload = async () => {
-    setChainedStatus("Step 1/2: create Product_Registered__c via callable...");
-    try {
       const registrationResponse = await submitProductRegistrationFn(buildProductPayload());
 
       const { success, salesforceId } = registrationResponse.data;
@@ -469,6 +476,10 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
   };
 
   const handleCombinedSubmit = async () => {
+    if (!sharedForm.dealershipCode.trim()) {
+      setSubmitMsg(withDealerCodeNote("Dealer SAP code is missing. Check slug config before submitting."));
+      return;
+    }
     setSubmitting(true);
     submittedDealerCodeRef.current = sharedForm.dealershipCode;
     setSubmitMsg(withDealerCodeNote("Submitting registration, proof, and customer details..."));
@@ -503,6 +514,10 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
   const handleSubmitAssist = async () => {
     if (!canSubmitHandover()) {
       setSubmitMsg("Please complete all required fields.");
+      return;
+    }
+    if (!sharedForm.dealershipCode.trim()) {
+      setSubmitMsg(withDealerCodeNote("Dealer SAP code is missing. Check slug config before submitting."));
       return;
     }
     setSubmitting(true);
@@ -580,24 +595,27 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-7xl w-[1200px] md:max-h-[88vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-xl">Product Registration & Handover</DialogTitle>
-          <DialogDescription className="text-sm text-slate-600">
-            Auto-filled vehicle data with slug-based SAP mapping. Submit once to register the product, upload proof, and queue
-            customer details.
-          </DialogDescription>
-        </DialogHeader>
-
         <div ref={printRef} className="space-y-5">
           <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-            <div className="font-semibold">Salesforce field: Dealership_Purchased_From__c</div>
+            <div className="font-semibold">Uploading to Salesforce</div>
             <p className="mt-1">
-              Uploading SAP code: <span className="font-mono">{sharedForm.dealershipCode || "Not set"}</span>
+              Dealership_Purchased_From__c: <span className="font-mono">{sharedForm.dealershipCode || "Not set"}</span>
             </p>
             {dealershipLabel && sharedForm.dealershipCode && dealershipLabel !== sharedForm.dealershipCode && (
               <p className="text-xs text-blue-800">Display name: {dealershipLabel}</p>
             )}
+            {dealerConfig?.productRegistrationDealerName && (
+              <p className="text-xs text-blue-800">Slug value: {dealerConfig.productRegistrationDealerName}</p>
+            )}
           </div>
+
+          <DialogHeader>
+            <DialogTitle className="text-xl">Product Registration & Handover</DialogTitle>
+            <DialogDescription className="text-sm text-slate-600">
+              Auto-filled vehicle data with slug-based SAP mapping. Submit once to register the product, upload proof, and queue
+              customer details.
+            </DialogDescription>
+          </DialogHeader>
 
           <div className="rounded-lg border p-4 bg-slate-50 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
