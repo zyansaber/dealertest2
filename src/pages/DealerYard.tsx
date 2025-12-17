@@ -14,6 +14,7 @@ import {
   addManualChassisToYard,
   dispatchFromYard,
   subscribeToHandover,
+  uploadDeliveryDocument,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
@@ -35,6 +36,7 @@ import {
 } from "recharts";
 import emailjs from "emailjs-com";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type PGIRec = {
   pgidate?: string | null;
@@ -338,6 +340,12 @@ export default function DealerYard() {
   const [yard, setYard] = useState<Record<string, YardRec>>({});
   const [handover, setHandover] = useState<Record<string, HandoverRec>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+
+  const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
+  const [receiveTarget, setReceiveTarget] = useState<null | { chassis: string; rec: PGIRec | null }>(null);
+  const [podFile, setPodFile] = useState<File | null>(null);
+  const [podStatus, setPodStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
+  const [uploadingPod, setUploadingPod] = useState(false);
 
   // On The Road date range (PGI list controls)
   const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
@@ -728,11 +736,42 @@ export default function DealerYard() {
   const showPriceColumn = PRICE_ENABLED_DEALERS.has(dealerSlug);
   const yardActionsEnabled = !PRICE_ENABLED_DEALERS.has(dealerSlug);
 
-  const handleReceive = async (chassis: string, rec: PGIRec) => {
+  const ocrUrl = useMemo(() => {
+    const base = "https://dealer-test.onrender.com/ocr";
+    if (receiveTarget?.chassis) {
+      return `${base}?chassis=${encodeURIComponent(receiveTarget.chassis)}`;
+    }
+    return base;
+  }, [receiveTarget?.chassis]);
+
+  const openReceiveDialog = (chassis: string, rec: PGIRec) => {
+    setReceiveTarget({ chassis, rec });
+    setPodFile(null);
+    setPodStatus(null);
+    setReceiveDialogOpen(true);
+  };
+
+  const handleUploadAndReceive = async () => {
+    if (!receiveTarget) return;
+    if (!podFile) {
+      setPodStatus({ type: "err", msg: "Please upload a signed POD (PDF) before receiving." });
+      return;
+    }
+
+    setUploadingPod(true);
+    setPodStatus(null);
     try {
-      await receiveChassisToYard(dealerSlug, chassis, rec);
+      await uploadDeliveryDocument(receiveTarget.chassis, podFile);
+      await receiveChassisToYard(dealerSlug, receiveTarget.chassis, receiveTarget.rec);
+      toast.success(`Uploaded signed POD and received ${receiveTarget.chassis} into Stock.`);
+      setReceiveDialogOpen(false);
+      setReceiveTarget(null);
+      setPodFile(null);
     } catch (e) {
-      console.error("receive failed", e);
+      console.error("receive with pod failed", e);
+      setPodStatus({ type: "err", msg: "Upload or receive failed. Please try again." });
+    } finally {
+      setUploadingPod(false);
     }
   };
 
@@ -919,7 +958,105 @@ export default function DealerYard() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <>
+      <Dialog
+        open={receiveDialogOpen}
+        onOpenChange={(open) => {
+          setReceiveDialogOpen(open);
+          if (!open) {
+            setReceiveTarget(null);
+            setPodFile(null);
+            setPodStatus(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader className="gap-2">
+            <DialogTitle className="text-xl">Receive with Signed POD</DialogTitle>
+            <DialogDescription className="text-sm text-slate-600">
+              Upload a signed Proof of Delivery to move this unit into Stock. Chassis: <span className="font-semibold text-slate-900">{receiveTarget?.chassis || "-"}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="rounded-2xl border bg-slate-50/80 p-4 shadow-inner">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-slate-900">Signed POD upload</p>
+                  <p className="text-sm text-slate-600">Submit a signed PDF. Once validated it will automatically receive into Stock.</p>
+                </div>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">SIGNED POD</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                <div className="flex flex-col gap-3 rounded-xl border-2 border-dashed border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-sm text-slate-700">
+                    Choose the signed POD (PDF). It will be stored in Firebase Storage at <code className="bg-slate-100 px-1">/deliverydoc</code> using the chassis number as the file name.
+                  </p>
+                  <Input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setPodFile(file);
+                      setPodStatus(null);
+                    }}
+                  />
+                  {podFile && (
+                    <p className="text-sm text-emerald-700">
+                      Selected: <span className="font-semibold">{podFile.name}</span>
+                    </p>
+                  )}
+                  <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Ensure the POD is clearly signed and legible before uploading.
+                  </div>
+                </div>
+                {podStatus && (
+                  <div className={`rounded-md border px-3 py-2 text-sm ${podStatus.type === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}>
+                    {podStatus.msg}
+                  </div>
+                )}
+                <Button
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
+                  onClick={handleUploadAndReceive}
+                  disabled={uploadingPod}
+                >
+                  {uploadingPod ? "Uploading..." : "Upload signed POD & Receive to Stock"}
+                </Button>
+                <p className="text-xs text-slate-600">We will keep the signed POD with the yard record as evidence of receipt.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border bg-white p-4 shadow-sm">
+              <div className="text-center space-y-2">
+                <p className="text-base font-semibold text-slate-900">Onsite scan option</p>
+                <p className="text-sm text-slate-600">Scan the QR to open the OCR page on a mobile device and capture a signed POD.</p>
+              </div>
+              <div className="rounded-2xl border bg-slate-50 p-4 shadow-inner">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(ocrUrl)}`}
+                  alt="OCR QR code"
+                  className="h-56 w-56 object-contain"
+                />
+              </div>
+              <div className="text-center text-sm text-slate-600 space-y-1">
+                <p>
+                  QR destination:
+                  <a href={ocrUrl} target="_blank" rel="noreferrer" className="font-semibold text-sky-700 underline ml-1">
+                    dealer-test.onrender.com/ocr
+                  </a>
+                </p>
+                <p>Once the POD is submitted, return here to complete the receive.</p>
+              </div>
+              <Button variant="outline" className="w-full" asChild>
+                <a href={ocrUrl} target="_blank" rel="noreferrer">
+                  Open OCR page directly
+                </a>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex min-h-screen">
       <Sidebar
         orders={[]}
         selectedDealer="locked"
@@ -999,7 +1136,7 @@ export default function DealerYard() {
                           </TableCell>
                           <TableCell>
                             {yardActionsEnabled ? (
-                              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
+                              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => openReceiveDialog(row.chassis, row)}>
                                 Receive
                               </Button>
                             ) : (
@@ -1443,5 +1580,6 @@ export default function DealerYard() {
         />
       </main>
     </div>
+    </>
   );
 }
