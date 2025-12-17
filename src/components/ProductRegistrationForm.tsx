@@ -394,6 +394,8 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     Dealership_Purchased_From__c: sharedForm.dealershipCode,
     Handover_Date__c: sharedForm.handoverDate,
     VIN__c: sharedForm.vin,
+    // Back-end expects dealershipCode for Product_Registered__c creation
+    dealershipCode: sharedForm.dealershipCode,
     firstName: sharedForm.firstName,
     lastName: sharedForm.lastName,
     email: sharedForm.email,
@@ -419,26 +421,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     Email__c: sharedForm.email,
     First_Name__c: sharedForm.firstName,
     Last_Name__c: sharedForm.lastName,
-    Mobile_Number__c: sharedForm.mobile,
-    Handover_Date__c: sharedForm.handoverDate,
-    Model__c: sharedForm.model,
-    Country__c: sharedForm.country,
-    State_AU__c: sharedForm.country === "AU" ? selectedRegion?.customerValue ?? "" : "",
-    State_NZ__c: sharedForm.country === "NZ" ? selectedRegion?.customerValue ?? "" : "",
-    Postcode__c: sharedForm.postcode,
-    Dealership_Purchased_From__c: sharedForm.dealershipCode,
-    Brand: sharedForm.brand,
-    Origin_Type: customerExtras.originType,
-    Lifecycle_Stage: customerExtras.lifecycleStage,
-    Form_Name_SAP_Sync: customerExtras.formNameSapSync,
-    Forms_Submitted: customerExtras.formsSubmitted,
-    source: customerExtras.source,
-    chassisNumber: sharedForm.chassisNumber,
-  });
-
-  const runChainedSubmissionAndUpload = async () => {
-    setChainedStatus("Step 1/2: create Product_Registered__c via callable...");
-    try {
+@@ -402,271 +444,287 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
       const registrationResponse = await submitProductRegistrationFn(buildProductPayload());
 
       const { success, salesforceId } = registrationResponse.data;
