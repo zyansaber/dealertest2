@@ -1044,7 +1044,7 @@ export default function DealerYard() {
                     dealer-test.onrender.com/ocr
                   </a>
                 </p>
-                <p>Once the POD is submitted, return here to complete the receive.</p>
+                <p>            </p>
               </div>
               <Button variant="outline" className="w-full" asChild>
                 <a href={ocrUrl} target="_blank" rel="noreferrer">
