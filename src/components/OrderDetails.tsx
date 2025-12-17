@@ -16,9 +16,10 @@ interface OrderDetailsProps {
   specPlan?: SpecPlanItem;
   dateTrack?: DateTrackItem;
   isStock: boolean;
+  displayForecastProductionDate?: string;
 }
 
-export default function OrderDetails({ order, specPlan, dateTrack, isStock }: OrderDetailsProps) {
+export default function OrderDetails({ order, specPlan, dateTrack, isStock, displayForecastProductionDate }: OrderDetailsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isSubscribeDialogOpen, setIsSubscribeDialogOpen] = useState(false);
@@ -213,6 +214,7 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock }: Or
   const rowClassName = !isStock 
     ? "grid grid-cols-12 gap-2 p-4 hover:bg-slate-50 cursor-pointer items-center border-l-4 border-blue-400"
     : "grid grid-cols-12 gap-2 p-4 hover:bg-blue-50 cursor-pointer items-center bg-blue-25";
+  const resolvedForecastProductionDate = displayForecastProductionDate ?? formatDateDDMMYYYY(order["Forecast Production Date"]);
 
   return (
     <div className="border border-slate-200 rounded-lg">
@@ -229,7 +231,7 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock }: Or
         <div className="col-span-2 text-slate-700 truncate">{order.Customer}</div>
         <div className="col-span-2 text-slate-700 truncate">{order.Model}</div>
         <div className="col-span-1 text-slate-700">{order["Model Year"]}</div>
-        <div className="col-span-2 text-slate-700">{formatDateDDMMYYYY(order["Forecast Production Date"])}</div>
+        <div className="col-span-2 text-slate-700">{resolvedForecastProductionDate}</div>
         <div className="col-span-2">
           {!isSignedPlansReceived ? (
             <Badge className="bg-orange-500 hover:bg-orange-600 text-white">Not Signed Yet</Badge>
