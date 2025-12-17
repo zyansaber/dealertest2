@@ -7,8 +7,8 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDateDDMMYYYY } from "@/lib/firebase";
 import { saveSubscription, checkSubscription, removeSubscription } from "@/lib/subscriptions";
+import { formatDateDDMMYYYY } from "@/lib/firebase";
 import type { ScheduleItem, SpecPlanItem, DateTrackItem, TimelineStage } from "@/types";
 
 interface OrderDetailsProps {
@@ -60,27 +60,73 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock }: Or
   // Calculate days between dates
   const calculateDays = (startDate: string | null, endDate: string | null): number => {
     if (!startDate) return 0;
-    
+
     const start = parseDate(startDate);
     const end = endDate ? parseDate(endDate) : new Date();
-    
+
     if (!start) return 0;
-    
+
     const diffTime = end.getTime() - start.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  const parseDate = (dateStr: string | null): Date | null => {
+  const parseFlexibleDate = (dateStr: string | null): Date | null => {
     if (!dateStr) return null;
-    
+
     const parts = dateStr.split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0]);
-      const month = parseInt(parts[1]) - 1;
-      const year = parseInt(parts[2]);
-      return new Date(year, month, day);
+    if (parts.length !== 3) return null;
+
+    const [part1, part2, part3] = parts.map((p) => parseInt(p, 10));
+    if ([part1, part2, part3].some((p) => Number.isNaN(p))) return null;
+
+    if (part1 > 1000 || parts[0].length === 4) {
+      return new Date(part1, part2 - 1, part3);
     }
-    return null;
+
+    if (part3 > 1000 || parts[2].length === 4) {
+      return new Date(part3, part2 - 1, part1);
+    }
+
+    return new Date(part3, part2 - 1, part1);
+  };
+
+  const parseDate = (dateStr: string | null): Date | null => parseFlexibleDate(dateStr);
+
+  const parseShipmentDate = (shipment: string | undefined): Date | null => {
+    if (!shipment) return null;
+    const [datePart] = shipment.split('-');
+    return parseFlexibleDate(datePart?.trim() || null);
+  };
+
+  const addDays = (date: Date, days: number) => {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  };
+
+  const formatDate = (date: Date | null): string => {
+    if (!date) return "Not set";
+    const day = date.getDate().toString().padStart(2, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  const getForecastMelbourneFactoryStartDate = () => {
+    const forecastDate = parseFlexibleDate(order["Forecast Production Date"]);
+    const status = order["Regent Production"]?.trim?.().toLowerCase?.();
+
+    if (status === "van on the sea") {
+      const shipmentDate = parseShipmentDate(order.Shipment);
+      if (shipmentDate) {
+        const minimumDate = addDays(shipmentDate, 3);
+        if (!forecastDate || forecastDate < minimumDate) {
+          return formatDate(minimumDate);
+        }
+      }
+    }
+
+    return formatDate(forecastDate);
   };
 
   // Calculate days elapsed from Purchase Order Sent
@@ -104,6 +150,8 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock }: Or
         name: "Signed Plans Received",
         date: order["Signed Plans Received"],
         status: order["Signed Plans Received"] ? "completed" : "pending"
+      },
+      {
       },
       {
         name: "Purchase Order Sent",
@@ -227,7 +275,7 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock }: Or
           {isStock && <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">Stock</Badge>}
         </div>
         <div className="col-span-2 text-slate-700 truncate">{order.Customer}</div>
-        <div className="col-span-2 text-slate-700 truncate">{order.Model}</div>
+        <div className="col-span-2 text-slate-700">{getForecastMelbourneFactoryStartDate()}</div>
         <div className="col-span-1 text-slate-700">{order["Model Year"]}</div>
         <div className="col-span-2 text-slate-700">{formatDateDDMMYYYY(order["Forecast Production Date"])}</div>
         <div className="col-span-2">
