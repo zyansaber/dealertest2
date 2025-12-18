@@ -398,7 +398,7 @@ export default function DealerYard() {
   const [podPreviewUrl, setPodPreviewUrl] = useState<string | null>(null);
   const [podStatus, setPodStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
   const [uploadingPod, setUploadingPod] = useState(false);
-  const [activeTab, setActiveTab] = useState<"kpi" | "waiting" | "yard">("kpi");
+  const [activeTab, setActiveTab] = useState<"kpi" | "waiting" | "yard">("waiting");
 
   // On The Road date range (PGI list controls)
   const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
