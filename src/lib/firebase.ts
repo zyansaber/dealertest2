@@ -10,7 +10,7 @@ import {
   remove,
   DataSnapshot,
 } from "firebase/database";
-import { getStorage, ref as storageRef, uploadBytes } from "firebase/storage";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import type {
   SecondHandSale,
   ScheduleItem,
@@ -705,12 +705,12 @@ export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<stri
   return () => off(r, "value", handler);
 }
 
-export async function uploadDeliveryDocument(chassis: string, pdf: Blob) {
+export async function uploadDeliveryDocument(chassis: string, pdf: Blob): Promise<string> {
   const sanitized = chassis.trim().replace(/\s+/g, "").toUpperCase();
   const key = sanitized || `delivery_${Date.now()}`;
   const fileRef = storageRef(storage, `deliverydoc/${key}.pdf`);
   await uploadBytes(fileRef, pdf, { contentType: "application/pdf" });
-  return fileRef;
+  return getDownloadURL(fileRef);
 }
 
 export async function receiveChassisToYard(
