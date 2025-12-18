@@ -398,6 +398,7 @@ export default function DealerYard() {
   const [podPreviewUrl, setPodPreviewUrl] = useState<string | null>(null);
   const [podStatus, setPodStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
   const [uploadingPod, setUploadingPod] = useState(false);
+  const [activeTab, setActiveTab] = useState<"kpi" | "waiting" | "yard">("kpi");
 
   // On The Road date range (PGI list controls)
   const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
@@ -405,7 +406,7 @@ export default function DealerYard() {
   const [customEnd, setCustomEnd] = useState<string>("");
 
   // KPI date range (independent from PGI list)
-  const [kpiRangeType, setKpiRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
+  const [kpiRangeType, setKpiRangeType] = useState<"7d" | "30d" | "90d" | "custom">("90d");
   const [kpiCustomStart, setKpiCustomStart] = useState<string>("");
   const [kpiCustomEnd, setKpiCustomEnd] = useState<string>("");
 
@@ -696,6 +697,19 @@ export default function DealerYard() {
           isSecondhandChassis(x.chassis)
       ).length,
     [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+  );
+
+  const yardChassisSet = useMemo(() => new Set(yardList.map((row) => row.chassis.toUpperCase())), [yardList]);
+  const handoverChassisSet = useMemo(() => new Set(handoverList.map((row) => row.chassis.toUpperCase())), [handoverList]);
+
+  const waitingForReceiving = useMemo(
+    () =>
+      onTheRoadInRange.filter((row) => {
+        const ch = toStr(row.chassis).toUpperCase();
+        if (!ch) return false;
+        return !yardChassisSet.has(ch) && !handoverChassisSet.has(ch);
+      }),
+    [onTheRoadInRange, yardChassisSet, handoverChassisSet]
   );
 
   const kpiYardStockCurrent = useMemo(() => {
@@ -1188,15 +1202,15 @@ export default function DealerYard() {
       </Dialog>
 
       <div className="flex min-h-screen">
-      <Sidebar
-        orders={[]}
-        selectedDealer="locked"
-        onDealerSelect={() => {}}
-        hideOtherDealers
-        currentDealerName={dealerDisplayName}
-        showStats={false}
-      />
-      <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
+        <Sidebar
+          orders={[]}
+          selectedDealer="locked"
+          onDealerSelect={() => {}}
+          hideOtherDealers
+          currentDealerName={dealerDisplayName}
+          showStats={false}
+        />
+        <main className="flex-1 p-6 space-y-6 bg-gradient-to-br from-slate-50 via-white to-slate-100">
         <header className="pb-2">
           <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 via-blue-700 to-sky-600">
             Yard Inventory & On The Road — {dealerDisplayName}
@@ -1204,491 +1218,518 @@ export default function DealerYard() {
           <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
         </header>
 
-        {/* On The Road (PGI list) */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle>On The Road (PGI)</CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                className="h-9 rounded-md border px-2 text-sm"
-                value={rangeType}
-                onChange={(e) => setRangeType(e.target.value as typeof rangeType)}
-              >
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="90d">Last 90 days</option>
-                <option value="custom">Custom</option>
-              </select>
-              {rangeType === "custom" && (
-                <>
-                  <Input type="date" className="h-9 w-[160px]" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-                  <Input type="date" className="h-9 w-[160px]" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
-                </>
-              )}
-              <div className="text-xs text-slate-500">
-                Range: {startDate.toLocaleDateString()} ~ {endDate.toLocaleDateString()}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {onTheRoadInRange.length === 0 ? (
-              <div className="text-sm text-slate-500">No PGI records in the selected range.</div>
-            ) : (
-              <div className="rounded-lg border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">Chassis</TableHead>
-                      <TableHead className="font-semibold">VIN Number</TableHead>
-                      <TableHead className="font-semibold">PGI Date</TableHead>
-                      <TableHead className="font-semibold">Model</TableHead>
-                      <TableHead className="font-semibold">Customer</TableHead>
-                      <TableHead className="font-semibold">Days Since PGI</TableHead>
-                      <TableHead className="font-semibold">Received</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {onTheRoadInRange.map((row) => {
-                      const vin = extractVin(row);
-                      return (
-                        <TableRow key={row.chassis}>
-                          <TableCell className="font-medium">{row.chassis}</TableCell>
-                          <TableCell>{vin || "-"}</TableCell>
-                          <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
-                          <TableCell>{toStr(row.model) || "-"}</TableCell>
-                          <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                          <TableCell>
-                            {(() => {
-                              const d = parseDDMMYYYY(row.pgidate);
-                              if (!d) return 0;
-                              const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-                              return diff < 0 ? 0 : diff;
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            {yardActionsEnabled ? (
-                              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => openReceiveDialog(row.chassis, row)}>
-                                Receive
-                              </Button>
-                            ) : (
-                              <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* KPI Cards with independent range */}
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">KPI Overview</CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                className="h-9 rounded-md border px-2 text-sm"
-                value={kpiRangeType}
-                onChange={(e) => setKpiRangeType(e.target.value as typeof kpiRangeType)}
-              >
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="90d">Last 90 days</option>
-                <option value="custom">Custom</option>
-              </select>
-              {kpiRangeType === "custom" && (
-                <>
-                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomStart} onChange={(e) => setKpiCustomStart(e.target.value)} />
-                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomEnd} onChange={(e) => setKpiCustomEnd(e.target.value)} />
-                </>
-              )}
-              <div className="text-xs text-slate-500">
-                Range: {kpiStartDate.toLocaleDateString()} ~ {kpiEndDate.toLocaleDateString()}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Factory PGI to Dealer</div>
-                    <div className="text-2xl font-semibold">{kpiPgiCount}</div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                    <Truck className="w-5 h-5 text-blue-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Received Vans</div>
-                    <div className="text-2xl font-semibold">{kpiReceivedCount}</div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
-                    <PackageCheck className="w-5 h-5 text-emerald-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Handovers</div>
-                    <div className="text-2xl font-semibold">{kpiHandoverCount}</div>
-                    <div className="text-xs text-slate-500 mt-1">Secondhand: <span className="font-medium">{kpiSecondhandCount}</span></div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
-                    <Handshake className="w-5 h-5 text-purple-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Current Yard Stock</div>
-                    <div className="text-2xl font-semibold">{kpiYardStockCurrent.total}</div>
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center">
-                    <Warehouse className="w-5 h-5 text-slate-700" />
-                  </div>
-                </div>
-                <div className="text-xs text-slate-500 mt-1">
-                  Stock: <span className="text-blue-700 font-medium">{kpiYardStockCurrent.stock}</span> · Customer:{" "}
-                  <span className="text-emerald-700 font-medium">{kpiYardStockCurrent.customer}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Monthly Received / Monthly Handovers / 10-Week Stock Level */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Received Vans (Monthly)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={receivedMonthlyData}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Bar dataKey="count" fill="#10b981" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Handovers (Monthly)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={handoversMonthlyData}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Bar dataKey="count" fill="#8b5cf6" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Stock Level (Last 10 Weeks)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={stockLevel10Weeks}>
-                  <XAxis dataKey="week" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Line type="monotone" dataKey="level" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={activeTab === "kpi" ? "default" : "outline"}
+            className={activeTab === "kpi" ? "" : "!bg-transparent !hover:bg-transparent"}
+            onClick={() => setActiveTab("kpi")}
+          >
+            Yard KPI Overview
+          </Button>
+          <Button
+            variant={activeTab === "waiting" ? "default" : "outline"}
+            className={activeTab === "waiting" ? "" : "!bg-transparent !hover:bg-transparent"}
+            onClick={() => setActiveTab("waiting")}
+          >
+            Waiting for Receiving
+          </Button>
+          <Button
+            variant={activeTab === "yard" ? "default" : "outline"}
+            className={activeTab === "yard" ? "" : "!bg-transparent !hover:bg-transparent"}
+            onClick={() => setActiveTab("yard")}
+          >
+            Yard Inventory
+          </Button>
         </div>
 
-        {/* Side-by-side: Days In Yard (left) + Stock Analysis (right) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Days In Yard Buckets (Left) */}
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Days In Yard</CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={selectedRangeBucket === null ? "default" : "outline"}
-                  className={selectedRangeBucket === null ? "" : "!bg-transparent !hover:bg-transparent"}
-                  onClick={() => setSelectedRangeBucket(null)}
-                  title="Clear Days In Yard filter"
-                >
-                  All
-                </Button>
-                {yardRangeDefs.map((b) => (
-                  <Button
-                    key={b.label}
-                    variant={selectedRangeBucket === b.label ? "default" : "outline"}
-                    className={selectedRangeBucket === b.label ? "" : "!bg-transparent !hover:bg-transparent"}
-                    onClick={() => setSelectedRangeBucket((prev) => (prev === b.label ? null : b.label))}
+        {activeTab === "kpi" && (
+          <>
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader className="flex items-center justify-between">
+                <CardTitle className="text-sm">KPI Overview</CardTitle>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="h-9 rounded-md border px-2 text-sm"
+                    value={kpiRangeType}
+                    onChange={(e) => setKpiRangeType(e.target.value as typeof kpiRangeType)}
                   >
-                    {b.label}
-                  </Button>
-                ))}
+                    <option value="7d">Last 7 days</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="90d">Last 90 days</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {kpiRangeType === "custom" && (
+                    <>
+                      <Input type="date" className="h-9 w-[160px]" value={kpiCustomStart} onChange={(e) => setKpiCustomStart(e.target.value)} />
+                      <Input type="date" className="h-9 w-[160px]" value={kpiCustomEnd} onChange={(e) => setKpiCustomEnd(e.target.value)} />
+                    </>
+                  )}
+                  <div className="text-xs text-slate-500">
+                    Range: {kpiStartDate.toLocaleDateString()} ~ {kpiEndDate.toLocaleDateString()}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="rounded-xl border bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Factory PGI to Dealer</div>
+                        <div className="text-2xl font-semibold">{kpiPgiCount}</div>
+                      </div>
+                      <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Truck className="w-5 h-5 text-blue-600" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Received Vans</div>
+                        <div className="text-2xl font-semibold">{kpiReceivedCount}</div>
+                      </div>
+                      <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
+                        <PackageCheck className="w-5 h-5 text-emerald-600" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Handovers</div>
+                        <div className="text-2xl font-semibold">{kpiHandoverCount}</div>
+                        <div className="text-xs text-slate-500 mt-1">Secondhand: <span className="font-medium">{kpiSecondhandCount}</span></div>
+                      </div>
+                      <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
+                        <Handshake className="w-5 h-5 text-purple-600" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Current Yard Stock</div>
+                        <div className="text-2xl font-semibold">{kpiYardStockCurrent.total}</div>
+                      </div>
+                      <div className="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center">
+                        <Warehouse className="w-5 h-5 text-slate-700" />
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Stock: <span className="text-blue-700 font-medium">{kpiYardStockCurrent.stock}</span> · Customer:{" "}
+                      <span className="text-emerald-700 font-medium">{kpiYardStockCurrent.customer}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+                <CardHeader className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Received Vans (Monthly)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={receivedMonthlyData}>
+                      <XAxis dataKey="label" />
+                      <YAxis allowDecimals={false} />
+                      <ReTooltip />
+                      <Bar dataKey="count" fill="#10b981" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+                <CardHeader className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Handovers (Monthly)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={handoversMonthlyData}>
+                      <XAxis dataKey="label" />
+                      <YAxis allowDecimals={false} />
+                      <ReTooltip />
+                      <Bar dataKey="count" fill="#8b5cf6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+                <CardHeader className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Stock Level (Last 10 Weeks)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={stockLevel10Weeks}>
+                      <XAxis dataKey="week" />
+                      <YAxis allowDecimals={false} />
+                      <ReTooltip />
+                      <Line type="monotone" dataKey="level" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 2 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
+
+        {activeTab === "waiting" && (
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle>Waiting for Receiving</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  className="h-9 rounded-md border px-2 text-sm"
+                  value={rangeType}
+                  onChange={(e) => setRangeType(e.target.value as typeof rangeType)}
+                >
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                  <option value="custom">Custom</option>
+                </select>
+                {rangeType === "custom" && (
+                  <>
+                    <Input type="date" className="h-9 w-[160px]" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
+                    <Input type="date" className="h-9 w-[160px]" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
+                  </>
+                )}
+                <div className="text-xs text-slate-500">
+                  Range: {startDate.toLocaleDateString()} ~ {endDate.toLocaleDateString()}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={yardRangeBuckets}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Bar
-                    dataKey="count"
-                    fill="#6366f1"
-                    onClick={(_, idx: number) => {
-                      const label = yardRangeBuckets[idx]?.label;
-                      if (label) setSelectedRangeBucket(label);
-                    }}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              {waitingForReceiving.length === 0 ? (
+                <div className="text-sm text-slate-500">No PGI records awaiting receipt in the selected range.</div>
+              ) : (
+                <div className="rounded-lg border overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="font-semibold">Chassis</TableHead>
+                        <TableHead className="font-semibold">VIN Number</TableHead>
+                        <TableHead className="font-semibold">PGI Date</TableHead>
+                        <TableHead className="font-semibold">Model</TableHead>
+                        <TableHead className="font-semibold">Customer</TableHead>
+                        <TableHead className="font-semibold">Days Since PGI</TableHead>
+                        <TableHead className="font-semibold">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {waitingForReceiving.map((row) => {
+                        const vin = extractVin(row);
+                        return (
+                          <TableRow key={row.chassis}>
+                            <TableCell className="font-medium">{row.chassis}</TableCell>
+                            <TableCell>{vin || "-"}</TableCell>
+                            <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
+                            <TableCell>{toStr(row.model) || "-"}</TableCell>
+                            <TableCell>{toStr(row.customer) || "-"}</TableCell>
+                            <TableCell>
+                              {(() => {
+                                const d = parseDDMMYYYY(row.pgidate);
+                                if (!d) return 0;
+                                const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+                                return diff < 0 ? 0 : diff;
+                              })()}
+                            </TableCell>
+                            <TableCell>
+                              {yardActionsEnabled ? (
+                                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => openReceiveDialog(row.chassis, row)}>
+                                  Receive
+                                </Button>
+                              ) : (
+                                <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
+        )}
 
-          {/* Stock Analysis (Right) */}
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Stock Analysis</CardTitle>
-              <div className="flex flex-wrap gap-2 items-center">
-                <div className="flex flex-wrap gap-1">
-                  <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
-                  <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
-                  <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
-                  <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
-                  <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
-                  <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <ResponsiveContainer width="100%" height={220}>
-                {activeCategory === "length" ? (
-                  <BarChart data={analysisData.map((x) => ({ label: x.name, count: x.value }))}>
-                    <XAxis dataKey="label" />
-                    <YAxis allowDecimals={false} />
-                    <ReTooltip />
-                    <Bar dataKey="count" fill="#0ea5e9" />
-                  </BarChart>
-                ) : (
-                  <PieChart>
-                    <Pie
-                      data={analysisData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={90}
-                      innerRadius={50}
-                      onClick={(data: any) => {
-                        if (activeCategory === "range" && data?.name) {
-                          setSelectedModelRange(String(data.name));
-                          setSelectedType("Stock");
-                        }
-                      }}
-                    >
-                      {analysisData.map((entry, index) => (
-                        <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Legend />
-                    <ReTooltip />
-                  </PieChart>
-                )}
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Yard Inventory */}
-        <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-          <CardHeader className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 w-full">
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 md:gap-4">
-                <CardTitle>Yard Inventory</CardTitle>
-                <div className="flex flex-wrap gap-2 items-center w-full md:w-auto md:justify-end md:ml-auto">
-                  <Input
-                    list={searchTerm.trim() ? "chassis-suggestions" : undefined}
-                    placeholder="Search chassis"
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setSearchStatus(null);
-                    }}
-                    className="md:min-w-[260px]"
-                  />
-                  {searchTerm.trim() && (
-                    <datalist id="chassis-suggestions">
-                      {yardList.map((row) => (
-                        <option key={row.chassis} value={row.chassis} />
-                      ))}
-                    </datalist>
-                  )}
-                  {searchTerm.trim() && (
-                    <Button variant="secondary" size="sm" onClick={() => setSearchTerm("")}>
-                      Clear
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {searchTerm.trim() && chassisSuggestions.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                  <span>Suggestions:</span>
-                  {chassisSuggestions.map((row) => (
+        {activeTab === "yard" && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+                <CardHeader className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Days In Yard</CardTitle>
+                  <div className="flex items-center gap-2">
                     <Button
-                      key={row.chassis}
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSearchTerm(row.chassis)}
+                      variant={selectedRangeBucket === null ? "default" : "outline"}
+                      className={selectedRangeBucket === null ? "" : "!bg-transparent !hover:bg-transparent"}
+                      onClick={() => setSelectedRangeBucket(null)}
+                      title="Clear Days In Yard filter"
                     >
-                      {row.chassis}
+                      All
+                    </Button>
+                    {yardRangeDefs.map((b) => (
+                      <Button
+                        key={b.label}
+                        variant={selectedRangeBucket === b.label ? "default" : "outline"}
+                        className={selectedRangeBucket === b.label ? "" : "!bg-transparent !hover:bg-transparent"}
+                        onClick={() => setSelectedRangeBucket((prev) => (prev === b.label ? null : b.label))}
+                      >
+                        {b.label}
+                      </Button>
+                    ))}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={yardRangeBuckets}>
+                      <XAxis dataKey="label" />
+                      <YAxis allowDecimals={false} />
+                      <ReTooltip />
+                      <Bar
+                        dataKey="count"
+                        fill="#6366f1"
+                        onClick={(_, idx: number) => {
+                          const label = yardRangeBuckets[idx]?.label;
+                          if (label) setSelectedRangeBucket(label);
+                        }}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+                <CardHeader className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Stock Analysis</CardTitle>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <div className="flex flex-wrap gap-1">
+                      <Button variant={activeCategory === "range" ? "default" : "outline"} className={activeCategory === "range" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("range")}>Range</Button>
+                      <Button variant={activeCategory === "function" ? "default" : "outline"} className={activeCategory === "function" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("function")}>Function</Button>
+                      <Button variant={activeCategory === "layout" ? "default" : "outline"} className={activeCategory === "layout" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("layout")}>Layout</Button>
+                      <Button variant={activeCategory === "axle" ? "default" : "outline"} className={activeCategory === "axle" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("axle")}>Axle</Button>
+                      <Button variant={activeCategory === "length" ? "default" : "outline"} className={activeCategory === "length" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("length")}>Length</Button>
+                      <Button variant={activeCategory === "height" ? "default" : "outline"} className={activeCategory === "height" ? "" : "!bg-transparent !hover:bg-transparent"} onClick={() => setActiveCategory("height")}>Height</Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <ResponsiveContainer width="100%" height={220}>
+                    {activeCategory === "length" ? (
+                      <BarChart data={analysisData.map((x) => ({ label: x.name, count: x.value }))}>
+                        <XAxis dataKey="label" />
+                        <YAxis allowDecimals={false} />
+                        <ReTooltip />
+                        <Bar dataKey="count" fill="#0ea5e9" />
+                      </BarChart>
+                    ) : (
+                      <PieChart>
+                        <Pie
+                          data={analysisData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={90}
+                          innerRadius={50}
+                          onClick={(data: any) => {
+                            if (activeCategory === "range" && data?.name) {
+                              setSelectedModelRange(String(data.name));
+                              setSelectedType("Stock");
+                            }
+                          }}
+                        >
+                          {analysisData.map((entry, index) => (
+                            <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Legend />
+                        <ReTooltip />
+                      </PieChart>
+                    )}
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
+              <CardHeader className="flex flex-col gap-4">
+                <div className="flex flex-col gap-3 w-full">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 md:gap-4">
+                    <CardTitle>Yard Inventory</CardTitle>
+                    <div className="flex flex-wrap gap-2 items-center w-full md:w-auto md:justify-end md:ml-auto">
+                      <Input
+                        list={searchTerm.trim() ? "chassis-suggestions" : undefined}
+                        placeholder="Search chassis"
+                        value={searchTerm}
+                        onChange={(e) => {
+                          setSearchTerm(e.target.value);
+                          setSearchStatus(null);
+                        }}
+                        className="md:min-w-[260px]"
+                      />
+                      {searchTerm.trim() && (
+                        <datalist id="chassis-suggestions">
+                          {yardList.map((row) => (
+                            <option key={row.chassis} value={row.chassis} />
+                          ))}
+                        </datalist>
+                      )}
+                      {searchTerm.trim() && (
+                        <Button variant="secondary" size="sm" onClick={() => setSearchTerm("")}>
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {searchTerm.trim() && chassisSuggestions.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      <span>Suggestions:</span>
+                      {chassisSuggestions.map((row) => (
+                        <Button
+                          key={row.chassis}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSearchTerm(row.chassis)}
+                        >
+                          {row.chassis}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  {searchTerm.trim() && chassisSuggestions.length === 0 && (
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                      <span>未找到车架号，是否加入库存？</span>
+                      <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleAddFromSearch}>
+                        添加 {searchTerm.trim().toUpperCase()}
+                      </Button>
+                      {searchStatus && (
+                        <span className={`text-xs ${searchStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
+                          {searchStatus.msg}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="flex w-full md:w-auto items-stretch md:items-center gap-2">
+                  <Input
+                    placeholder="Enter chassis number manually"
+                    value={manualChassis}
+                    onChange={(e) => setManualChassis(e.target.value)}
+                    className="md:min-w-[240px]"
+                  />
+                  <Button onClick={handleAddManual} className="bg-sky-600 hover:bg-sky-700">
+                    Add to Yard
+                  </Button>
+                  {manualStatus && (
+                    <div className={`text-sm ${manualStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
+                      {manualStatus.msg}
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-slate-600">Type:</span>
+                  {(["All", "Stock", "Customer"] as const).map((option) => (
+                    <Button
+                      key={option}
+                      size="sm"
+                      variant={selectedType === option ? "default" : "outline"}
+                      className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
+                      onClick={() => setSelectedType(option)}
+                    >
+                      {option}
                     </Button>
                   ))}
                 </div>
-              )}
-              {searchTerm.trim() && chassisSuggestions.length === 0 && (
-                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                  <span>未找到车架号，是否加入库存？</span>
-                  <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleAddFromSearch}>
-                    添加 {searchTerm.trim().toUpperCase()}
-                  </Button>
-                  {searchStatus && (
-                    <span className={`text-xs ${searchStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
-                      {searchStatus.msg}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex w-full md:w-auto items-stretch md:items-center gap-2">
-              <Input
-                placeholder="Enter chassis number manually"
-                value={manualChassis}
-                onChange={(e) => setManualChassis(e.target.value)}
-                className="md:min-w-[240px]"
-              />
-              <Button onClick={handleAddManual} className="bg-sky-600 hover:bg-sky-700">
-                Add to Yard
-              </Button>
-              {manualStatus && (
-                <div className={`text-sm ${manualStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
-                  {manualStatus.msg}
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-slate-600">Type:</span>
-              {(["All", "Stock", "Customer"] as const).map((option) => (
-                <Button
-                  key={option}
-                  size="sm"
-                  variant={selectedType === option ? "default" : "outline"}
-                  className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
-                  onClick={() => setSelectedType(option)}
-                >
-                  {option}
-                </Button>
-              ))}
-            </div>
-            {yardListDisplay.length === 0 ? (
-              <div className="text-sm text-slate-500">No units in yard inventory.</div>
-            ) : (
-              <div className="rounded-lg border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="font-semibold">Chassis</TableHead>
-                      <TableHead className="font-semibold">VIN Number</TableHead>
-                      <TableHead className="font-semibold">Received At</TableHead>
-                      <TableHead className="font-semibold">Model</TableHead>
-                      {showPriceColumn && <TableHead className="font-semibold">AUD Price (excl. GST)</TableHead>}
-                      <TableHead className="font-semibold">Customer</TableHead>
-                      <TableHead className="font-semibold">Type</TableHead>
-                      <TableHead className="font-semibold">Days In Yard</TableHead>
-                      <TableHead className="font-semibold">Report invalid stock</TableHead>
-                      <TableHead className="font-semibold">Handover</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {yardListDisplay.map((row) => (
-                      <TableRow key={row.chassis}>
-                        <TableCell className="font-medium">{row.chassis}</TableCell>
-                        <TableCell>{row.vinnumber || "-"}</TableCell>
-                        <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
-                        <TableCell>{toStr(row.model) || "-"}</TableCell>
-                        {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
-                        <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>
-                          <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
-                            {row.type}
-                          </span>
-                        </TableCell>
-                        <TableCell>{row.daysInYard}</TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-amber-500 text-amber-700 hover:bg-amber-50"
-                            onClick={() => handleReportIssue(row)}
-                          >
-                            Report
-                          </Button>
-                        </TableCell>
-                        <TableCell>
-                          {yardActionsEnabled ? (
-                            <Button
-                              size="sm"
-                              className="bg-purple-600 hover:bg-purple-700"
-                              onClick={() => {
-                                setHandoverData({
-                                  chassis: row.chassis,
-                                  model: row.model,
-                                  vinnumber: row.vinnumber ? String(row.vinnumber) : null,
-                                  dealerName: dealerDisplayName,
-                                  dealerSlug,
-                                  handoverAt: new Date().toISOString(),
-                                });
-                                setHandoverOpen(true);
-                              }}
-                            >
-                              Handover
-                            </Button>
-                          ) : (
-                            <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                {yardListDisplay.length === 0 ? (
+                  <div className="text-sm text-slate-500">No units in yard inventory.</div>
+                ) : (
+                  <div className="rounded-lg border overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="font-semibold">Chassis</TableHead>
+                          <TableHead className="font-semibold">VIN Number</TableHead>
+                          <TableHead className="font-semibold">Received At</TableHead>
+                          <TableHead className="font-semibold">Model</TableHead>
+                          {showPriceColumn && <TableHead className="font-semibold">AUD Price (excl. GST)</TableHead>}
+                          <TableHead className="font-semibold">Customer</TableHead>
+                          <TableHead className="font-semibold">Type</TableHead>
+                          <TableHead className="font-semibold">Days In Yard</TableHead>
+                          <TableHead className="font-semibold">Report invalid stock</TableHead>
+                          <TableHead className="font-semibold">Handover</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {yardListDisplay.map((row) => (
+                          <TableRow key={row.chassis}>
+                            <TableCell className="font-medium">{row.chassis}</TableCell>
+                            <TableCell>{row.vinnumber || "-"}</TableCell>
+                            <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
+                            <TableCell>{toStr(row.model) || "-"}</TableCell>
+                            {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
+                            <TableCell>{toStr(row.customer) || "-"}</TableCell>
+                            <TableCell>
+                              <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
+                                {row.type}
+                              </span>
+                            </TableCell>
+                            <TableCell>{row.daysInYard}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-amber-500 text-amber-700 hover:bg-amber-50"
+                                onClick={() => handleReportIssue(row)}
+                              >
+                                Report
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              {yardActionsEnabled ? (
+                                <Button
+                                  size="sm"
+                                  className="bg-purple-600 hover:bg-purple-700"
+                                  onClick={() => {
+                                    setHandoverData({
+                                      chassis: row.chassis,
+                                      model: row.model,
+                                      vinnumber: row.vinnumber ? String(row.vinnumber) : null,
+                                      dealerName: dealerDisplayName,
+                                      dealerSlug,
+                                      handoverAt: new Date().toISOString(),
+                                    });
+                                    setHandoverOpen(true);
+                                  }}
+                                >
+                                  Handover
+                                </Button>
+                              ) : (
+                                <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
 
         {/* Handover Modal */}
-                <ProductRegistrationForm
+        <ProductRegistrationForm
           open={handoverOpen}
           onOpenChange={(open) => {
             setHandoverOpen(open);
