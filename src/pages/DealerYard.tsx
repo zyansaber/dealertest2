@@ -371,22 +371,6 @@ const extractCustomerEmail = (rec: PGIRec | null | undefined): string | null => 
   return normalizeEmail(nested);
 };
 
-const readFileAsDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result === "string") {
-        resolve(result);
-      } else {
-        reject(new Error("Failed to read POD file"));
-      }
-    };
-    reader.onerror = () => reject(new Error("Failed to read POD file"));
-    reader.readAsDataURL(file);
-  });
-
-
 // Days in Yard buckets (updated as requested)
 const yardRangeDefs = [
   { label: "0–30", min: 0, max: 30 },
@@ -848,17 +832,16 @@ export default function DealerYard() {
       return;
     }
 
-   setUploadingPod(true);
+    setUploadingPod(true);
     setPodStatus(null);
     try {
       const shouldEmail = Boolean(EMAIL_SERVICE_ID && EMAIL_PUBLIC_KEY);
-      const attachmentDataUrl = shouldEmail ? await readFileAsDataUrl(podFile) : null;
 
-      await uploadDeliveryDocument(receiveTarget.chassis, podFile);
+      const podDownloadUrl = await uploadDeliveryDocument(receiveTarget.chassis, podFile);
       await receiveChassisToYard(dealerSlug, receiveTarget.chassis, receiveTarget.rec);
       toast.success(`Uploaded signed POD and received ${receiveTarget.chassis} into Stock.`);
 
-      if (shouldEmail && attachmentDataUrl) {
+      if (shouldEmail && podDownloadUrl) {
         try {
           await emailjs.send(
             EMAIL_SERVICE_ID,
@@ -867,8 +850,9 @@ export default function DealerYard() {
               chassis: receiveTarget.chassis,
               dealer: dealerDisplayName,
               message: `Signed POD for chassis ${receiveTarget.chassis} (${dealerDisplayName})`,
-              pod_attachment: attachmentDataUrl,
-              attachment: attachmentDataUrl,
+              pod_link: podDownloadUrl,
+              pod_attachment: podDownloadUrl,
+              attachment: podDownloadUrl,
               filename: podFile.name || `${receiveTarget.chassis}.pdf`,
             },
             EMAIL_PUBLIC_KEY
