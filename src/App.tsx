@@ -20,6 +20,7 @@ import ProtectedDealerGroupRoute from "./components/ProtectedDealerGroupRoute";
 import FinanceReport from "./pages/FinanceReport";
 import ShowDealerships from "@/pages/ShowDealerships";
 import ShowManagement from "./pages/ShowManagement";
+import InternalSnowyPage from "./pages/InternalSnowy";
 
 // Dealer Group pages
 import DealerGroupPortal from "./pages/DealerGroupPortal";
@@ -91,6 +92,9 @@ const AppShell = () => {
 
         {/* 独立 Salesforce 测试页（不纳入正式导航） */}
         <Route path="/salesforce-test" element={<SalesforceTest />} />
+
+        {/* Standalone internal snapshot page (no sidebar) */}
+        <Route path="/xxx/internal-snowy-2487" element={<InternalSnowyPage />} />
 
         {/* 单个 Dealer 路由 - 使用 /dealer/ 前缀 */}
         <Route
