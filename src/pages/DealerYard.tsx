@@ -854,6 +854,8 @@ export default function DealerYard() {
               pod_attachment: podDownloadUrl,
               attachment: podDownloadUrl,
               filename: podFile.name || `${receiveTarget.chassis}.pdf`,
+              pod_filename: podFile.name || `${receiveTarget.chassis}.pdf`,
+              pod_filetype: "PDF",
             },
             EMAIL_PUBLIC_KEY
           );
