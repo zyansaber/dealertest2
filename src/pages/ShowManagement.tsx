@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Sidebar from "@/components/Sidebar";
 import { prettifyDealerName, normalizeDealerSlug } from "@/lib/dealerUtils";
@@ -18,6 +19,7 @@ import {
   subscribeToShowOrders,
   subscribeToShowTasks,
   updateShowOrder,
+  updateShowTask,
 } from "@/lib/showDatabase";
 import { sendDealerConfirmationEmail } from "@/lib/email";
 import type { ShowOrder } from "@/types/showOrder";
@@ -219,6 +221,7 @@ export default function ShowManagement() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
   const [chassisDrafts, setChassisDrafts] = useState<Record<string, string>>({});
+  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
   const [showTasks, setShowTasks] = useState<ShowTask[]>([]);
@@ -373,6 +376,19 @@ export default function ShowManagement() {
     return teamMembers.find((member) => member.memberName.trim().toLowerCase() === normalizedName) || null;
   };
 
+  const handleTaskStatusChange = async (task: ShowTask, status: string) => {
+    if (!task.id) return;
+    setSavingTaskId(task.id);
+    try {
+      await updateShowTask(task.id, { status });
+      toast.success("Task status updated.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to update task status.");
+    } finally {
+      setSavingTaskId(null);
+    }
+  };
 
   const buildOrderPdf = async (params: {
     order: ShowOrder;
@@ -848,11 +864,20 @@ export default function ShowManagement() {
                                           <div className="text-xs text-slate-500">{stringifyDisplayField(task.notes)}</div>
                                         )}
                                       </div>
-                                      {stringifyDisplayField(task.status) && (
-                                        <Badge variant="secondary" className="self-start">
-                                          {stringifyDisplayField(task.status)}
-                                        </Badge>
-                                      )}
+                                      <Select
+                                        value={stringifyDisplayField(task.status) || undefined}
+                                        onValueChange={(value) => handleTaskStatusChange(task, value)}
+                                        disabled={savingTaskId === task.id}
+                                      >
+                                        <SelectTrigger className="w-40 self-start">
+                                          <SelectValue placeholder="Select status" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="Not started">Not started</SelectItem>
+                                          <SelectItem value="In progress">In progress</SelectItem>
+                                          <SelectItem value="Finished">Finished</SelectItem>
+                                        </SelectContent>
+                                      </Select>
                                     </div>
                                   </div>
                                 ))}
@@ -911,7 +936,6 @@ export default function ShowManagement() {
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Salesperson</TableHead>
                       <TableHead className="font-semibold">Order Type</TableHead>
-                      <TableHead className="font-semibold">Show Manager Confirmation</TableHead>
                       <TableHead className="font-semibold">Dealer Confirmation</TableHead>
                       <TableHead className="font-semibold">Chassis Number</TableHead>
                     </TableRow>
@@ -930,14 +954,7 @@ export default function ShowManagement() {
                           <TableCell>{stringifyDisplayField(order.date) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.model) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.salesperson) || "-"}</TableCell>
-                          <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="bg-slate-100 text-slate-800">
-                                {stringifyDisplayField(order.status) || "Pending"}
-                              </Badge>
-                            </div>
-                          </TableCell>
+                         <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
                           <TableCell>
                             {order.dealerConfirm ? (
                               <div className="flex items-center gap-2 text-emerald-700">
@@ -950,7 +967,7 @@ export default function ShowManagement() {
                                 disabled={savingOrderId === order.orderId}
                                 className="h-8 rounded px-2 text-xs bg-emerald-600 hover:bg-emerald-700"
                               >
-                                {savingOrderId === order.orderId ? "Saving..." : "Show Manager Confirmation"}
+                                {savingOrderId === order.orderId ? "Saving..." : "Dealership Confirmation"}
                               </Button>
                             )}
                           </TableCell>
