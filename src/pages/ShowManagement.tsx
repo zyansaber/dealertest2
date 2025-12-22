@@ -102,6 +102,27 @@ const sanitizeOrderIdForBarcode = (orderId?: string | null) => {
   return (orderId || "").toUpperCase().replace(/[^0-9A-Z\-\.\/\+% ]/g, "-");
 };
 
+const TASK_STATUS_OPTIONS = [
+  { label: "Not Started", value: "Not Started" },
+  { label: "In Progress", value: "In Progress" },
+  { label: "Done", value: "Done" },
+] as const;
+
+const normalizeTaskStatus = (status?: string | null) => {
+  if (!status) return "";
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "not started" || normalized === "not_started" || normalized === "notstarted") {
+    return "Not Started";
+  }
+  if (normalized === "in progress" || normalized === "in_progress" || normalized === "inprogress") {
+    return "In Progress";
+  }
+  if (normalized === "done" || normalized === "finished" || normalized === "complete" || normalized === "completed") {
+    return "Done";
+  }
+  return status.trim();
+};
+
 const code39Patterns: Record<string, string> = {
   "0": "nnnwwnwnn",
   "1": "wnnwnnnnw",
@@ -220,8 +241,8 @@ export default function ShowManagement() {
   const [teamMembersLoading, setTeamMembersLoading] = useState(true);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
-  const [chassisDrafts, setChassisDrafts] = useState<Record<string, string>>({});
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+  const [chassisDrafts, setChassisDrafts] = useState<Record<string, string>>({});
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
   const [showTasks, setShowTasks] = useState<ShowTask[]>([]);
@@ -389,6 +410,7 @@ export default function ShowManagement() {
       setSavingTaskId(null);
     }
   };
+
 
   const buildOrderPdf = async (params: {
     order: ShowOrder;
@@ -865,7 +887,7 @@ export default function ShowManagement() {
                                         )}
                                       </div>
                                       <Select
-                                        value={stringifyDisplayField(task.status) || undefined}
+                                        value={normalizeTaskStatus(task.status) || undefined}
                                         onValueChange={(value) => handleTaskStatusChange(task, value)}
                                         disabled={savingTaskId === task.id}
                                       >
@@ -873,9 +895,11 @@ export default function ShowManagement() {
                                           <SelectValue placeholder="Select status" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="Not started">Not started</SelectItem>
-                                          <SelectItem value="In progress">In progress</SelectItem>
-                                          <SelectItem value="Finished">Finished</SelectItem>
+                                          {TASK_STATUS_OPTIONS.map((option) => (
+                                            <SelectItem key={option.value} value={option.value}>
+                                              {option.label}
+                                            </SelectItem>
+                                          ))}
                                         </SelectContent>
                                       </Select>
                                     </div>
@@ -954,7 +978,7 @@ export default function ShowManagement() {
                           <TableCell>{stringifyDisplayField(order.date) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.model) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.salesperson) || "-"}</TableCell>
-                         <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
+                          <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
                           <TableCell>
                             {order.dealerConfirm ? (
                               <div className="flex items-center gap-2 text-emerald-700">
