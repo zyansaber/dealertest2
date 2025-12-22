@@ -205,6 +205,16 @@ export const updateShowOrder = async (orderId: string, updates: Partial<ShowOrde
   await update(orderRef, payload);
 };
 
+export const updateShowTask = async (taskId: string, updates: Partial<ShowTask>) => {
+  const taskRef = ref(showDatabase, `showTasks/${taskId}`);
+  const payload: Record<string, unknown> = {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await update(taskRef, payload);
+};
+
 export const fetchShowOrderById = async (orderId: string): Promise<ShowOrder | null> => {
   if (!orderId) return null;
 
