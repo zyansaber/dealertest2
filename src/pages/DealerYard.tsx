@@ -1,9 +1,11 @@
 // src/pages/DealerYard.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -19,7 +21,7 @@ import {
 import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
-import { FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
+import { ArrowDown, ArrowUp, FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   BarChart,
@@ -85,6 +87,15 @@ type HandoverRec = {
 };
 
 const PRICE_ENABLED_DEALERS = new Set(["frankston", "geelong", "launceston", "st-james", "traralgon"]);
+const DEFAULT_ADD_FORM = {
+  chassis: "",
+  vinnumber: "",
+  model: "",
+  receivedAt: "",
+  wholesalePrice: "",
+  type: "",
+  daysInYard: "",
+};
 const POD_EMAIL_TEMPLATE = "template_br5q8b7";
 const EMAIL_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || "";
 const EMAIL_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "";
@@ -410,7 +421,7 @@ export default function DealerYard() {
   const [kpiCustomStart, setKpiCustomStart] = useState<string>("");
   const [kpiCustomEnd, setKpiCustomEnd] = useState<string>("");
 
-   // Modal: Product Registration
+  // Modal: Product Registration
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [handoverData, setHandoverData] = useState<
     | null
@@ -427,10 +438,12 @@ export default function DealerYard() {
   // Manual add chassis
   const [manualChassis, setManualChassis] = useState("");
   const [manualStatus, setManualStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
-  const [pendingAiReceive, setPendingAiReceive] = useState<string | null>(null);
   const [handledAiState, setHandledAiState] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchStatus, setSearchStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addStatus, setAddStatus] = useState<null | { type: "ok" | "err"; msg: string }>(null);
+  const [addForm, setAddForm] = useState(DEFAULT_ADD_FORM);
 
   // Excel insights
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
@@ -440,6 +453,7 @@ export default function DealerYard() {
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
+  const [daysInYardSort, setDaysInYardSort] = useState<"asc" | "desc" | null>(null);
 
   const resolveCustomerEmail = async (chassis: string, rec: PGIRec | null) => {
     try {
@@ -743,8 +757,13 @@ export default function DealerYard() {
       const term = searchTerm.trim().toUpperCase();
       list = list.filter((x) => x.chassis.toUpperCase().includes(term));
     }
+    if (daysInYardSort) {
+      list = [...list].sort((a, b) =>
+        daysInYardSort === "asc" ? a.daysInYard - b.daysInYard : b.daysInYard - a.daysInYard
+      );
+    }
     return list;
-  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType, searchTerm]);
+  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType, searchTerm, daysInYardSort]);
 
   const chassisSuggestions = useMemo(() => {
     const term = searchTerm.trim().toUpperCase();
@@ -823,6 +842,7 @@ export default function DealerYard() {
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const showPriceColumn = PRICE_ENABLED_DEALERS.has(dealerSlug);
   const yardActionsEnabled = !PRICE_ENABLED_DEALERS.has(dealerSlug);
+  const addToYardDisabled = PRICE_ENABLED_DEALERS.has(dealerSlug);
 
   const ocrUrl = useMemo(() => {
     const base = "https://dealer-test.onrender.com/ocr";
@@ -892,37 +912,83 @@ export default function DealerYard() {
     }
   };
 
-  const handleAddManual = async () => {
-    const ch = manualChassis.trim().toUpperCase();
-    if (!ch) {
-      setManualStatus({ type: "err", msg: "please type in Chassis number" });
+  const openAddDialog = useCallback((chassis?: string) => {
+    setAddForm({
+      ...DEFAULT_ADD_FORM,
+      chassis: chassis ? chassis.trim().toUpperCase() : "",
+    });
+    setAddStatus(null);
+    setManualStatus(null);
+    setSearchStatus(null);
+    setAddDialogOpen(true);
+  }, []);
+
+  const handleAddNewChassis = async () => {
+    if (addToYardDisabled) {
+      setAddStatus({ type: "err", msg: "Adding yard stock is disabled for this dealer." });
       return;
     }
-    try {
-      await addManualChassisToYard(dealerSlug, ch);
-      setManualStatus({ type: "ok", msg: `Successfully added ${ch} into Yard` });
-      setManualChassis("");
-    } catch (e) {
-      console.error(e);
-      setManualStatus({ type: "err", msg: "Failed to add into Yard." });
+    const chassis = addForm.chassis.trim().toUpperCase();
+    const vinnumber = addForm.vinnumber.trim();
+    const model = addForm.model.trim();
+    if (!chassis || !vinnumber || !model) {
+      setAddStatus({ type: "err", msg: "Chassis, VIN Number, and Model are required." });
+      return;
     }
 
+    let receivedAt: string | null = null;
+    if (addForm.receivedAt) {
+      const date = new Date(addForm.receivedAt);
+      if (isNaN(date.getTime())) {
+        setAddStatus({ type: "err", msg: "Received At must be a valid date." });
+        return;
+      }
+      receivedAt = date.toISOString();
+    } else if (addForm.daysInYard) {
+      const days = Number(addForm.daysInYard);
+      if (!Number.isFinite(days) || days < 0) {
+        setAddStatus({ type: "err", msg: "Days In Yard must be a non-negative number." });
+        return;
+      }
+      receivedAt = addDays(new Date(), -Math.floor(days)).toISOString();
+    }
+
+    let wholesalePo: number | null = null;
+    if (addForm.wholesalePrice.trim()) {
+      const parsed = parseWholesale(addForm.wholesalePrice);
+      if (parsed == null) {
+        setAddStatus({ type: "err", msg: "AUD Price (excl. GST) must be a number." });
+        return;
+      }
+      wholesalePo = parsed;
+    }
+
+    try {
+      await addManualChassisToYard(dealerSlug, {
+        chassis,
+        vinnumber,
+        model,
+        receivedAt,
+        wholesalePo,
+        type: addForm.type.trim() ? addForm.type.trim() : null,
+      });
+      setManualStatus({ type: "ok", msg: `Successfully added ${chassis} into Yard.` });
+      setManualChassis("");
+      setSearchTerm("");
+      setAddDialogOpen(false);
+    } catch (e) {
+      console.error(e);
+      setAddStatus({ type: "err", msg: "Failed to add into Yard." });
+    }
   };
 
-  const handleAddFromSearch = async () => {
+  const handleAddFromSearch = () => {
     const ch = searchTerm.trim().toUpperCase();
     if (!ch) {
-      setSearchStatus({ type: "err", msg: "please type in Chassis number" });
+      setSearchStatus({ type: "err", msg: "Please enter a chassis number." });
       return;
     }
-    try {
-      await addManualChassisToYard(dealerSlug, ch);
-      setSearchStatus({ type: "ok", msg: `Successfully added ${ch} into Yard` });
-      setSearchTerm("");
-    } catch (e) {
-      console.error(e);
-      setSearchStatus({ type: "err", msg: "Failed to add into Yard." });
-    }
+    openAddDialog(ch);
   };
 
   const handleReportIssue = async (row: { chassis: string; model?: string | null }) => {
@@ -957,8 +1023,15 @@ export default function DealerYard() {
 
     setManualChassis(chassis);
     if (state.aiAction === "receive") {
-      setManualStatus({ type: "ok", msg: `已预填 ${chassis}，正在添加...` });
-      setPendingAiReceive(chassis);
+      if (addToYardDisabled) {
+        setManualStatus({
+          type: "err",
+          msg: "Adding yard stock is disabled. Please contact the factory admin to add stock.",
+        });
+      } else {
+        openAddDialog(chassis);
+        setAddStatus({ type: "ok", msg: `Chassis ${chassis} prefilled. Please complete the required fields to add it.` });
+      }
     }
     if (state.aiAction === "handover") {
       setHandoverData({
@@ -972,14 +1045,7 @@ export default function DealerYard() {
       setHandoverOpen(true);
     }
     setHandledAiState(true);
-  }, [location.state, handledAiState, dealerDisplayName, dealerSlug]);
-
-  useEffect(() => {
-    if (!pendingAiReceive) return;
-    if (manualChassis.trim().toUpperCase() !== pendingAiReceive) return;
-    handleAddManual();
-    setPendingAiReceive(null);
-  }, [pendingAiReceive, manualChassis, handleAddManual]);
+  }, [location.state, handledAiState, dealerDisplayName, dealerSlug, openAddDialog, addToYardDisabled]);
 
   // Stock Analysis data by category (Stock-only units)
   type AnalysisRow = { name: string; value: number };
@@ -1077,6 +1143,117 @@ export default function DealerYard() {
 
   return (
     <>
+      <Dialog
+        open={addDialogOpen}
+        onOpenChange={(open) => {
+          setAddDialogOpen(open);
+          if (!open) {
+            setAddForm(DEFAULT_ADD_FORM);
+            setAddStatus(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader className="gap-2">
+            <DialogTitle className="text-xl">Add Yard Stock</DialogTitle>
+            <DialogDescription className="text-sm text-slate-600">
+              Chassis, VIN Number, and Model are required. Received At, AUD Price, Type, and Days In Yard are optional.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="add-chassis">Chassis *</Label>
+                <Input
+                  id="add-chassis"
+                  value={addForm.chassis}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, chassis: e.target.value }))}
+                  placeholder="e.g. ABC123"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-vin">VIN Number *</Label>
+                <Input
+                  id="add-vin"
+                  value={addForm.vinnumber}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, vinnumber: e.target.value }))}
+                  placeholder="Enter VIN"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-model">Model *</Label>
+                <Input
+                  id="add-model"
+                  value={addForm.model}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, model: e.target.value }))}
+                  placeholder="Enter model"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-received">Received At (optional)</Label>
+                <Input
+                  id="add-received"
+                  type="date"
+                  value={addForm.receivedAt}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, receivedAt: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-price">AUD Price (excl. GST) (optional)</Label>
+                <Input
+                  id="add-price"
+                  value={addForm.wholesalePrice}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, wholesalePrice: e.target.value }))}
+                  placeholder="e.g. 123456"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Type (optional)</Label>
+                <Select
+                  value={addForm.type || undefined}
+                  onValueChange={(value) => setAddForm((prev) => ({ ...prev, type: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Stock">Stock</SelectItem>
+                    <SelectItem value="Customer">Customer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="add-days">Days In Yard (optional)</Label>
+                <Input
+                  id="add-days"
+                  type="number"
+                  min="0"
+                  value={addForm.daysInYard}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, daysInYard: e.target.value }))}
+                  placeholder="e.g. 12"
+                />
+              </div>
+            </div>
+            {addStatus && (
+              <div className={`text-sm ${addStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
+                {addStatus.msg}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddNewChassis}
+                disabled={addToYardDisabled}
+                className="disabled:bg-slate-300 disabled:text-slate-500"
+              >
+                Add to Yard
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={receiveDialogOpen}
         onOpenChange={(open) => {
@@ -1606,9 +1783,14 @@ export default function DealerYard() {
                   )}
                   {searchTerm.trim() && chassisSuggestions.length === 0 && (
                     <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                      <span>未找到车架号，是否加入库存？</span>
-                      <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleAddFromSearch}>
-                        添加 {searchTerm.trim().toUpperCase()}
+                      <span>Chassis not found. Add it to yard inventory?</span>
+                      <Button
+                        size="sm"
+                        className="bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:text-slate-500"
+                        onClick={handleAddFromSearch}
+                        disabled={addToYardDisabled}
+                      >
+                        Add {searchTerm.trim().toUpperCase()}
                       </Button>
                       {searchStatus && (
                         <span className={`text-xs ${searchStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
@@ -1625,9 +1807,18 @@ export default function DealerYard() {
                     onChange={(e) => setManualChassis(e.target.value)}
                     className="md:min-w-[240px]"
                   />
-                  <Button onClick={handleAddManual} className="bg-sky-600 hover:bg-sky-700">
+                  <Button
+                    onClick={() => openAddDialog(manualChassis)}
+                    className="bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:text-slate-500"
+                    disabled={addToYardDisabled}
+                  >
                     Add to Yard
                   </Button>
+                  {addToYardDisabled && (
+                    <span className="text-xs text-slate-500">
+                      Adding yard stock is disabled. Please contact the factory admin to add stock.
+                    </span>
+                  )}
                   {manualStatus && (
                     <div className={`text-sm ${manualStatus.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
                       {manualStatus.msg}
@@ -1664,7 +1855,19 @@ export default function DealerYard() {
                           {showPriceColumn && <TableHead className="font-semibold">AUD Price (excl. GST)</TableHead>}
                           <TableHead className="font-semibold">Customer</TableHead>
                           <TableHead className="font-semibold">Type</TableHead>
-                          <TableHead className="font-semibold">Days In Yard</TableHead>
+                          <TableHead className="font-semibold">
+                            <button
+                              type="button"
+                              className="flex items-center gap-1"
+                              onClick={() =>
+                                setDaysInYardSort((prev) => (prev === "asc" ? "desc" : prev === "desc" ? null : "asc"))
+                              }
+                            >
+                              <span>Days In Yard</span>
+                              {daysInYardSort === "asc" && <ArrowUp className="h-3 w-3" />}
+                              {daysInYardSort === "desc" && <ArrowDown className="h-3 w-3" />}
+                            </button>
+                          </TableHead>
                           <TableHead className="font-semibold">Report invalid stock</TableHead>
                           <TableHead className="font-semibold">Handover</TableHead>
                         </TableRow>

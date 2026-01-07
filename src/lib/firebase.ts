@@ -745,15 +745,33 @@ export async function receiveChassisToYard(
   await remove(pgiRef);
 }
 
-export async function addManualChassisToYard(dealerSlug: string, chassis: string) {
-  const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
+export async function addManualChassisToYard(
+  dealerSlug: string,
+  payload: {
+    chassis: string;
+    receivedAt?: string | null;
+    model?: string | null;
+    vinnumber?: string | null;
+    vinNumber?: string | null;
+    wholesalePo?: number | null;
+    type?: string | null;
+  }
+) {
+  const targetRef = ref(database, `yardstock/${dealerSlug}/${payload.chassis}`);
   const now = new Date().toISOString();
+  const vin = payload.vinnumber ?? payload.vinNumber ?? null;
+  const wholesale = payload.wholesalePo ?? null;
   await set(targetRef, {
-    receivedAt: now,
+    receivedAt: payload.receivedAt ?? now,
     dealer: null,
-    model: null,
+    model: payload.model ?? null,
     customer: null,
     manual: true,
+    type: payload.type ?? null,
+    vinNumber: vin,
+    vinnumber: vin,
+    wholesalePo: wholesale,
+    wholesalepo: wholesale,
   });
 }
 

@@ -705,11 +705,11 @@ export default function DealerGroupYard() {
   const handleAddManual = async () => {
     const ch = manualChassis.trim().toUpperCase();
     if (!ch) {
-      setManualStatus({ type: "err", msg: "Pleass add chassis" });
+      setManualStatus({ type: "err", msg: "Please enter a chassis number." });
       return;
     }
     try {
-      await addManualChassisToYard(dealerSlug, ch);
+      await addManualChassisToYard(dealerSlug, { chassis: ch });
       setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
       setManualChassis("");
     } catch (e) {
