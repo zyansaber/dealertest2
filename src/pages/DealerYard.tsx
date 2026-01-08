@@ -47,6 +47,7 @@ type PGIRec = {
   model?: string | null;
   customer?: string | null;
   wholesalepo?: string | number | null;
+  history?: boolean | null;
   vinnumber?: string | null;
   VinNumber?: string | null;
   vinNumber?: string | null;
@@ -66,6 +67,7 @@ type YardRec = {
   customer?: string | null;
   type?: string | null;
   Type?: string | null;
+  history?: boolean | null;
   vinnumber?: string | null;
   VinNumber?: string | null;
   vinNumber?: string | null;
@@ -526,7 +528,9 @@ export default function DealerYard() {
 
   const onTheRoadAll = useMemo(() => {
     const entries = Object.entries(pgi || {});
-    return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
+    return entries
+      .filter(([, rec]) => !rec?.history)
+      .map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
   // PGI list date range
@@ -608,7 +612,9 @@ export default function DealerYard() {
       (yard && typeof yard === "object" && (yard as any)["dealer-chassis"]) ||
       (yard && typeof yard === "object" && (yard as any).dealerChassis) ||
       {};
-    const entries = Object.entries(yard || {}).filter(([chassis]) => chassis !== "dealer-chassis");
+    const entries = Object.entries(yard || {}).filter(
+      ([chassis, rec]) => chassis !== "dealer-chassis" && !rec?.history
+    );
     return entries.map(([chassis, rec]) => {
       const sch = scheduleByChassis[chassis];
       const customer = toStr(sch?.Customer ?? rec?.customer);
