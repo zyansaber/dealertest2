@@ -6,6 +6,7 @@ import {
   onValue,
   off,
   set,
+  update,
   get,
   remove,
   DataSnapshot,
@@ -743,6 +744,11 @@ export async function receiveChassisToYard(
 
   const pgiRef = ref(database, `pgirecord/${chassis}`);
   await remove(pgiRef);
+}
+
+export async function markPGIHistory(chassis: string, history = true) {
+  const pgiRef = ref(database, `pgirecord/${chassis}`);
+  await update(pgiRef, { history });
 }
 
 export async function addManualChassisToYard(
