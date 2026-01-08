@@ -8,13 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { Settings, ExternalLink, Save, Trash2, Copy, Link, Users } from "lucide-react";
 import {
   subscribeAllDealerConfigs,
-  subscribeToPGIRecords,
-  receiveChassisToYard,
   setDealerConfig,
   removeDealerConfig,
   setPowerbiUrl,
@@ -30,10 +27,6 @@ export default function Admin() {
   const [selectedDealer, setSelectedDealer] = useState("");
   const [powerbiUrl, setPowerbiUrlInput] = useState("");
   const [loading, setLoading] = useState(true);
-  const [pgiRecords, setPgiRecords] = useState<Record<string, any>>({});
-  const [bulkDealerSlug, setBulkDealerSlug] = useState("");
-  const [bulkChassisInput, setBulkChassisInput] = useState("");
-  const [bulkReceiving, setBulkReceiving] = useState(false);
 
   // Dealer Group states
   const [newGroupName, setNewGroupName] = useState("");
@@ -44,14 +37,6 @@ export default function Admin() {
     const unsubscribe = subscribeAllDealerConfigs((data) => {
       setDealerConfigs(data);
       setLoading(false);
-    });
-
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToPGIRecords((data) => {
-      setPgiRecords(data || {});
     });
 
     return unsubscribe;
@@ -244,73 +229,6 @@ export default function Admin() {
   const dealerGroups = dealers.filter(slug => isDealerGroup(dealerConfigs[slug]));
   const activeDealers = dealers.filter(slug => dealerConfigs[slug]?.isActive);
   const dealersWithPowerbi = dealers.filter(slug => dealerConfigs[slug]?.powerbi_url);
-  const activeRegularDealers = regularDealers.filter(slug => dealerConfigs[slug]?.isActive);
-
-  const pgiLookup = Object.entries(pgiRecords || {}).reduce<Record<string, any>>((acc, [key, value]) => {
-    acc[key.toUpperCase()] = value;
-    return acc;
-  }, {});
-
-  const bulkChassisList = Array.from(
-    new Set(
-      bulkChassisInput
-        .split(/[\s,;]+/)
-        .map((value) => value.trim().toUpperCase())
-        .filter(Boolean)
-    )
-  );
-
-  const bulkChassisRows = bulkChassisList.map((chassis) => ({
-    chassis,
-    record: pgiLookup[chassis] ?? null,
-  }));
-
-  const bulkReceive = async () => {
-    if (!bulkDealerSlug) {
-      toast.error("Please select a dealer to receive into.");
-      return;
-    }
-
-    const eligible = bulkChassisRows.filter((row) => row.record);
-    if (eligible.length === 0) {
-      toast.error("No PGI records found for the entered chassis numbers.");
-      return;
-    }
-
-    setBulkReceiving(true);
-    try {
-      const results = await Promise.allSettled(
-        eligible.map((row) => receiveChassisToYard(bulkDealerSlug, row.chassis, row.record))
-      );
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureCount = results.length - successCount;
-      if (failureCount === 0) {
-        toast.success(`Received ${successCount} chassis into stock.`);
-      } else {
-        toast.error(`Received ${successCount} chassis. ${failureCount} failed.`);
-      }
-    } catch (error) {
-      console.error("Failed to bulk receive chassis:", error);
-      toast.error("Bulk receive failed. Please try again.");
-    } finally {
-      setBulkReceiving(false);
-    }
-  };
-
-  const getVinNumber = (record: Record<string, any> | null) => {
-    if (!record) return "";
-    return (
-      record.vinnumber ??
-      record.vinNumber ??
-      record.VinNumber ??
-      record.VINNumber ??
-      record.chassis?.vinnumber ??
-      record.chassis?.vinNumber ??
-      record.chassis?.VinNumber ??
-      record.chassis?.VINNumber ??
-      ""
-    );
-  };
 
   if (loading) {
     return (
@@ -364,11 +282,10 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="dealers" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="dealers">Dealer Management</TabsTrigger>
             <TabsTrigger value="groups">Dealer Groups</TabsTrigger>
             <TabsTrigger value="powerbi">PowerBI Configuration</TabsTrigger>
-            <TabsTrigger value="bulk-receive">Bulk Receive</TabsTrigger>
           </TabsList>
 
           {/* Dealer Management Tab */}
@@ -835,111 +752,6 @@ export default function Admin() {
                     })
                   )}
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Bulk Receive Tab */}
-          <TabsContent value="bulk-receive" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Bulk Receive PGI Chassis to Stock</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="bulk-dealer-select">Select Dealer</Label>
-                    <select
-                      id="bulk-dealer-select"
-                      className="w-full mt-1 p-2 border border-slate-300 rounded-md"
-                      value={bulkDealerSlug}
-                      onChange={(e) => setBulkDealerSlug(e.target.value)}
-                    >
-                      <option value="">Choose a dealer...</option>
-                      {activeRegularDealers.map((dealerSlug) => {
-                        const config = dealerConfigs[dealerSlug];
-                        return (
-                          <option key={dealerSlug} value={dealerSlug}>
-                            {config?.name || dealerSlug}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="bulk-chassis-input">Chassis Numbers</Label>
-                    <Textarea
-                      id="bulk-chassis-input"
-                      placeholder="Paste chassis numbers separated by commas, spaces, or new lines"
-                      value={bulkChassisInput}
-                      onChange={(e) => setBulkChassisInput(e.target.value)}
-                      className="mt-1"
-                      rows={4}
-                    />
-                    <p className="text-xs text-slate-500 mt-1">
-                      {bulkChassisList.length} chassis detected.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end">
-                  <Button onClick={bulkReceive} disabled={bulkReceiving || bulkChassisList.length === 0}>
-                    {bulkReceiving ? "Receiving..." : "Receive All to Stock"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>PGI Record Preview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {bulkChassisRows.length === 0 ? (
-                  <p className="text-slate-500 text-center py-6">Paste chassis numbers to view PGI records.</p>
-                ) : (
-                  <div className="border border-slate-200 rounded-md overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="min-w-[140px]">Chassis</TableHead>
-                          <TableHead className="min-w-[160px]">Dealer</TableHead>
-                          <TableHead className="min-w-[160px]">Model</TableHead>
-                          <TableHead className="min-w-[200px]">Customer</TableHead>
-                          <TableHead className="min-w-[140px]">PGI Date</TableHead>
-                          <TableHead className="min-w-[160px]">VIN</TableHead>
-                          <TableHead className="min-w-[140px]">Wholesale PO</TableHead>
-                          <TableHead className="min-w-[260px]">Full PGI Data</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {bulkChassisRows.map((row) => {
-                          const rec = row.record;
-                          return (
-                            <TableRow key={row.chassis}>
-                              <TableCell className="font-medium">{row.chassis}</TableCell>
-                              <TableCell>{rec?.dealer ?? "-"}</TableCell>
-                              <TableCell>{rec?.model ?? "-"}</TableCell>
-                              <TableCell>{rec?.customer ?? "-"}</TableCell>
-                              <TableCell>{rec?.pgidate ?? "-"}</TableCell>
-                              <TableCell>{getVinNumber(rec)}</TableCell>
-                              <TableCell>{rec?.wholesalepo ?? "-"}</TableCell>
-                              <TableCell>
-                                {rec ? (
-                                  <pre className="text-xs whitespace-pre-wrap text-slate-600">
-                                    {JSON.stringify(rec, null, 2)}
-                                  </pre>
-                                ) : (
-                                  <span className="text-xs text-red-600">No PGI record found</span>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
