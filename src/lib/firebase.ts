@@ -781,6 +781,40 @@ export async function addManualChassisToYard(
   });
 }
 
+export async function addManualChassisToYardPending(
+  dealerSlug: string,
+  payload: {
+    chassis: string;
+    receivedAt?: string | null;
+    model?: string | null;
+    vinnumber?: string | null;
+    vinNumber?: string | null;
+    wholesalePo?: number | null;
+    type?: string | null;
+  }
+) {
+  const targetRef = ref(database, `yardpending/${dealerSlug}/${payload.chassis}`);
+  const now = new Date().toISOString();
+  const vin = payload.vinnumber ?? payload.vinNumber ?? null;
+  const wholesale = payload.wholesalePo ?? null;
+  await set(targetRef, {
+    chassis: payload.chassis,
+    requestedAt: now,
+    receivedAt: payload.receivedAt ?? null,
+    dealerSlug,
+    dealer: dealerSlug,
+    model: payload.model ?? null,
+    customer: null,
+    manual: true,
+    type: payload.type ?? null,
+    status: "pending",
+    vinNumber: vin,
+    vinnumber: vin,
+    wholesalePo: wholesale,
+    wholesalepo: wholesale,
+  });
+}
+
 export async function dispatchFromYard(dealerSlug: string, chassis: string) {
   const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   await remove(yardRef);

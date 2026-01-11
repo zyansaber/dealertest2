@@ -13,7 +13,7 @@ import {
   subscribeToYardStock,
   receiveChassisToYard,
   subscribeToSchedule,
-  addManualChassisToYard,
+  addManualChassisToYardPending,
   dispatchFromYard,
   subscribeToHandover,
   uploadDeliveryDocument,
@@ -21,7 +21,7 @@ import {
 import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
-import { ArrowDown, ArrowUp, FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   BarChart,
@@ -970,7 +970,7 @@ export default function DealerYard() {
     }
 
     try {
-      await addManualChassisToYard(dealerSlug, {
+      await addManualChassisToYardPending(dealerSlug, {
         chassis,
         vinnumber,
         model,
@@ -978,13 +978,13 @@ export default function DealerYard() {
         wholesalePo,
         type: addForm.type.trim() ? addForm.type.trim() : null,
       });
-      setManualStatus({ type: "ok", msg: `Successfully added ${chassis} into Yard.` });
+      setManualStatus({ type: "ok", msg: `Submitted ${chassis} for admin approval.` });
       setManualChassis("");
       setSearchTerm("");
       setAddDialogOpen(false);
     } catch (e) {
       console.error(e);
-      setAddStatus({ type: "err", msg: "Failed to add into Yard." });
+      setAddStatus({ type: "err", msg: "Failed to submit for admin approval." });
     }
   };
 
@@ -1145,6 +1145,32 @@ export default function DealerYard() {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "-";
     return d.toLocaleDateString();
+  };
+
+  const exportYardInventory = () => {
+    if (yardListDisplay.length === 0) return;
+    const excelData = yardListDisplay.map((row) => ({
+      Chassis: row.chassis,
+      "VIN Number": row.vinnumber || "",
+      "Received At": formatDateOnly(row.receivedAt),
+      Model: row.model || "",
+      Customer: row.customer || "",
+      Type: row.type || "",
+      "Days In Yard": row.daysInYard,
+      "AUD Price (excl. GST)": row.wholesaleDisplay || "",
+    }));
+    try {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const colWidths = Object.keys(excelData[0] || {}).map((key) => ({ wch: Math.max(key.length, 15) }));
+      (ws as any)["!cols"] = colWidths;
+      const date = new Date().toISOString().split("T")[0];
+      const filename = `${dealerDisplayName}_Yard_Inventory_${date}.xlsx`;
+      XLSX.utils.book_append_sheet(wb, ws, "Yard Inventory");
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error("Export excel failed:", err);
+    }
   };
 
   return (
@@ -1833,19 +1859,30 @@ export default function DealerYard() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium text-slate-600">Type:</span>
-                  {(["All", "Stock", "Customer"] as const).map((option) => (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(["All", "Stock", "Customer"] as const).map((option) => (
+                      <Button
+                        key={option}
+                        size="sm"
+                        variant={selectedType === option ? "default" : "outline"}
+                        className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
+                        onClick={() => setSelectedType(option)}
+                      >
+                        {option}
+                      </Button>
+                    ))}
                     <Button
-                      key={option}
                       size="sm"
-                      variant={selectedType === option ? "default" : "outline"}
-                      className={selectedType === option ? "" : "!bg-transparent !hover:bg-transparent"}
-                      onClick={() => setSelectedType(option)}
+                      variant="outline"
+                      onClick={exportYardInventory}
+                      disabled={yardListDisplay.length === 0}
                     >
-                      {option}
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Excel
                     </Button>
-                  ))}
+                  </div>
                 </div>
                 {yardListDisplay.length === 0 ? (
                   <div className="text-sm text-slate-500">No units in yard inventory.</div>

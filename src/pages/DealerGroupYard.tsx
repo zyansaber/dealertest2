@@ -11,7 +11,7 @@ import {
   subscribeToYardStock,
   receiveChassisToYard,
   subscribeToSchedule,
-  addManualChassisToYard,
+  addManualChassisToYardPending,
   dispatchFromYard,
   subscribeToHandover,
   subscribeDealerConfig,
@@ -19,7 +19,7 @@ import {
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
-import { Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
+import { Download, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   BarChart,
@@ -709,12 +709,12 @@ export default function DealerGroupYard() {
       return;
     }
     try {
-      await addManualChassisToYard(dealerSlug, { chassis: ch });
-      setManualStatus({ type: "ok", msg: `Added ${ch} to Yard` });
+      await addManualChassisToYardPending(dealerSlug, { chassis: ch });
+      setManualStatus({ type: "ok", msg: `Submitted ${ch} for admin approval.` });
       setManualChassis("");
     } catch (e) {
       console.error(e);
-      setManualStatus({ type: "err", msg: "Failed" });
+      setManualStatus({ type: "err", msg: "Failed to submit for admin approval." });
     }
   };
 
@@ -765,6 +765,31 @@ export default function DealerGroupYard() {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "-";
     return d.toLocaleDateString();
+  };
+
+  const exportYardInventory = () => {
+    if (yardListDisplay.length === 0) return;
+    const excelData = yardListDisplay.map((row) => ({
+      Chassis: row.chassis,
+      "Received At": formatDateOnly(row.receivedAt),
+      Model: row.model || "",
+      Customer: row.customer || "",
+      Type: row.type || "",
+      "Days In Yard": row.daysInYard,
+      "AUD Price": row.wholesaleDisplay || "",
+    }));
+    try {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const colWidths = Object.keys(excelData[0] || {}).map((key) => ({ wch: Math.max(key.length, 15) }));
+      (ws as any)["!cols"] = colWidths;
+      const date = new Date().toISOString().split("T")[0];
+      const filename = `${dealerDisplayName}_Yard_Inventory_${date}.xlsx`;
+      XLSX.utils.book_append_sheet(wb, ws, "Yard Inventory");
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error("Export excel failed:", err);
+    }
   };
 
   return (
@@ -1114,7 +1139,7 @@ export default function DealerGroupYard() {
               )}
             </div>
           </CardHeader>
-         <CardContent className="space-y-4">
+          <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-slate-600">Type:</span>
               {(["All", "Stock", "Customer"] as const).map((option) => (
@@ -1128,6 +1153,15 @@ export default function DealerGroupYard() {
                   {option}
                 </Button>
               ))}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={exportYardInventory}
+                disabled={yardListDisplay.length === 0}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export Excel
+              </Button>
             </div>
             {yardListDisplay.length === 0 ? (
               <div className="text-sm text-slate-500">No units in yard inventory.</div>
