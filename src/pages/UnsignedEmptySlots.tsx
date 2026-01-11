@@ -273,10 +273,6 @@ export default function UnsignedEmptySlots() {
                   : `Orders with dealer but no chassis field (${searchFilteredOrders.length} records)`}
               </p>
             </div>
-            <Button onClick={exportToExcel} disabled={searchFilteredOrders.length === 0} className="bg-green-600 hover:bg-green-700">
-              <Download className="w-4 h-4 mr-2" />
-              Export Excel
-            </Button>
           </div>
 
           {/* Top KPI Cards */}
@@ -350,106 +346,114 @@ export default function UnsignedEmptySlots() {
               )}
             </div>
           ) : (
-            <div className="rounded-xl border bg-white overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="font-semibold">Forecast Production Date</TableHead>
-                    <TableHead className="font-semibold">Forecast Delivery Date</TableHead>
-                    <TableHead className="font-semibold">Dealer</TableHead>
-                    {activeTab === "unsigned" ? (
-                      <>
-                        <TableHead className="font-semibold">Chassis</TableHead>
-                        <TableHead className="font-semibold">Customer</TableHead>
-                        <TableHead className="font-semibold">Model</TableHead>
-                        <TableHead className="font-semibold">Model Year</TableHead>
-                        <TableHead className="font-semibold">Signed Plans Received</TableHead>
-                        <TableHead className="font-semibold">Order Received Date</TableHead>
-                        <TableHead className="font-semibold">Days Escaped</TableHead>
-                      </>
-                    ) : (
-                      // Empty tab: 新增 “Empty Slots” 列
-                      <TableHead className="font-semibold">Empty Slots</TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {searchFilteredOrders.map((order, idx) => {
-                    const key = `${toStr(order?.Chassis) || "empty"}-${idx}`;
-                    const spr = lower(order?.["Signed Plans Received"]);
-                    const orderReceived = toStr(order?.["Order Received Date"]);
-                    const daysEscaped = calculateDaysEscaped(orderReceived);
-                    const deliveryDate = forecastDeliveryDate(order?.["Forecast Production Date"]);
-                    const deliveryLabel = deliveryDate
-                      ? deliveryDate.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" })
-                      : "-";
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export Excel
+                </Button>
+              </div>
+              <div className="rounded-xl border bg-white overflow-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-semibold">Forecast Production Date</TableHead>
+                      <TableHead className="font-semibold">Forecast Delivery Date</TableHead>
+                      <TableHead className="font-semibold">Dealer</TableHead>
+                      {activeTab === "unsigned" ? (
+                        <>
+                          <TableHead className="font-semibold">Chassis</TableHead>
+                          <TableHead className="font-semibold">Customer</TableHead>
+                          <TableHead className="font-semibold">Model</TableHead>
+                          <TableHead className="font-semibold">Model Year</TableHead>
+                          <TableHead className="font-semibold">Signed Plans Received</TableHead>
+                          <TableHead className="font-semibold">Order Received Date</TableHead>
+                          <TableHead className="font-semibold">Days Escaped</TableHead>
+                        </>
+                      ) : (
+                        // Empty tab: 新增 “Empty Slots” 列
+                        <TableHead className="font-semibold">Empty Slots</TableHead>
+                      )}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {searchFilteredOrders.map((order, idx) => {
+                      const key = `${toStr(order?.Chassis) || "empty"}-${idx}`;
+                      const spr = lower(order?.["Signed Plans Received"]);
+                      const orderReceived = toStr(order?.["Order Received Date"]);
+                      const daysEscaped = calculateDaysEscaped(orderReceived);
+                      const deliveryDate = forecastDeliveryDate(order?.["Forecast Production Date"]);
+                      const deliveryLabel = deliveryDate
+                        ? deliveryDate.toLocaleDateString("en-AU", { year: "numeric", month: "short", day: "numeric" })
+                        : "-";
 
-                    // 仅 Empty tab 判定 Red Slots
-                    let emptySlotTag = "";
-                    if (activeTab === "empty") {
-                      const wk = weeksUntil(order?.["Forecast Production Date"]);
-                      if (wk !== null && wk < 22) emptySlotTag = "Red Slots";
-                    }
+                      // 仅 Empty tab 判定 Red Slots
+                      let emptySlotTag = "";
+                      if (activeTab === "empty") {
+                        const wk = weeksUntil(order?.["Forecast Production Date"]);
+                        if (wk !== null && wk < 22) emptySlotTag = "Red Slots";
+                      }
 
-                    const showBadges = (() => {
-                      if (activeTab !== "empty" || !deliveryDate || dealerShows.length === 0) return [] as ShowRecord[];
-                      const matches = dealerShows.filter((show) => {
-                        const start = parseFlexibleDateToDate(show.startDate);
-                        if (!start) return false;
-                        const startMinusWeek = addDays(start, -7);
-                        return deliveryDate >= startMinusWeek && deliveryDate < start;
-                      });
-                      return matches;
-                    })();
+                      const showBadges = (() => {
+                        if (activeTab !== "empty" || !deliveryDate || dealerShows.length === 0) return [] as ShowRecord[];
+                        const matches = dealerShows.filter((show) => {
+                          const start = parseFlexibleDateToDate(show.startDate);
+                          if (!start) return false;
+                          const startMinusWeek = addDays(start, -7);
+                          return deliveryDate >= startMinusWeek && deliveryDate < start;
+                        });
+                        return matches;
+                      })();
 
-                    const highlightRow = activeTab === "empty" && showBadges.length > 0;
+                      const highlightRow = activeTab === "empty" && showBadges.length > 0;
 
-                    return (
-                      <TableRow key={key} className={highlightRow ? "bg-amber-50" : ""}>
-                        <TableCell className="font-medium">{toStr(order?.["Forecast Production Date"]) || "-"}</TableCell>
-                        <TableCell className="font-medium">{deliveryLabel}</TableCell>
-                        <TableCell className="font-medium">{toStr(order?.Dealer) || "-"}</TableCell>
+                      return (
+                        <TableRow key={key} className={highlightRow ? "bg-amber-50" : ""}>
+                          <TableCell className="font-medium">{toStr(order?.["Forecast Production Date"]) || "-"}</TableCell>
+                          <TableCell className="font-medium">{deliveryLabel}</TableCell>
+                          <TableCell className="font-medium">{toStr(order?.Dealer) || "-"}</TableCell>
 
-                        {activeTab === "unsigned" ? (
-                          <>
-                            <TableCell>{toStr(order?.Chassis) || <span className="text-red-500 italic">Empty</span>}</TableCell>
-                            <TableCell>{toStr(order?.Customer) || "-"}</TableCell>
-                            <TableCell>{toStr(order?.Model) || "-"}</TableCell>
-                            <TableCell>{toStr(order?.["Model Year"]) || "-"}</TableCell>
-                            <TableCell>
-                              <span className={!spr || spr === "no" ? "text-red-600 font-medium" : ""}>
-                                {toStr(order?.["Signed Plans Received"]) || "No"}
-                              </span>
+                          {activeTab === "unsigned" ? (
+                            <>
+                              <TableCell>{toStr(order?.Chassis) || <span className="text-red-500 italic">Empty</span>}</TableCell>
+                              <TableCell>{toStr(order?.Customer) || "-"}</TableCell>
+                              <TableCell>{toStr(order?.Model) || "-"}</TableCell>
+                              <TableCell>{toStr(order?.["Model Year"]) || "-"}</TableCell>
+                              <TableCell>
+                                <span className={!spr || spr === "no" ? "text-red-600 font-medium" : ""}>
+                                  {toStr(order?.["Signed Plans Received"]) || "No"}
+                                </span>
+                              </TableCell>
+                              <TableCell>{orderReceived || "-"}</TableCell>
+                              <TableCell>
+                                <span className="font-medium">
+                                  {daysEscaped}
+                                  {typeof daysEscaped === "number" ? " days" : ""}
+                                </span>
+                              </TableCell>
+                            </>
+                          ) : (
+                            <TableCell className={emptySlotTag ? "text-red-600 font-semibold" : ""}>
+                              {showBadges.length > 0 ? (
+                                <div className="space-y-1">
+                                  {showBadges.map((show) => (
+                                    <div key={show.id} className="text-amber-700 font-semibold">
+                                      {show.name || "Show"}
+                                    </div>
+                                  ))}
+                                  {emptySlotTag && <div className="text-xs text-red-600">{emptySlotTag}</div>}
+                                </div>
+                              ) : (
+                                emptySlotTag || ""
+                              )}
                             </TableCell>
-                            <TableCell>{orderReceived || "-"}</TableCell>
-                            <TableCell>
-                              <span className="font-medium">
-                                {daysEscaped}
-                                {typeof daysEscaped === "number" ? " days" : ""}
-                              </span>
-                            </TableCell>
-                          </>
-                        ) : (
-                          <TableCell className={emptySlotTag ? "text-red-600 font-semibold" : ""}>
-                            {showBadges.length > 0 ? (
-                              <div className="space-y-1">
-                                {showBadges.map((show) => (
-                                  <div key={show.id} className="text-amber-700 font-semibold">
-                                    {show.name || "Show"}
-                                  </div>
-                                ))}
-                                {emptySlotTag && <div className="text-xs text-red-600">{emptySlotTag}</div>}
-                              </div>
-                            ) : (
-                              emptySlotTag || ""
-                            )}
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                          )}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </div>
