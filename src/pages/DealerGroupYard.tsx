@@ -36,6 +36,7 @@ import {
   Line,
 } from "recharts";
 import { isDealerGroup } from "@/types/dealer";
+import { PRICE_ENABLED_DEALERS } from "@/constants/dealerSettings";
 
 type PGIRec = {
   pgidate?: string | null;
@@ -56,8 +57,6 @@ type HandoverRec = {
   dealerSlug?: string | null;
   dealerName?: string | null;
 };
-
-const PRICE_ENABLED_DEALERS = new Set(["frankston", "geelong", "launceston", "st-james", "traralgon"]);
 
 const toStr = (v: unknown) => String(v ?? "");
 const lower = (v: unknown) => toStr(v).toLowerCase();

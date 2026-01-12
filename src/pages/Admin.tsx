@@ -26,6 +26,7 @@ import {
 } from "@/lib/firebase";
 import { isDealerGroup } from "@/types/dealer";
 import { ALL_DEALERSHIP_OPTIONS } from "@/constants/productRegistrationOptions";
+import { PRICE_ENABLED_DEALERS } from "@/constants/dealerSettings";
 
 export default function Admin() {
   const [dealerConfigs, setDealerConfigs] = useState<any>({});
@@ -185,6 +186,23 @@ export default function Admin() {
     } catch (error) {
       console.error("Failed to regenerate code:", error);
       toast.error("Failed to regenerate code. Please try again.");
+    }
+  };
+
+  const toggleYardAdd = async (dealerSlug: string) => {
+    const config = dealerConfigs[dealerSlug];
+    if (!config) return;
+    const allowYardAdd = !Boolean(config.allowYardAdd);
+
+    try {
+      await setDealerConfig(dealerSlug, {
+        ...config,
+        allowYardAdd,
+      });
+      toast.success(`Yard stock add ${allowYardAdd ? "enabled" : "disabled"} for ${config.name || dealerSlug}`);
+    } catch (error) {
+      console.error("Failed to toggle yard add:", error);
+      toast.error("Failed to update yard add setting. Please try again.");
     }
   };
 
@@ -464,7 +482,9 @@ export default function Admin() {
                     regularDealers.map((dealerSlug) => {
                       const config = dealerConfigs[dealerSlug];
                       if (!config) return null;
-                      
+                      const isPriceEnabledDealer = PRICE_ENABLED_DEALERS.has(dealerSlug);
+                      const yardAddEnabled = Boolean(config.allowYardAdd);
+
                       const fullUrl = `${window.location.origin}/dealer/${dealerSlug}-${config.code}/dashboard`;
                       
                       return (
@@ -475,6 +495,11 @@ export default function Admin() {
                               <Badge variant={config.isActive ? "default" : "secondary"}>
                                 {config.isActive ? "Active" : "Inactive"}
                               </Badge>
+                              {isPriceEnabledDealer && (
+                                <Badge variant={yardAddEnabled ? "default" : "secondary"}>
+                                  Yard Add {yardAddEnabled ? "Enabled" : "Disabled"}
+                                </Badge>
+                              )}
                               {config.powerbi_url && (
                                 <Badge variant="outline" className="text-purple-600">
                                   PowerBI
@@ -482,6 +507,15 @@ export default function Admin() {
                               )}
                             </div>
                             <div className="flex items-center gap-2">
+                              {isPriceEnabledDealer && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleYardAdd(dealerSlug)}
+                                >
+                                  {yardAddEnabled ? "Disable Yard Add" : "Enable Yard Add"}
+                                </Button>
+                              )}
                               <Button
                                 variant="outline"
                                 size="sm"
