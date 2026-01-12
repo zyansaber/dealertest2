@@ -2,7 +2,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -29,7 +29,6 @@ import DealerGroupInventoryStock from "./pages/DealerGroupInventoryStock";
 import DealerGroupUnsigned from "./pages/DealerGroupUnsigned";
 import DealerYard from "./pages/DealerYard";
 import DealerGroupYard from "./pages/DealerGroupYard";
-import AIFloatingAssistant from "./components/AIFloatingAssistant";
 import InventoryManagement from "./pages/InventoryManagement";
 import TierConfigEditor from "@/pages/TierConfigEditor";
 import SalesforceTest from "./pages/SalesforceTest";
@@ -39,9 +38,6 @@ import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 const queryClient = new QueryClient();
 
 const AppShell = () => {
-  const location = useLocation();
-  const showAssistant = !location.pathname.startsWith("/ocr") && !location.pathname.startsWith("/finance-ai");
-
   return (
     <>
       <Routes>
@@ -264,7 +260,6 @@ const AppShell = () => {
         {/* 兜底 404，放最后 */}
         <Route path="*" element={<NotFound />} />
       </Routes>
-      {showAssistant && <AIFloatingAssistant />}
     </>
   );
 };
