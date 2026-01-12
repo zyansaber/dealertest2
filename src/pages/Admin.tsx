@@ -20,7 +20,9 @@ import {
   removeDealerConfig,
   setPowerbiUrl,
   generateRandomCode,
-  dealerNameToSlug
+  dealerNameToSlug,
+  subscribeToStockRectificationAll,
+  subscribeToYardPendingAll
 } from "@/lib/firebase";
 import { isDealerGroup } from "@/types/dealer";
 import { ALL_DEALERSHIP_OPTIONS } from "@/constants/productRegistrationOptions";
@@ -32,6 +34,8 @@ export default function Admin() {
   const [powerbiUrl, setPowerbiUrlInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [pgiRecords, setPgiRecords] = useState<Record<string, any>>({});
+  const [stockRectification, setStockRectification] = useState<Record<string, any>>({});
+  const [yardPendingAll, setYardPendingAll] = useState<Record<string, any>>({});
   const [bulkDealerSlug, setBulkDealerSlug] = useState("");
   const [bulkChassisInput, setBulkChassisInput] = useState("");
   const [bulkReceiving, setBulkReceiving] = useState(false);
@@ -41,6 +45,10 @@ export default function Admin() {
   // Dealer Group states
   const [newGroupName, setNewGroupName] = useState("");
   const [selectedDealersForGroup, setSelectedDealersForGroup] = useState<string[]>([]);
+
+  const rectificationDealers = Array.from(
+    new Set([...Object.keys(stockRectification || {}), ...Object.keys(yardPendingAll || {})])
+  ).sort();
 
   // 订阅经销商配置数据
   useEffect(() => {
@@ -57,6 +65,20 @@ export default function Admin() {
       setPgiRecords(data || {});
     });
 
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToStockRectificationAll((data) => {
+      setStockRectification(data || {});
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToYardPendingAll((data) => {
+      setYardPendingAll(data || {});
+    });
     return unsubscribe;
   }, []);
 
@@ -402,11 +424,12 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="dealers" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="dealers">Dealer Management</TabsTrigger>
             <TabsTrigger value="groups">Dealer Groups</TabsTrigger>
             <TabsTrigger value="powerbi">PowerBI Configuration</TabsTrigger>
             <TabsTrigger value="bulk-receive">Bulk Receive</TabsTrigger>
+            <TabsTrigger value="stock-rectification">Stock Rectification</TabsTrigger>
           </TabsList>
 
           {/* Dealer Management Tab */}
@@ -1008,6 +1031,51 @@ export default function Admin() {
                                 ) : (
                                   <span className="text-xs text-red-600">No PGI record found</span>
                                 )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="stock-rectification" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Stock Rectification</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {rectificationDealers.length === 0 ? (
+                  <p className="text-slate-500 text-center py-8">No stock rectification requests yet.</p>
+                ) : (
+                  <div className="rounded-lg border overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="font-semibold">Dealer</TableHead>
+                          <TableHead className="font-semibold">Chassis</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rectificationDealers.map((dealerSlug) => {
+                          const reportEntries = Object.keys(stockRectification?.[dealerSlug] || {});
+                          const pendingEntries = Object.keys(yardPendingAll?.[dealerSlug] || {});
+                          return (
+                            <TableRow key={dealerSlug}>
+                              <TableCell className="font-medium">{dealerConfigs?.[dealerSlug]?.name || dealerSlug}</TableCell>
+                              <TableCell className="space-y-1">
+                                <div>
+                                  <span className="text-xs uppercase tracking-wide text-slate-500">Report invalid stock:</span>{" "}
+                                  {reportEntries.length > 0 ? reportEntries.join(", ") : "—"}
+                                </div>
+                                <div>
+                                  <span className="text-xs uppercase tracking-wide text-slate-500">Add to yard:</span>{" "}
+                                  {pendingEntries.length > 0 ? pendingEntries.join(", ") : "—"}
+                                </div>
                               </TableCell>
                             </TableRow>
                           );
