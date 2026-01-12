@@ -19,6 +19,7 @@ import {
   subscribeToHandover,
   uploadDeliveryDocument,
   reportInvalidStock,
+  subscribeDealerConfig,
 } from "@/lib/firebase";
 import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
@@ -42,6 +43,7 @@ import {
 import emailjs from "emailjs-com";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PRICE_ENABLED_DEALERS } from "@/constants/dealerSettings";
 
 type PGIRec = {
   pgidate?: string | null;
@@ -93,7 +95,6 @@ type HandoverRec = {
   customer?: { firstName?: string | null; lastName?: string | null } | string | null;
 };
 
-const PRICE_ENABLED_DEALERS = new Set(["frankston", "geelong", "launceston", "st-james", "traralgon"]);
 const DEFAULT_ADD_FORM = {
   chassis: "",
   vinnumber: "",
@@ -426,6 +427,7 @@ export default function DealerYard() {
   const [yardPending, setYardPending] = useState<Record<string, YardRec>>({});
   const [handover, setHandover] = useState<Record<string, HandoverRec>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [dealerConfig, setDealerConfigState] = useState<any>(null);
 
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
   const [receiveTarget, setReceiveTarget] = useState<null | { chassis: string; rec: PGIRec | null }>(null);
@@ -514,6 +516,15 @@ export default function DealerYard() {
       unsubSched?.();
       unsubHandover?.();
     };
+  }, [dealerSlug]);
+
+  useEffect(() => {
+    if (!dealerSlug) {
+      setDealerConfigState(null);
+      return;
+    }
+    const unsubscribe = subscribeDealerConfig(dealerSlug, (data) => setDealerConfigState(data));
+    return unsubscribe;
   }, [dealerSlug]);
 
  useEffect(() => {
@@ -972,7 +983,7 @@ export default function DealerYard() {
   const dealerDisplayName = useMemo(() => prettifyDealerName(dealerSlug), [dealerSlug]);
   const showPriceColumn = PRICE_ENABLED_DEALERS.has(dealerSlug);
   const yardActionsEnabled = !PRICE_ENABLED_DEALERS.has(dealerSlug);
-  const addToYardDisabled = PRICE_ENABLED_DEALERS.has(dealerSlug);
+  const addToYardDisabled = PRICE_ENABLED_DEALERS.has(dealerSlug) && !dealerConfig?.allowYardAdd;
 
   const ocrUrl = useMemo(() => {
     const base = "https://dealer-test.onrender.com/ocr";
