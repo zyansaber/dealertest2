@@ -706,6 +706,20 @@ export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<stri
   return () => off(r, "value", handler);
 }
 
+export function subscribeToYardPending(dealerSlug: string, cb: (value: Record<string, any>) => void) {
+  const r = ref(database, `yardpending/${dealerSlug}`);
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
+
+export function subscribeToYardPendingAll(cb: (value: Record<string, any>) => void) {
+  const r = ref(database, "yardpending");
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
+
 export async function uploadDeliveryDocument(chassis: string, pdf: Blob): Promise<string> {
   const sanitized = chassis.trim().replace(/\s+/g, "").toUpperCase();
   const key = sanitized || `delivery_${Date.now()}`;
@@ -818,6 +832,20 @@ export async function addManualChassisToYardPending(
 export async function dispatchFromYard(dealerSlug: string, chassis: string) {
   const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   await remove(yardRef);
+}
+
+/** -------------------- Stock rectification -------------------- */
+export async function reportInvalidStock(dealerSlug: string, chassis: string) {
+  const targetRef = ref(database, `stockrectification/${dealerSlug}/${chassis}`);
+  const now = new Date().toISOString();
+  await set(targetRef, { chassis, dealerSlug, createdAt: now, source: "report-invalid-stock" });
+}
+
+export function subscribeToStockRectificationAll(cb: (value: Record<string, any>) => void) {
+  const r = ref(database, "stockrectification");
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
 }
 
 /** -------------------- Product Registration -------------------- */
