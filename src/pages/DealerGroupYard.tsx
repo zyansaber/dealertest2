@@ -16,6 +16,7 @@ import {
   subscribeToHandover,
   subscribeDealerConfig,
   subscribeAllDealerConfigs,
+  subscribeToSpecPlan,
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
@@ -363,6 +364,8 @@ export default function DealerGroupYard() {
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
+  const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
+  const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -370,6 +373,23 @@ export default function DealerGroupYard() {
       includeNoChassis: true,
       includeNoCustomer: true,
       includeFinished: true,
+    });
+    const unsubSpecPlan = subscribeToSpecPlan((data: any) => {
+      const specMap: Record<string, string> = {};
+      const planMap: Record<string, string> = {};
+      const entries = Array.isArray(data) ? data : Object.entries(data || {});
+      entries.forEach((entry: any) => {
+        const [chassisKey, chassisData] = Array.isArray(entry) ? entry : [entry?.chassis, entry];
+        if (!chassisKey) return;
+        if (chassisData?.spec && typeof chassisData.spec === "string") {
+          specMap[chassisKey] = chassisData.spec;
+        }
+        if (chassisData?.plan && typeof chassisData.plan === "string") {
+          planMap[chassisKey] = chassisData.plan;
+        }
+      });
+      setSpecByChassis(specMap);
+      setPlanByChassis(planMap);
     });
     let unsubYard: (() => void) | undefined;
     let unsubHandover: (() => void) | undefined;
@@ -382,6 +402,7 @@ export default function DealerGroupYard() {
       unsubYard?.();
       unsubSched?.();
       unsubHandover?.();
+      unsubSpecPlan?.();
     };
   }, [dealerSlug]);
 
@@ -714,6 +735,20 @@ export default function DealerGroupYard() {
     } catch (e) {
       console.error(e);
       setManualStatus({ type: "err", msg: "Failed to submit for admin approval." });
+    }
+  };
+
+  const handleViewSpec = (chassis: string) => {
+    const specUrl = specByChassis[chassis];
+    if (specUrl) {
+      window.open(specUrl, "_blank");
+    }
+  };
+
+  const handleViewPlan = (chassis: string) => {
+    const planUrl = planByChassis[chassis];
+    if (planUrl) {
+      window.open(planUrl, "_blank");
     }
   };
 
@@ -1180,6 +1215,8 @@ export default function DealerGroupYard() {
                       <TableHead className="font-semibold">Customer</TableHead>
                       <TableHead className="font-semibold">Type</TableHead>
                       <TableHead className="font-semibold">Days In Yard</TableHead>
+                      <TableHead className="font-semibold">Spec</TableHead>
+                      <TableHead className="font-semibold">Plan</TableHead>
                       <TableHead className="font-semibold">Handover</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1197,6 +1234,26 @@ export default function DealerGroupYard() {
                           </span>
                         </TableCell>
                         <TableCell>{row.daysInYard}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant={specByChassis[row.chassis] ? "outline" : "ghost"}
+                            disabled={!specByChassis[row.chassis]}
+                            onClick={() => handleViewSpec(row.chassis)}
+                          >
+                            Spec
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant={planByChassis[row.chassis] ? "outline" : "ghost"}
+                            disabled={!planByChassis[row.chassis]}
+                            onClick={() => handleViewPlan(row.chassis)}
+                          >
+                            Plan
+                          </Button>
+                        </TableCell>
                         <TableCell>
                           <Button
                             size="sm"
