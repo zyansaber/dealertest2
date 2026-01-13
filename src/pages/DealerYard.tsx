@@ -20,6 +20,7 @@ import {
   uploadDeliveryDocument,
   reportInvalidStock,
   subscribeDealerConfig,
+  subscribeToSpecPlan,
 } from "@/lib/firebase";
 import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
@@ -481,6 +482,8 @@ export default function DealerYard() {
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
   const [daysInYardSort, setDaysInYardSort] = useState<"asc" | "desc" | null>(null);
+  const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
+  const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
 
   const resolveCustomerEmail = async (chassis: string, rec: PGIRec | null) => {
     try {
@@ -501,6 +504,23 @@ export default function DealerYard() {
       includeNoCustomer: true,
       includeFinished: true,
     });
+    const unsubSpecPlan = subscribeToSpecPlan((data: any) => {
+      const specMap: Record<string, string> = {};
+      const planMap: Record<string, string> = {};
+      const entries = Array.isArray(data) ? data : Object.entries(data || {});
+      entries.forEach((entry: any) => {
+        const [chassisKey, chassisData] = Array.isArray(entry) ? entry : [entry?.chassis, entry];
+        if (!chassisKey) return;
+        if (chassisData?.spec && typeof chassisData.spec === "string") {
+          specMap[chassisKey] = chassisData.spec;
+        }
+        if (chassisData?.plan && typeof chassisData.plan === "string") {
+          planMap[chassisKey] = chassisData.plan;
+        }
+      });
+      setSpecByChassis(specMap);
+      setPlanByChassis(planMap);
+    });
     let unsubYard: (() => void) | undefined;
     let unsubHandover: (() => void) | undefined;
     let unsubPending: (() => void) | undefined;
@@ -515,6 +535,7 @@ export default function DealerYard() {
       unsubPending?.();
       unsubSched?.();
       unsubHandover?.();
+      unsubSpecPlan?.();
     };
   }, [dealerSlug]);
 
@@ -1153,6 +1174,24 @@ export default function DealerYard() {
     } catch (error) {
       console.error("Failed to send report", error);
       toast.error("Failed to send report. Please try again.");
+    }
+  };
+
+  const handleViewSpec = (chassis: string) => {
+    const specUrl = specByChassis[chassis];
+    if (specUrl) {
+      window.open(specUrl, "_blank");
+    } else {
+      toast.error("No spec document available for this chassis.");
+    }
+  };
+
+  const handleViewPlan = (chassis: string) => {
+    const planUrl = planByChassis[chassis];
+    if (planUrl) {
+      window.open(planUrl, "_blank");
+    } else {
+      toast.error("No plan document available for this chassis.");
     }
   };
 
@@ -2070,6 +2109,8 @@ export default function DealerYard() {
                               {daysInYardSort === "desc" && <ArrowDown className="h-3 w-3" />}
                             </button>
                           </TableHead>
+                          <TableHead className="font-semibold">Spec</TableHead>
+                          <TableHead className="font-semibold">Plan</TableHead>
                           <TableHead className="font-semibold">Report invalid stock</TableHead>
                           <TableHead className="font-semibold">Handover</TableHead>
                         </TableRow>
@@ -2077,7 +2118,7 @@ export default function DealerYard() {
                       <TableBody>
                         {pendingYardList.length > 0 && (
                           <TableRow className="bg-amber-50/60">
-                            <TableCell colSpan={showPriceColumn ? 9 : 8} className="text-sm font-semibold text-amber-700">
+                            <TableCell colSpan={showPriceColumn ? 11 : 10} className="text-sm font-semibold text-amber-700">
                               Pending Into Yard
                             </TableCell>
                           </TableRow>
@@ -2099,6 +2140,12 @@ export default function DealerYard() {
                             <TableCell>
                               <span className="text-xs uppercase tracking-wide text-slate-400">Pending</span>
                             </TableCell>
+                            <TableCell>
+                              <span className="text-xs uppercase tracking-wide text-slate-400">Pending</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-xs uppercase tracking-wide text-slate-400">Pending</span>
+                            </TableCell>
                           </TableRow>
                         ))}
                         {yardListDisplay.map((row) => (
@@ -2114,6 +2161,26 @@ export default function DealerYard() {
                               </span>
                             </TableCell>
                             <TableCell>{row.daysInYard}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant={specByChassis[row.chassis] ? "outline" : "ghost"}
+                                disabled={!specByChassis[row.chassis]}
+                                onClick={() => handleViewSpec(row.chassis)}
+                              >
+                                Spec
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant={planByChassis[row.chassis] ? "outline" : "ghost"}
+                                disabled={!planByChassis[row.chassis]}
+                                onClick={() => handleViewPlan(row.chassis)}
+                              >
+                                Plan
+                              </Button>
+                            </TableCell>
                             <TableCell>
                               <Button
                                 size="sm"
