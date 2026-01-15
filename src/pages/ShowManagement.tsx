@@ -4,14 +4,6 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -246,7 +238,6 @@ export default function ShowManagement() {
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [showsLoading, setShowsLoading] = useState(true);
   const [mappingsLoading, setMappingsLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState<ShowOrder | null>(null);
   const [teamMembersLoading, setTeamMembersLoading] = useState(true);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
@@ -328,20 +319,6 @@ export default function ShowManagement() {
   };
 
   const stringifyDealerField = (value: unknown) => stringifyDisplayField(value);
-
-  const formatCurrency = (value?: number | null) => {
-    if (value == null || Number.isNaN(value)) return "";
-    return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(value);
-  };
-
-  const stripHtmlTags = (value?: string | null) => {
-    if (!value) return "";
-    if (typeof window !== "undefined" && "DOMParser" in window) {
-      const parsed = new DOMParser().parseFromString(value, "text/html");
-      return parsed.body.textContent?.trim() || "";
-    }
-    return value.replace(/<[^>]*>/g, "").trim();
-  };
 
   const getShowDealerSlug = (show?: ShowRecord) => {
     const preferredDealer = stringifyDealerField(show?.handoverDealer);
@@ -813,7 +790,6 @@ export default function ShowManagement() {
   }
 
   const view = section === "orders" ? "orders" : "tasks";
-  const selectedShow = selectedOrder ? showMap[selectedOrder.showId] : undefined;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -984,16 +960,13 @@ export default function ShowManagement() {
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Salesperson</TableHead>
                       <TableHead className="font-semibold">Order Type</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
                       <TableHead className="font-semibold">Dealer Confirmation</TableHead>
                       <TableHead className="font-semibold">Chassis Number</TableHead>
-                      <TableHead className="font-semibold">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {ordersForDealer.map((order) => {
                       const show = showMap[order.showId];
-                      const isCancelled = (order.status || "").toLowerCase() === "cancelled";
                       const chassisValue = chassisDrafts[order.orderId] ?? order.chassisNumber ?? "";
                       return (
                         <TableRow key={order.orderId}>
@@ -1006,11 +979,6 @@ export default function ShowManagement() {
                           <TableCell>{stringifyDisplayField(order.model) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.salesperson) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
-                          <TableCell>
-                            <div className={isCancelled ? "text-rose-600 font-medium" : "text-slate-700"}>
-                              {isCancelled ? "Cancelled by show manager" : stringifyDisplayField(order.status) || "Pending"}
-                            </div>
-                          </TableCell>
                           <TableCell>
                             {order.dealerConfirm ? (
                               <div className="flex items-center gap-2 text-emerald-700">
@@ -1047,11 +1015,6 @@ export default function ShowManagement() {
                               </Button>
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <Button variant="outline" size="sm" onClick={() => setSelectedOrder(order)}>
-                              View details
-                            </Button>
-                          </TableCell>
                         </TableRow>
                       );
                     })}
@@ -1059,141 +1022,6 @@ export default function ShowManagement() {
                 </Table>
               </div>
             )}
-            <Dialog open={!!selectedOrder} onOpenChange={(open) => !open && setSelectedOrder(null)}>
-              <DialogContent className="max-w-4xl">
-                <DialogHeader>
-                  <DialogTitle>Order details</DialogTitle>
-                  <DialogDescription>
-                    {selectedShow?.name || selectedOrder?.showId || "Unknown show"} •{" "}
-                    {stringifyDisplayField(selectedOrder?.customerName) || "Unnamed customer"}
-                  </DialogDescription>
-                </DialogHeader>
-                {selectedOrder && (
-                  <div className="space-y-6">
-                    {(selectedOrder.status || "").toLowerCase() === "cancelled" && (
-                      <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                        Cancelled by show manager.
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Order ID</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.orderId || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Status</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.status || "Pending"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Order Type</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.orderType || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Contract Number</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.contractNumber || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Contract Value</div>
-                        <div className="font-medium text-slate-900">
-                          {formatCurrency(selectedOrder.contractValue) || "-"}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Customer</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.customerName || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Salesperson</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.salesperson || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Date</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.date || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Model</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.model || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Chassis Number</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.chassisNumber || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Handover Dealer</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.handoverDealer || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Approved By</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.approvedBy || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase text-slate-500">Cancelled By</div>
-                        <div className="font-medium text-slate-900">{selectedOrder.cancelledBy || "-"}</div>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="text-sm font-semibold text-slate-700">Salesperson comments</div>
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                        {stripHtmlTags(selectedOrder.salespersonOrderComments) || "No comments provided."}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="text-sm font-semibold text-slate-700">Attachments</div>
-                      {selectedOrder.orderAttachments && selectedOrder.orderAttachments.length > 0 ? (
-                        <Carousel className="relative">
-                          <CarouselContent>
-                            {selectedOrder.orderAttachments.map((attachment, index) => (
-                              <CarouselItem key={`${attachment.path || attachment.url || index}`}>
-                                <div className="space-y-3">
-                                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                                    <span className="font-medium text-slate-800">
-                                      {attachment.name || `Attachment ${index + 1}`}
-                                    </span>
-                                    {attachment.url && (
-                                      <a
-                                        href={attachment.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-xs font-semibold text-sky-600 hover:text-sky-700"
-                                      >
-                                        Open file
-                                      </a>
-                                    )}
-                                  </div>
-                                  <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                    {attachment.url ? (
-                                      <iframe
-                                        src={attachment.url}
-                                        title={attachment.name || `Attachment ${index + 1}`}
-                                        className="h-full w-full"
-                                      />
-                                    ) : (
-                                      <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                                        Preview unavailable.
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </CarouselItem>
-                            ))}
-                          </CarouselContent>
-                          {selectedOrder.orderAttachments.length > 1 && (
-                            <>
-                              <CarouselPrevious className="-left-4" />
-                              <CarouselNext className="-right-4" />
-                            </>
-                          )}
-                        </Carousel>
-                      ) : (
-                        <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
-                          No attachments uploaded.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </DialogContent>
-            </Dialog>
             </CardContent>
           </Card>
         )}
