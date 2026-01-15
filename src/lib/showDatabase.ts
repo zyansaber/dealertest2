@@ -152,6 +152,13 @@ export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) =
       customerName: item.customerName || item.customer || "",
       dealerConfirm: Boolean(item.dealerConfirm),
       dealerConfirmAt: item.dealerConfirmAt || "",
+      approvedBy: item.approvedBy || "",
+      cancelledBy: item.cancelledBy || "",
+      contractNumber: item.contractNumber || "",
+      contractValue: typeof item.contractValue === "number" ? item.contractValue : Number(item.contractValue ?? 0),
+      handoverDealer: item.handoverDealer || "",
+      salespersonOrderComments: item.salespersonOrderComments || "",
+      orderAttachments: Array.isArray(item.orderAttachments) ? item.orderAttachments : [],
     }));
 
     callback(normalized.filter((item) => item.orderId));
@@ -237,6 +244,13 @@ export const fetchShowOrderById = async (orderId: string): Promise<ShowOrder | n
     chassisNumber: data.chassisNumber || "",
     dealerConfirm: Boolean(data.dealerConfirm),
     dealerConfirmAt: data.dealerConfirmAt || "",
+    approvedBy: data.approvedBy || "",
+    cancelledBy: data.cancelledBy || "",
+    contractNumber: data.contractNumber || "",
+    contractValue: typeof data.contractValue === "number" ? data.contractValue : Number(data.contractValue ?? 0),
+    handoverDealer: data.handoverDealer || "",
+    salespersonOrderComments: data.salespersonOrderComments || "",
+    orderAttachments: Array.isArray(data.orderAttachments) ? data.orderAttachments : [],
   };
 };
 
