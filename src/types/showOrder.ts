@@ -12,4 +12,17 @@ export type ShowOrder = {
   chassisNumber?: string;
   dealerConfirm?: boolean;
   dealerConfirmAt?: string;
+  approvedBy?: string;
+  cancelledBy?: string;
+  contractNumber?: string;
+  contractValue?: number;
+  handoverDealer?: string;
+  salespersonOrderComments?: string;
+  dealershipComments?: string;
+  orderAttachments?: Array<{
+    name?: string;
+    path?: string;
+    uploadedAt?: string;
+    url?: string;
+  }>;
 };
