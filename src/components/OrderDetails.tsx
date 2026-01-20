@@ -1,5 +1,19 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight, Calendar, FileText, Download, CheckCircle, Clock, AlertCircle, Bell, BellOff } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Calendar,
+  FileText,
+  Download,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  Bell,
+  BellOff,
+  Pencil,
+  Check,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,14 +31,32 @@ interface OrderDetailsProps {
   dateTrack?: DateTrackItem;
   isStock: boolean;
   displayForecastProductionDate?: string;
+  showDeliveryTo?: boolean;
+  deliveryToLabel?: string;
+  deliveryToValue?: string;
+  deliveryToOptions?: Array<{ value: string; label: string }>;
+  onDeliveryToSave?: (value: string) => void;
 }
 
-export default function OrderDetails({ order, specPlan, dateTrack, isStock, displayForecastProductionDate }: OrderDetailsProps) {
+export default function OrderDetails({
+  order,
+  specPlan,
+  dateTrack,
+  isStock,
+  displayForecastProductionDate,
+  showDeliveryTo = false,
+  deliveryToLabel,
+  deliveryToValue = "",
+  deliveryToOptions = [],
+  onDeliveryToSave,
+}: OrderDetailsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isSubscribeDialogOpen, setIsSubscribeDialogOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isEditingDeliveryTo, setIsEditingDeliveryTo] = useState(false);
+  const [deliveryToDraft, setDeliveryToDraft] = useState(deliveryToValue);
 
   // Check subscription status on component mount
   useEffect(() => {
@@ -34,6 +66,10 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock, disp
     };
     checkSub();
   }, [order.Chassis]);
+
+  useEffect(() => {
+    setDeliveryToDraft(deliveryToValue);
+  }, [deliveryToValue]);
 
   const getStatusBadge = (status: string | undefined) => {
     if (!status || status.toLowerCase() === 'unknown') {
@@ -215,6 +251,10 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock, disp
     ? "grid grid-cols-12 gap-2 p-4 hover:bg-slate-50 cursor-pointer items-center border-l-4 border-blue-400"
     : "grid grid-cols-12 gap-2 p-4 hover:bg-blue-50 cursor-pointer items-center bg-blue-25";
   const resolvedForecastProductionDate = displayForecastProductionDate ?? formatDateDDMMYYYY(order["Forecast Production Date"]);
+  const customerCol = "col-span-3";
+  const modelCol = showDeliveryTo ? "col-span-1" : "col-span-2";
+  const statusCol = showDeliveryTo ? "col-span-1" : "col-span-2";
+  const deliveryToCol = "col-span-1";
 
   return (
     <div className="border border-slate-200 rounded-lg">
@@ -228,11 +268,70 @@ export default function OrderDetails({ order, specPlan, dateTrack, isStock, disp
           <span className="font-medium text-slate-900 truncate">{order.Chassis}</span>
           {isStock && <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">Stock</Badge>}
         </div>
-        <div className="col-span-2 text-slate-700 truncate">{order.Customer}</div>
-        <div className="col-span-2 text-slate-700 truncate">{order.Model}</div>
+        <div className={`${customerCol} text-slate-700 whitespace-normal break-words`}>{order.Customer}</div>
+        <div className={`${modelCol} text-slate-700 truncate`}>{order.Model}</div>
         <div className="col-span-1 text-slate-700">{order["Model Year"]}</div>
+        {showDeliveryTo && (
+          <div className={`${deliveryToCol} text-slate-700 flex items-center gap-2`}>
+            {isEditingDeliveryTo ? (
+              <>
+                <select
+                  className="h-8 flex-1 rounded border border-slate-200 bg-white px-2 text-sm"
+                  value={deliveryToDraft}
+                  onChange={(event) => setDeliveryToDraft(event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <option value="">Not set</option>
+                  {deliveryToOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeliveryToSave?.(deliveryToDraft);
+                    setIsEditingDeliveryTo(false);
+                  }}
+                >
+                  <Check className="w-3 h-3" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeliveryToDraft(deliveryToValue);
+                    setIsEditingDeliveryTo(false);
+                  }}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </>
+            ) : (
+              <>
+                <span className="truncate">{deliveryToLabel || "Not set"}</span>
+                {deliveryToOptions.length > 0 && onDeliveryToSave && (
+                  <button
+                    type="button"
+                    className="ml-1 inline-flex items-center text-slate-500 hover:text-slate-800"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsEditingDeliveryTo(true);
+                    }}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
         <div className="col-span-2 text-slate-700">{resolvedForecastProductionDate}</div>
-        <div className="col-span-2">
+        <div className={statusCol}>
           {!isSignedPlansReceived ? (
             <Badge className="bg-orange-500 hover:bg-orange-600 text-white">Not Signed Yet</Badge>
           ) : (
