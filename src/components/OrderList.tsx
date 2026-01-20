@@ -6,7 +6,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import OrderDetails from "./OrderDetails";
-import { subscribeToSchedule, subscribeToSpecPlan, subscribeToDateTrack, sortOrders } from "@/lib/firebase";
+import { toast } from "sonner";
+import {
+  subscribeToSchedule,
+  subscribeToSpecPlan,
+  subscribeToDateTrack,
+  subscribeAllDealerConfigs,
+  subscribeDeliveryToAssignments,
+  setDeliveryToAssignment,
+  clearDeliveryToAssignment,
+  sortOrders,
+} from "@/lib/firebase";
 import { formatDateDDMMYYYY } from "@/lib/firebase";
 import type { ScheduleItem, SpecPlan, DateTrack, FilterOptions } from "@/types";
 
@@ -15,13 +25,26 @@ interface OrderListProps {
   orders?: ScheduleItem[];
   specPlans?: any;
   dateTracks?: any;
+  dealerSlug?: string;
+  deliveryToEnabled?: boolean;
+  deliveryToOptions?: string[];
 }
 
-function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlans, dateTracks: propDateTracks }: OrderListProps) {
+function OrderList({
+  selectedDealer,
+  orders: propOrders,
+  specPlans: propSpecPlans,
+  dateTracks: propDateTracks,
+  dealerSlug,
+  deliveryToEnabled = false,
+  deliveryToOptions = [],
+}: OrderListProps) {
   const [orders, setOrders] = useState<ScheduleItem[]>([]);
   const [specPlan, setSpecPlan] = useState<SpecPlan>({});
   const [dateTrack, setDateTrack] = useState<DateTrack>({});
   const [loading, setLoading] = useState(true);
+  const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
+  const [deliveryToAssignments, setDeliveryToAssignments] = useState<Record<string, any>>({});
   const [filters, setFilters] = useState<FilterOptions>({
     model: "",
     modelYear: "",
@@ -79,6 +102,28 @@ function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlan
       unsubscribeDateTrack();
     };
   }, [propOrders, propSpecPlans, propDateTracks]);
+
+  useEffect(() => {
+    if (!deliveryToEnabled) {
+      setDealerConfigs({});
+      return;
+    }
+    const unsubscribe = subscribeAllDealerConfigs((data) => {
+      setDealerConfigs(data || {});
+    });
+    return unsubscribe;
+  }, [deliveryToEnabled]);
+
+  useEffect(() => {
+    if (!deliveryToEnabled) {
+      setDeliveryToAssignments({});
+      return;
+    }
+    const unsubscribe = subscribeDeliveryToAssignments((data) => {
+      setDeliveryToAssignments(data || {});
+    });
+    return unsubscribe;
+  }, [deliveryToEnabled]);
 
   // Reset filters when dealer changes
   useEffect(() => {
@@ -203,6 +248,36 @@ function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlan
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
   }, []);
+
+  const showDeliveryTo = Boolean(deliveryToEnabled && dealerSlug);
+
+  const deliveryToOptionList = useMemo(
+    () =>
+      (deliveryToOptions || []).map((slug) => ({
+        value: slug,
+        label: dealerConfigs?.[slug]?.name || slug,
+      })),
+    [deliveryToOptions, dealerConfigs]
+  );
+
+  const handleDeliveryToSave = useCallback(
+    async (chassis: string, value: string) => {
+      if (!dealerSlug) return;
+      try {
+        if (!value) {
+          await clearDeliveryToAssignment(chassis);
+          toast.success("Delivery To cleared");
+          return;
+        }
+        await setDeliveryToAssignment(chassis, { deliveryTo: value, sourceDealerSlug: dealerSlug });
+        toast.success("Delivery To updated");
+      } catch (error) {
+        console.error("Failed to update delivery to:", error);
+        toast.error("Failed to update Delivery To");
+      }
+    },
+    [dealerSlug]
+  );
 
   const getDisplayForecastProductionDate = useCallback((order: ScheduleItem): string => {
     const originalFormatted = formatDateDDMMYYYY(order["Forecast Production Date"]);
@@ -370,11 +445,12 @@ function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlan
             {/* Table Header - 调整列宽 */}
             <div className="grid grid-cols-12 gap-2 pb-3 mb-4 border-b border-slate-200 text-sm font-medium text-slate-700">
               <div className="col-span-2 text-left">Chassis</div>
-              <div className="col-span-2 text-left">Customer</div>
+              <div className={showDeliveryTo ? "col-span-1 text-left" : "col-span-2 text-left"}>Customer</div>
               <div className="col-span-2 text-left">Model</div>
               <div className="col-span-1 text-left">Model Year</div>
+              {showDeliveryTo && <div className="col-span-2 text-left">Delivery To</div>}
               <div className="col-span-2 text-left">Forecast Melbourne Factory Start Date</div>
-              <div className="col-span-2 text-left">Status</div>
+              <div className={showDeliveryTo ? "col-span-1 text-left" : "col-span-2 text-left"}>Status</div>
               <div className="col-span-1 text-center">Updating Subscription</div>
             </div>
 
@@ -390,6 +466,16 @@ function OrderList({ selectedDealer, orders: propOrders, specPlans: propSpecPlan
                       Object.values(dateTrack).find(dt => dt["Chassis Number"] === order.Chassis)}
                     isStock={isStockVehicle(order.Customer)}
                     displayForecastProductionDate={getDisplayForecastProductionDate(order)}
+                    showDeliveryTo={showDeliveryTo}
+                    deliveryToLabel={
+                      deliveryToAssignments?.[order.Chassis]?.deliveryTo
+                        ? deliveryToOptionList.find((opt) => opt.value === deliveryToAssignments[order.Chassis]?.deliveryTo)
+                            ?.label || deliveryToAssignments[order.Chassis]?.deliveryTo
+                        : "Not set"
+                    }
+                    deliveryToValue={deliveryToAssignments?.[order.Chassis]?.deliveryTo || ""}
+                    deliveryToOptions={deliveryToOptionList}
+                    onDeliveryToSave={(value) => handleDeliveryToSave(order.Chassis, value)}
                   />
                 ))
               ) : (
