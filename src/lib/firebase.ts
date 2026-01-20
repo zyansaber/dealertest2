@@ -65,6 +65,13 @@ export type YardSizeRecord = {
   [key: string]: unknown;
 };
 
+export type DeliveryToAssignment = {
+  chassis: string;
+  deliveryTo: string;
+  sourceDealerSlug?: string | null;
+  updatedAt: string;
+};
+
 /** -------------------- schedule -------------------- */
 export const subscribeToSchedule = (
   callback: (data: ScheduleItem[]) => void,
@@ -185,6 +192,36 @@ export const setDealerConfig = async (dealerSlug: string, config: any) => {
 export const removeDealerConfig = async (dealerSlug: string) => {
   const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
   await remove(configRef);
+};
+
+/** -------------------- Delivery To Assignments -------------------- */
+export const subscribeDeliveryToAssignments = (callback: (data: Record<string, DeliveryToAssignment>) => void) => {
+  const deliveryRef = ref(database, "deliveryToAssignments");
+  const handler = (snapshot: DataSnapshot) => {
+    const data = snapshot.val();
+    callback(data || {});
+  };
+
+  onValue(deliveryRef, handler);
+  return () => off(deliveryRef, "value", handler);
+};
+
+export const setDeliveryToAssignment = async (
+  chassis: string,
+  payload: { deliveryTo: string; sourceDealerSlug?: string | null }
+) => {
+  const deliveryRef = ref(database, `deliveryToAssignments/${chassis}`);
+  await set(deliveryRef, {
+    chassis,
+    deliveryTo: payload.deliveryTo,
+    sourceDealerSlug: payload.sourceDealerSlug ?? null,
+    updatedAt: new Date().toISOString(),
+  });
+};
+
+export const clearDeliveryToAssignment = async (chassis: string) => {
+  const deliveryRef = ref(database, `deliveryToAssignments/${chassis}`);
+  await remove(deliveryRef);
 };
 
 export const setPowerbiUrl = async (dealerSlug: string, url: string) => {

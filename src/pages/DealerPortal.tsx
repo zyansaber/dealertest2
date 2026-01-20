@@ -255,7 +255,14 @@ export default function DealerPortal() {
             )}
           </div>
         ) : (
-          <OrderList orders={filteredOrders} specPlans={specPlans} dateTracks={dateTracks} />
+          <OrderList
+            orders={filteredOrders}
+            specPlans={specPlans}
+            dateTracks={dateTracks}
+            dealerSlug={dealerSlug}
+            deliveryToEnabled={Boolean(dealerConfig?.deliveryToEnabled)}
+            deliveryToOptions={dealerConfig?.deliveryToOptions || []}
+          />
         )}
       </main>
     </div>
