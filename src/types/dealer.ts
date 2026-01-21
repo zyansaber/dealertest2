@@ -4,6 +4,8 @@ export interface DealerConfig {
   name: string;
   code: string;
   isActive: boolean;
+  deliveryToEnabled?: boolean;
+  deliveryToOptions?: string[];
   powerbiUrl?: string;
   createdAt: string;
   updatedAt: string;
@@ -16,6 +18,8 @@ export interface DealerGroupConfig {
   isActive: boolean;
   isGroup: true;
   includedDealers: string[]; // Array of dealer slugs
+  deliveryToEnabled?: boolean;
+  deliveryToOptions?: string[];
   powerbiUrl?: string;
   createdAt: string;
   updatedAt: string;
