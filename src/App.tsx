@@ -34,6 +34,7 @@ import TierConfigEditor from "@/pages/TierConfigEditor";
 import SalesforceTest from "./pages/SalesforceTest";
 import OcrPage from "./pages/OcrPage";
 import FinanceChatPlayground from "./pages/FinanceChatPlayground";
+import YardReceive from "./pages/YardReceive";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +53,9 @@ const AppShell = () => {
 
         {/* Standalone finance chat playground (public) */}
         <Route path="/finance-ai" element={<FinanceChatPlayground />} />
+
+        {/* Standalone yard receive upload page (public) */}
+        <Route path="/yard-receive" element={<YardReceive />} />
 
         {/* 主仪表板（需要密码验证） */}
         <Route
