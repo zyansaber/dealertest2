@@ -757,11 +757,45 @@ export function subscribeToYardPendingAll(cb: (value: Record<string, any>) => vo
   return () => off(r, "value", handler);
 }
 
-export async function uploadDeliveryDocument(chassis: string, pdf: Blob): Promise<string> {
+const DELIVERY_DOC_EXTENSION_BY_MIME: Record<string, string> = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/webp": "webp",
+};
+
+function normalizeFileExtension(value?: string | null) {
+  if (!value) return "";
+  return value.replace(/^\./, "").trim().toLowerCase();
+}
+
+function getDeliveryDocExtension(filename?: string, contentType?: string) {
+  const extFromName = normalizeFileExtension(filename?.split(".").pop());
+  if (extFromName) return extFromName;
+  const normalizedType = (contentType || "").toLowerCase();
+  return DELIVERY_DOC_EXTENSION_BY_MIME[normalizedType] || "pdf";
+}
+
+type UploadDeliveryDocumentOptions = {
+  filename?: string;
+  contentType?: string;
+};
+
+export async function uploadDeliveryDocument(
+  chassis: string,
+  file: Blob,
+  options: UploadDeliveryDocumentOptions = {}
+): Promise<string> {
   const sanitized = chassis.trim().replace(/\s+/g, "").toUpperCase();
   const key = sanitized || `delivery_${Date.now()}`;
-  const fileRef = storageRef(storage, `deliverydoc/${key}.pdf`);
-  await uploadBytes(fileRef, pdf, { contentType: "application/pdf" });
+  const fileName = options.filename ?? (file instanceof File ? file.name : undefined);
+  const rawContentType = options.contentType ?? (file instanceof File ? file.type : file.type);
+  const contentType = rawContentType || "application/octet-stream";
+  const extension = getDeliveryDocExtension(fileName, contentType);
+  const fileRef = storageRef(storage, `deliverydoc/${key}.${extension}`);
+  await uploadBytes(fileRef, file, { contentType });
   return getDownloadURL(fileRef);
 }
 
