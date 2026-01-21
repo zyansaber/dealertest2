@@ -206,6 +206,40 @@ export default function Admin() {
     }
   };
 
+  const toggleDeliveryTo = async (dealerSlug: string) => {
+    const config = dealerConfigs[dealerSlug];
+    if (!config) return;
+    const deliveryToEnabled = !Boolean(config.deliveryToEnabled);
+
+    try {
+      await setDealerConfig(dealerSlug, {
+        ...config,
+        deliveryToEnabled,
+        deliveryToOptions: config.deliveryToOptions || [],
+      });
+      toast.success(`Delivery To ${deliveryToEnabled ? "enabled" : "disabled"} for ${config.name || dealerSlug}`);
+    } catch (error) {
+      console.error("Failed to toggle delivery to:", error);
+      toast.error("Failed to update delivery to setting. Please try again.");
+    }
+  };
+
+  const updateDeliveryToOptions = async (dealerSlug: string, options: string[]) => {
+    const config = dealerConfigs[dealerSlug];
+    if (!config) return;
+
+    try {
+      await setDealerConfig(dealerSlug, {
+        ...config,
+        deliveryToOptions: options,
+      });
+      toast.success("Delivery To options saved");
+    } catch (error) {
+      console.error("Failed to save delivery to options:", error);
+      toast.error("Failed to save delivery to options. Please try again.");
+    }
+  };
+
   const removeDealer = async (dealerSlug: string) => {
     const config = dealerConfigs[dealerSlug];
     if (!config) return;
@@ -484,6 +518,10 @@ export default function Admin() {
                       if (!config) return null;
                       const isPriceEnabledDealer = PRICE_ENABLED_DEALERS.has(dealerSlug);
                       const yardAddEnabled = Boolean(config.allowYardAdd);
+                      const deliveryToEnabled = Boolean(config.deliveryToEnabled);
+                      const deliveryToOptions = Array.isArray(config.deliveryToOptions)
+                        ? (config.deliveryToOptions as string[])
+                        : [];
 
                       const fullUrl = `${window.location.origin}/dealer/${dealerSlug}-${config.code}/dashboard`;
                       
@@ -505,6 +543,11 @@ export default function Admin() {
                                   PowerBI
                                 </Badge>
                               )}
+                              {deliveryToEnabled && (
+                                <Badge variant="outline" className="text-blue-600">
+                                  Delivery To Enabled
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               {isPriceEnabledDealer && (
@@ -516,6 +559,13 @@ export default function Admin() {
                                   {yardAddEnabled ? "Disable Yard Add" : "Enable Yard Add"}
                                 </Button>
                               )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleDeliveryTo(dealerSlug)}
+                              >
+                                {deliveryToEnabled ? "Disable Delivery To" : "Enable Delivery To"}
+                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -560,9 +610,47 @@ export default function Admin() {
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
                                   </option>
-                                ))}
+                                ))} 
                               </select>
                             </div>
+
+                            {deliveryToEnabled && (
+                              <div className="flex flex-col gap-2">
+                                <Label className="text-sm font-medium">Delivery To options</Label>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                  {regularDealers
+                                    .filter((slug) => slug !== dealerSlug)
+                                    .map((targetSlug) => {
+                                      const targetConfig = dealerConfigs[targetSlug];
+                                      const checked = deliveryToOptions.includes(targetSlug);
+                                      return (
+                                        <div key={targetSlug} className="flex items-center space-x-2">
+                                          <Checkbox
+                                            id={`delivery-to-${dealerSlug}-${targetSlug}`}
+                                            checked={checked}
+                                            onCheckedChange={(next) => {
+                                              const shouldInclude = Boolean(next);
+                                              const updated = shouldInclude
+                                                ? Array.from(new Set([...deliveryToOptions, targetSlug]))
+                                                : deliveryToOptions.filter((item) => item !== targetSlug);
+                                              updateDeliveryToOptions(dealerSlug, updated);
+                                            }}
+                                          />
+                                          <label
+                                            htmlFor={`delivery-to-${dealerSlug}-${targetSlug}`}
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                                          >
+                                            {targetConfig?.name || targetSlug}
+                                          </label>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                                <p className="text-xs text-slate-500">
+                                  Dealers can only pick from these destinations in the dealer orders page.
+                                </p>
+                              </div>
+                            )}
 
                             <div className="flex items-center gap-2">
                               <Label className="text-sm font-medium">Dealer URL:</Label>
