@@ -21,6 +21,7 @@ import {
   reportInvalidStock,
   subscribeDealerConfig,
   subscribeToSpecPlan,
+  subscribeDeliveryToAssignments,
 } from "@/lib/firebase";
 import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
@@ -429,6 +430,7 @@ export default function DealerYard() {
   const [handover, setHandover] = useState<Record<string, HandoverRec>>({});
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [dealerConfig, setDealerConfigState] = useState<any>(null);
+  const [deliveryToAssignments, setDeliveryToAssignments] = useState<Record<string, any>>({});
 
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
   const [receiveTarget, setReceiveTarget] = useState<null | { chassis: string; rec: PGIRec | null }>(null);
@@ -548,6 +550,11 @@ export default function DealerYard() {
     return unsubscribe;
   }, [dealerSlug]);
 
+  useEffect(() => {
+    const unsubscribe = subscribeDeliveryToAssignments((data) => setDeliveryToAssignments(data || {}));
+    return unsubscribe;
+  }, []);
+
  useEffect(() => {
     if (!podFile) {
       setPodPreviewUrl(null);
@@ -584,6 +591,26 @@ export default function DealerYard() {
     return map;
   }, [schedule]);
 
+  const deliveryToByChassis = useMemo(() => {
+    const map = new Map<string, string>();
+    Object.entries(deliveryToAssignments || {}).forEach(([key, value]) => {
+      const deliveryTo = toStr(value?.deliveryTo).trim();
+      if (deliveryTo) {
+        map.set(key.toUpperCase(), deliveryTo);
+      }
+    });
+    return map;
+  }, [deliveryToAssignments]);
+
+  const resolveEffectiveDealerSlug = useCallback(
+    (row: { chassis?: string | null; dealer?: string | null }) => {
+      const chassis = toStr(row.chassis).toUpperCase();
+      const override = deliveryToByChassis.get(chassis);
+      return override || slugifyDealerName(row.dealer);
+    },
+    [deliveryToByChassis]
+  );
+
   const onTheRoadAll = useMemo(() => {
     const entries = Object.entries(pgi || {});
     return entries
@@ -613,10 +640,10 @@ export default function DealerYard() {
     () =>
       onTheRoadAll.filter(
         (row) =>
-          slugifyDealerName(row.dealer) === dealerSlug &&
+          resolveEffectiveDealerSlug(row) === dealerSlug &&
           isDateWithinRange(parseDDMMYYYY(row.pgidate || null), startDate, endDate)
       ),
-    [onTheRoadAll, dealerSlug, startDate, endDate]
+    [onTheRoadAll, dealerSlug, startDate, endDate, resolveEffectiveDealerSlug]
   );
 
   // KPI date range separate
@@ -753,10 +780,10 @@ export default function DealerYard() {
     () =>
       onTheRoadAll.filter(
         (row) =>
-          slugifyDealerName(row.dealer) === dealerSlug &&
+          resolveEffectiveDealerSlug(row) === dealerSlug &&
           isDateWithinRange(parseDDMMYYYY(row.pgidate || null), kpiStartDate, kpiEndDate)
       ).length,
-    [onTheRoadAll, dealerSlug, kpiStartDate, kpiEndDate]
+    [onTheRoadAll, dealerSlug, kpiStartDate, kpiEndDate, resolveEffectiveDealerSlug]
   );
 
   const kpiReceivedCount = useMemo(
