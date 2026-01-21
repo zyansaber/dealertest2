@@ -1041,6 +1041,21 @@ export default function DealerYard() {
     return base;
   }, [receiveTarget?.chassis]);
 
+  const getPodFileExtension = (file: File) => {
+    const ext = file.name.split(".").pop();
+    if (ext) return ext.toLowerCase();
+    if (file.type) {
+      const subtype = file.type.split("/")[1];
+      if (subtype) return subtype.toLowerCase();
+    }
+    return "pdf";
+  };
+
+  const getPodFileTypeLabel = (file: File) => {
+    const extension = getPodFileExtension(file);
+    return extension ? extension.toUpperCase() : "FILE";
+  };
+
   const openReceiveDialog = (chassis: string, rec: PGIRec) => {
     setReceiveTarget({ chassis, rec });
     setPodFile(null);
@@ -1051,7 +1066,7 @@ export default function DealerYard() {
   const handleUploadAndReceive = async () => {
     if (!receiveTarget) return;
     if (!podFile) {
-      setPodStatus({ type: "err", msg: "Please upload a signed POD (PDF) before receiving." });
+      setPodStatus({ type: "err", msg: "Please upload a signed POD (PDF or image) before receiving." });
       return;
     }
 
@@ -1066,6 +1081,11 @@ export default function DealerYard() {
 
       if (shouldEmail && podDownloadUrl) {
         try {
+          const podExtension = getPodFileExtension(podFile);
+          const podFileType = getPodFileTypeLabel(podFile);
+          const podFileName = podFile.name.includes(".")
+            ? podFile.name
+            : `${receiveTarget.chassis}.${podExtension}`;
           await emailjs.send(
             EMAIL_SERVICE_ID,
             POD_EMAIL_TEMPLATE,
@@ -1076,9 +1096,9 @@ export default function DealerYard() {
               pod_link: podDownloadUrl,
               pod_attachment: podDownloadUrl,
               attachment: podDownloadUrl,
-              filename: podFile.name || `${receiveTarget.chassis}.pdf`,
-              pod_filename: podFile.name || `${receiveTarget.chassis}.pdf`,
-              pod_filetype: "PDF",
+              filename: podFileName,
+              pod_filename: podFileName,
+              pod_filetype: podFileType,
             },
             EMAIL_PUBLIC_KEY
           );
@@ -1529,7 +1549,7 @@ export default function DealerYard() {
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-base font-semibold text-slate-900">Signed POD upload</p>
-                  <p className="text-sm text-slate-600">Attach the signed Proof of Delivery as a PDF. The file will be stored with the yard record.</p>
+                  <p className="text-sm text-slate-600">Attach the signed Proof of Delivery as a PDF or image. The file will be stored with the yard record.</p>
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
                   <FileCheck2 className="h-3.5 w-3.5" /> Required
@@ -1554,7 +1574,7 @@ export default function DealerYard() {
                   </div>
                   <Input
                     type="file"
-                    accept="application/pdf"
+                    accept="application/pdf,image/*"
                     onChange={(e) => {
                       const file = e.target.files?.[0] || null;
                       setPodFile(file);
@@ -1564,7 +1584,7 @@ export default function DealerYard() {
                   {podFile && (
                     <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                       <span className="font-semibold">{podFile.name}</span>
-                      <span className="text-xs uppercase tracking-wide">PDF Selected</span>
+                      <span className="text-xs uppercase tracking-wide">{getPodFileTypeLabel(podFile)} Selected</span>
                     </div>
                   )}
                 </div>
@@ -1576,7 +1596,11 @@ export default function DealerYard() {
                       <ShieldCheck className="h-4 w-4 text-emerald-600" />
                     </div>
                     <div className="mt-3 h-64 overflow-hidden rounded-lg border bg-slate-900/5">
-                      <iframe title="Signed POD preview" src={podPreviewUrl} className="h-full w-full" />
+                      {podFile?.type.startsWith("image/") ? (
+                        <img src={podPreviewUrl} alt="Signed POD preview" className="h-full w-full object-contain" />
+                      ) : (
+                        <iframe title="Signed POD preview" src={podPreviewUrl} className="h-full w-full" />
+                      )}
                     </div>
                     <p className="mt-2 text-xs text-slate-600">Review the document to ensure the signatures and pre-check notes are legible before submitting.</p>
                   </div>
