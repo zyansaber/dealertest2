@@ -315,12 +315,7 @@ export default function DealerGroupPortal() {
             )}
           </div>
         ) : (
-          <OrderList
-            orders={filteredOrders}
-            specPlans={specPlans}
-            dateTracks={dateTracks}
-            dealerSlug={currentDealerSlug}
-          />
+          <OrderList orders={filteredOrders} specPlans={specPlans} dateTracks={dateTracks} />
         )}
       </main>
     </div>
