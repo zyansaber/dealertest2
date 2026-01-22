@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import OrderDetails from "./OrderDetails";
 import { toast } from "sonner";
 import {
@@ -17,10 +16,9 @@ import {
   setDeliveryToAssignment,
   clearDeliveryToAssignment,
   sortOrders,
-  subscribeToCampervanSchedule,
 } from "@/lib/firebase";
 import { formatDateDDMMYYYY } from "@/lib/firebase";
-import type { ScheduleItem, SpecPlan, DateTrack, FilterOptions, CampervanScheduleItem } from "@/types";
+import type { ScheduleItem, SpecPlan, DateTrack, FilterOptions } from "@/types";
 
 interface OrderListProps {
   selectedDealer?: string;
@@ -44,12 +42,9 @@ function OrderList({
   const [orders, setOrders] = useState<ScheduleItem[]>([]);
   const [specPlan, setSpecPlan] = useState<SpecPlan>({});
   const [dateTrack, setDateTrack] = useState<DateTrack>({});
-  const [campervanOrders, setCampervanOrders] = useState<CampervanScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
   const [deliveryToAssignments, setDeliveryToAssignments] = useState<Record<string, any>>({});
-  const [activeTab, setActiveTab] = useState<"caravan" | "vehicles">("caravan");
   const [filters, setFilters] = useState<FilterOptions>({
     model: "",
     modelYear: "",
@@ -108,26 +103,6 @@ function OrderList({
     };
   }, [propOrders, propSpecPlans, propDateTracks]);
 
-  const showVehiclesTab = Boolean(dealerSlug);
-
-  useEffect(() => {
-    if (!showVehiclesTab) {
-      setCampervanOrders([]);
-      setLoadingVehicles(false);
-      return;
-    }
-
-    setLoadingVehicles(true);
-    const unsubscribe = subscribeToCampervanSchedule((data) => {
-      setCampervanOrders(data || []);
-      setLoadingVehicles(false);
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [showVehiclesTab]);
-
   useEffect(() => {
     if (!deliveryToEnabled) {
       setDealerConfigs({});
@@ -161,13 +136,6 @@ function OrderList({
       searchTerm: ""
     });
   }, [selectedDealer]);
-
-  const slugifyDealerName = useCallback((name?: string): string => {
-    return (name || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-  }, []);
 
   const dealerOrders = useMemo(() => {
     if (!selectedDealer || selectedDealer === "all") return orders;
@@ -250,11 +218,6 @@ function OrderList({
   const uniqueProductionStatuses = useMemo(() => {
     return [...new Set(dealerOrders.map(order => order["Regent Production"]))].filter(Boolean).sort();
   }, [dealerOrders]);
-
-  const filteredCampervanOrders = useMemo(() => {
-    if (!dealerSlug) return campervanOrders;
-    return campervanOrders.filter((order) => slugifyDealerName(order.dealer) === dealerSlug);
-  }, [campervanOrders, dealerSlug, slugifyDealerName]);
 
   const parseFlexibleDate = useCallback((dateStr: string | null | undefined): Date | null => {
     if (!dateStr) return null;
@@ -383,209 +346,147 @@ function OrderList({
         </header>
       )}
 
-      {/* Content */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "caravan" | "vehicles")} className="flex-1 flex flex-col">
-        {showVehiclesTab && (
-          <div className="bg-white border-b border-slate-200 px-6 py-4">
-            <TabsList className="grid w-full max-w-sm grid-cols-2">
-              <TabsTrigger value="caravan">Caravan</TabsTrigger>
-              <TabsTrigger value="vehicles">Vehicles</TabsTrigger>
-            </TabsList>
+      {/* Filters */}
+      <div className="bg-white border-b border-slate-200 px-6 py-4">
+        <div className="flex flex-wrap gap-4 items-center">
+          {/* Search */}
+          <div className="relative flex-1 min-w-64">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Search by Chassis, Customer, or Model..."
+              className="pl-10"
+              value={filters.searchTerm}
+              onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+            />
           </div>
-        )}
 
-        {activeTab === "caravan" && (
-          <div className="bg-white border-b border-slate-200 px-6 py-4">
-            <div className="flex flex-wrap gap-4 items-center">
-              {/* Search */}
-              <div className="relative flex-1 min-w-64">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <Input
-                  placeholder="Search by Chassis, Customer, or Model..."
-                  className="pl-10"
-                  value={filters.searchTerm}
-                  onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
-                />
-              </div>
+          {/* Model Filter */}
+          <Select
+            value={filters.model || "all"}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, model: value === "all" ? "" : value }))}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All Models" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Models</SelectItem>
+              {uniqueModels.map(model => (
+                <SelectItem key={model} value={model}>{model}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-              {/* Model Filter */}
-              <Select
-                value={filters.model || "all"}
-                onValueChange={(value) => setFilters(prev => ({ ...prev, model: value === "all" ? "" : value }))}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="All Models" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Models</SelectItem>
-                  {uniqueModels.map(model => (
-                    <SelectItem key={model} value={model}>{model}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Model Year Filter */}
+          <Select
+            value={filters.modelYear || "all"}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, modelYear: value === "all" ? "" : value }))}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="All Years" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Years</SelectItem>
+              {uniqueModelYears.map(year => (
+                <SelectItem key={year} value={year}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-              {/* Model Year Filter */}
-              <Select
-                value={filters.modelYear || "all"}
-                onValueChange={(value) => setFilters(prev => ({ ...prev, modelYear: value === "all" ? "" : value }))}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder="All Years" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {uniqueModelYears.map(year => (
-                    <SelectItem key={year} value={year}>{year}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Customer Type Filter */}
+          <Select
+            value={filters.customerType || "all"}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, customerType: value === "all" ? "" : value }))}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="stock">Stock</SelectItem>
+              <SelectItem value="customer">Customer</SelectItem>
+            </SelectContent>
+          </Select>
 
-              {/* Customer Type Filter */}
-              <Select
-                value={filters.customerType || "all"}
-                onValueChange={(value) => setFilters(prev => ({ ...prev, customerType: value === "all" ? "" : value }))}
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="All Types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="stock">Stock</SelectItem>
-                  <SelectItem value="customer">Customer</SelectItem>
-                </SelectContent>
-              </Select>
+          {/* Production Status Filter */}
+          <Select
+            value={filters.regentProduction || "all"}
+            onValueChange={(value) => setFilters(prev => ({ ...prev, regentProduction: value === "all" ? "" : value }))}
+          >
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              {uniqueProductionStatuses.map(status => (
+                <SelectItem key={status} value={status}>{status}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-              {/* Production Status Filter */}
-              <Select
-                value={filters.regentProduction || "all"}
-                onValueChange={(value) => setFilters(prev => ({ ...prev, regentProduction: value === "all" ? "" : value }))}
-              >
-                <SelectTrigger className="w-56">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {uniqueProductionStatuses.map(status => (
-                    <SelectItem key={status} value={status}>{status}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {/* Clear Filters */}
-              <Button variant="outline" onClick={clearFilters}>
-                Clear Filters
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <div className="flex-1 p-6 overflow-auto">
-          <TabsContent value="caravan" className="mt-0">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Orders ({filteredOrders.length})</CardTitle>
-                  <div className="text-sm text-slate-500">
-                    Showing {filteredOrders.length} of {dealerOrders.length} orders
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* Table Header - 调整列宽 */}
-                <div className="grid grid-cols-12 gap-2 pb-3 mb-4 border-b border-slate-200 text-sm font-medium text-slate-700">
-                  <div className="col-span-2 text-left">Chassis</div>
-                  <div className={showDeliveryTo ? "col-span-3 text-left" : "col-span-2 text-left"}>Customer</div>
-                  <div className={showDeliveryTo ? "col-span-1 text-left" : "col-span-2 text-left"}>Model</div>
-                  <div className="col-span-1 text-left">Model Year</div>
-                  {showDeliveryTo && <div className="col-span-1 text-left">Delivery To</div>}
-                  <div className="col-span-2 text-left">Forecast Melbourne Factory Start Date</div>
-                  <div className={showDeliveryTo ? "col-span-1 text-left" : "col-span-2 text-left"}>Status</div>
-                  <div className="col-span-1 text-center">Updating Subscription</div>
-                </div>
-
-                {/* Orders List */}
-                <div className="space-y-2">
-                  {filteredOrders.length > 0 ? (
-                    filteredOrders.map((order) => (
-                      <OrderDetails
-                        key={order.Chassis}
-                        order={order}
-                        specPlan={specPlan[order.Chassis]}
-                        dateTrack={dateTrack[order.Chassis] ||
-                          Object.values(dateTrack).find(dt => dt["Chassis Number"] === order.Chassis)}
-                        isStock={isStockVehicle(order.Customer)}
-                        displayForecastProductionDate={getDisplayForecastProductionDate(order)}
-                        showDeliveryTo={showDeliveryTo}
-                        deliveryToLabel={
-                          deliveryToAssignments?.[order.Chassis]?.deliveryTo
-                            ? deliveryToOptionList.find((opt) => opt.value === deliveryToAssignments[order.Chassis]?.deliveryTo)
-                                ?.label || deliveryToAssignments[order.Chassis]?.deliveryTo
-                            : "Not set"
-                        }
-                        deliveryToValue={deliveryToAssignments?.[order.Chassis]?.deliveryTo || ""}
-                        deliveryToOptions={deliveryToOptionList}
-                        onDeliveryToSave={(value) => handleDeliveryToSave(order.Chassis, value)}
-                      />
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-slate-500">
-                      No orders found matching your criteria
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="vehicles" className="mt-0">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Vehicles ({filteredCampervanOrders.length})</CardTitle>
-                  <div className="text-sm text-slate-500">
-                    Showing {filteredCampervanOrders.length} of {campervanOrders.length} vehicles
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-8 gap-2 pb-3 mb-4 border-b border-slate-200 text-sm font-medium text-slate-700">
-                  <div className="col-span-1 text-left">Forecast Production Date</div>
-                  <div className="col-span-1 text-left">Chassis</div>
-                  <div className="col-span-1 text-left">Customer</div>
-                  <div className="col-span-1 text-left">Model</div>
-                  <div className="col-span-1 text-left">Regent Production</div>
-                  <div className="col-span-1 text-left">Signed Order Received</div>
-                  <div className="col-span-1 text-left">Vehicle</div>
-                  <div className="col-span-1 text-left">VIN</div>
-                </div>
-
-                {loadingVehicles ? (
-                  <div className="text-center py-8 text-slate-500">Loading vehicle schedule...</div>
-                ) : filteredCampervanOrders.length > 0 ? (
-                  <div className="space-y-2">
-                    {filteredCampervanOrders.map((order, idx) => (
-                      <div key={`${order.chassisNumber || order.vinNumber || idx}`} className="grid grid-cols-8 gap-2 text-sm text-slate-700">
-                        <div className="col-span-1">{order.forecastProductionDate || "-"}</div>
-                        <div className="col-span-1">{order.chassisNumber || "-"}</div>
-                        <div className="col-span-1">{order.customer || "-"}</div>
-                        <div className="col-span-1">{order.model || "-"}</div>
-                        <div className="col-span-1">{order.regentProduction || "-"}</div>
-                        <div className="col-span-1">{order.signedOrderReceived || "-"}</div>
-                        <div className="col-span-1">{order.vehicle || "-"}</div>
-                        <div className="col-span-1">{order.vinNumber || "-"}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-slate-500">
-                    No vehicles found for this dealer
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {/* Clear Filters */}
+          <Button variant="outline" onClick={clearFilters}>
+            Clear Filters
+          </Button>
         </div>
-      </Tabs>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 p-6 overflow-auto">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Orders ({filteredOrders.length})</CardTitle>
+              <div className="text-sm text-slate-500">
+                Showing {filteredOrders.length} of {dealerOrders.length} orders
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Table Header - 调整列宽 */}
+            <div className="grid grid-cols-12 gap-2 pb-3 mb-4 border-b border-slate-200 text-sm font-medium text-slate-700">
+              <div className="col-span-2 text-left">Chassis</div>
+              <div className={showDeliveryTo ? "col-span-3 text-left" : "col-span-2 text-left"}>Customer</div>
+              <div className={showDeliveryTo ? "col-span-1 text-left" : "col-span-2 text-left"}>Model</div>
+              <div className="col-span-1 text-left">Model Year</div>
+              {showDeliveryTo && <div className="col-span-1 text-left">Delivery To</div>}
+              <div className="col-span-2 text-left">Forecast Melbourne Factory Start Date</div>
+              <div className={showDeliveryTo ? "col-span-1 text-left" : "col-span-2 text-left"}>Status</div>
+              <div className="col-span-1 text-center">Updating Subscription</div>
+            </div>
+
+            {/* Orders List */}
+            <div className="space-y-2">
+              {filteredOrders.length > 0 ? (
+                filteredOrders.map((order) => (
+                  <OrderDetails
+                    key={order.Chassis}
+                    order={order}
+                    specPlan={specPlan[order.Chassis]}
+                    dateTrack={dateTrack[order.Chassis] || 
+                      Object.values(dateTrack).find(dt => dt["Chassis Number"] === order.Chassis)}
+                    isStock={isStockVehicle(order.Customer)}
+                    displayForecastProductionDate={getDisplayForecastProductionDate(order)}
+                    showDeliveryTo={showDeliveryTo}
+                    deliveryToLabel={
+                      deliveryToAssignments?.[order.Chassis]?.deliveryTo
+                        ? deliveryToOptionList.find((opt) => opt.value === deliveryToAssignments[order.Chassis]?.deliveryTo)
+                            ?.label || deliveryToAssignments[order.Chassis]?.deliveryTo
+                        : "Not set"
+                    }
+                    deliveryToValue={deliveryToAssignments?.[order.Chassis]?.deliveryTo || ""}
+                    deliveryToOptions={deliveryToOptionList}
+                    onDeliveryToSave={(value) => handleDeliveryToSave(order.Chassis, value)}
+                  />
+                ))
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  No orders found matching your criteria
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
