@@ -17,6 +17,32 @@ export interface ScheduleItem {
   Rank2: string;
 }
 
+export interface CampervanScheduleItem {
+  chassisNumber?: string;
+  customer?: string;
+  dealer?: string;
+  duration?: string;
+  eurPartsEta?: string;
+  eurPartsOrderDate?: string;
+  forecastProductionDate?: string;
+  latestEurPartsOrder?: string;
+  latestLongtreePartsOrder?: string;
+  latestVehicleOrder?: string;
+  longtreePartsEta?: string;
+  longtreePartsOrderDate?: string;
+  model?: string;
+  productionPlannedEndDate?: string;
+  productionPlannedStartDate?: string;
+  regentProduction?: string;
+  rowNumber?: number;
+  signedOrderReceived?: string;
+  vehicle?: string;
+  vehicleOrderDate?: string;
+  vehiclePlannedEta?: string;
+  vinNumber?: string;
+  [key: string]: unknown;
+}
+
 export interface SpecPlan {
   [chassisNumber: string]: {
     "Plan File": string;
