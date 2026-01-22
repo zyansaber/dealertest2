@@ -20,7 +20,6 @@ import type {
   YardNewVanInvoice,
   NewSaleRecord,
   StockToCustomerRecord,
-  CampervanScheduleItem,
 } from "@/types";
 import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig } from "@/types/tierConfig";
 
@@ -106,26 +105,6 @@ export const subscribeToSchedule = (
     });
 
     callback(filtered);
-  };
-
-  onValue(scheduleRef, handler);
-  return () => off(scheduleRef, "value", handler);
-};
-
-/** -------------------- campervan schedule -------------------- */
-export const subscribeToCampervanSchedule = (
-  callback: (data: CampervanScheduleItem[]) => void
-) => {
-  const scheduleRef = ref(database, "scheduledd672/campervanSchedule");
-
-  const handler = (snapshot: DataSnapshot) => {
-    const raw = snapshot.val();
-    const list: CampervanScheduleItem[] = raw
-      ? Array.isArray(raw)
-        ? raw.filter(Boolean)
-        : Object.values(raw).filter(Boolean)
-      : [];
-    callback(list);
   };
 
   onValue(scheduleRef, handler);
