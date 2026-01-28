@@ -35,6 +35,7 @@ import SalesforceTest from "./pages/SalesforceTest";
 import OcrPage from "./pages/OcrPage";
 import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 import YardReceive from "./pages/YardReceive";
+import TransportPreference from "./pages/TransportPreference";
 
 const queryClient = new QueryClient();
 
@@ -160,6 +161,15 @@ const AppShell = () => {
           element={
             <ProtectedDealerRoute>
               <ShowManagement />
+            </ProtectedDealerRoute>
+          }
+        />
+
+        <Route
+          path="/dealer/:dealerSlug/transport-preference"
+          element={
+            <ProtectedDealerRoute>
+              <TransportPreference />
             </ProtectedDealerRoute>
           }
         />
