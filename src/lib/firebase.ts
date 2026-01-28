@@ -23,7 +23,6 @@ import type {
   CampervanScheduleItem,
 } from "@/types";
 import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig } from "@/types/tierConfig";
-import type { DealerTransportPreferences, TransportCompany } from "@/types/transport";
 
 const requireEnv = (key: string, context: string) => {
   const value = import.meta.env?.[key];
@@ -73,9 +72,6 @@ export type DeliveryToAssignment = {
   sourceDealerSlug?: string | null;
   updatedAt: string;
 };
-
-export type TransportCompanyRecord = TransportCompany;
-export type DealerTransportPreferenceRecord = DealerTransportPreferences;
 
 /** -------------------- schedule -------------------- */
 export const subscribeToSchedule = (
@@ -217,53 +213,6 @@ export const setDealerConfig = async (dealerSlug: string, config: any) => {
 export const removeDealerConfig = async (dealerSlug: string) => {
   const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
   await remove(configRef);
-};
-
-/** -------------------- Transport Companies -------------------- */
-export const subscribeTransportCompanies = (callback: (data: Record<string, TransportCompanyRecord>) => void) => {
-  const companiesRef = ref(database, "transportCompanies");
-
-  const handler = (snapshot: DataSnapshot) => {
-    const data = snapshot.val();
-    callback(data || {});
-  };
-
-  onValue(companiesRef, handler);
-  return () => off(companiesRef, "value", handler);
-};
-
-export const setTransportCompany = async (companyId: string, company: TransportCompanyRecord) => {
-  const companyRef = ref(database, `transportCompanies/${companyId}`);
-  await set(companyRef, withTimestamp(company));
-};
-
-export const removeTransportCompany = async (companyId: string) => {
-  const companyRef = ref(database, `transportCompanies/${companyId}`);
-  await remove(companyRef);
-};
-
-/** -------------------- Dealer Transport Preferences -------------------- */
-export const subscribeDealerTransportPreferences = (
-  dealerSlug: string,
-  callback: (data: DealerTransportPreferenceRecord | null) => void
-) => {
-  const prefRef = ref(database, `dealerTransportPreferences/${dealerSlug}`);
-
-  const handler = (snapshot: DataSnapshot) => {
-    const data = snapshot.val();
-    callback(data || null);
-  };
-
-  onValue(prefRef, handler);
-  return () => off(prefRef, "value", handler);
-};
-
-export const setDealerTransportPreferences = async (
-  dealerSlug: string,
-  preferences: DealerTransportPreferenceRecord
-) => {
-  const prefRef = ref(database, `dealerTransportPreferences/${dealerSlug}`);
-  await set(prefRef, withTimestamp(preferences));
 };
 
 /** -------------------- Delivery To Assignments -------------------- */
