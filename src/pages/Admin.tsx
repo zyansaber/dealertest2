@@ -1,5 +1,5 @@
 // src/pages/Admin.tsx
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,11 +22,15 @@ import {
   generateRandomCode,
   dealerNameToSlug,
   subscribeToStockRectificationAll,
-  subscribeToYardPendingAll
+  subscribeToYardPendingAll,
+  subscribeTransportCompanies,
+  setTransportCompany,
+  removeTransportCompany
 } from "@/lib/firebase";
 import { isDealerGroup } from "@/types/dealer";
 import { ALL_DEALERSHIP_OPTIONS } from "@/constants/productRegistrationOptions";
 import { PRICE_ENABLED_DEALERS } from "@/constants/dealerSettings";
+import type { TransportCompany } from "@/types/transport";
 
 export default function Admin() {
   const [dealerConfigs, setDealerConfigs] = useState<any>({});
@@ -42,6 +46,8 @@ export default function Admin() {
   const [bulkReceiving, setBulkReceiving] = useState(false);
   const [historyDealerSlug, setHistoryDealerSlug] = useState("");
   const [historyUpdating, setHistoryUpdating] = useState(false);
+  const [transportCompanies, setTransportCompanies] = useState<Record<string, TransportCompany>>({});
+  const [newTransportCompany, setNewTransportCompany] = useState("");
 
   // Dealer Group states
   const [newGroupName, setNewGroupName] = useState("");
@@ -50,6 +56,14 @@ export default function Admin() {
   const rectificationDealers = Array.from(
     new Set([...Object.keys(stockRectification || {}), ...Object.keys(yardPendingAll || {})])
   ).sort();
+
+  const sortedTransportCompanies = useMemo(
+    () =>
+      Object.values(transportCompanies || {}).sort((a, b) =>
+        (a?.name || "").localeCompare(b?.name || "")
+      ),
+    [transportCompanies]
+  );
 
   // 订阅经销商配置数据
   useEffect(() => {
@@ -79,6 +93,13 @@ export default function Admin() {
   useEffect(() => {
     const unsubscribe = subscribeToYardPendingAll((data) => {
       setYardPendingAll(data || {});
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTransportCompanies((data) => {
+      setTransportCompanies(data || {});
     });
     return unsubscribe;
   }, []);
@@ -151,6 +172,43 @@ export default function Admin() {
     } catch (error) {
       console.error("Failed to create dealer group:", error);
       toast.error("Failed to create dealer group. Please try again.");
+    }
+  };
+
+  const addTransportCompany = async () => {
+    if (!newTransportCompany.trim()) {
+      toast.error("Please enter a transport company name");
+      return;
+    }
+
+    const companyId = dealerNameToSlug(newTransportCompany.trim());
+
+    if (transportCompanies[companyId]) {
+      toast.error("This transport company already exists");
+      return;
+    }
+
+    try {
+      await setTransportCompany(companyId, {
+        id: companyId,
+        name: newTransportCompany.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      setNewTransportCompany("");
+      toast.success(`Transport company "${newTransportCompany}" added`);
+    } catch (error) {
+      console.error("Failed to add transport company:", error);
+      toast.error("Failed to add transport company. Please try again.");
+    }
+  };
+
+  const deleteTransportCompany = async (companyId: string) => {
+    try {
+      await removeTransportCompany(companyId);
+      toast.success("Transport company removed");
+    } catch (error) {
+      console.error("Failed to remove transport company:", error);
+      toast.error("Failed to remove transport company. Please try again.");
     }
   };
 
@@ -476,12 +534,13 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="dealers" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="dealers">Dealer Management</TabsTrigger>
             <TabsTrigger value="groups">Dealer Groups</TabsTrigger>
             <TabsTrigger value="powerbi">PowerBI Configuration</TabsTrigger>
             <TabsTrigger value="bulk-receive">Bulk Receive</TabsTrigger>
             <TabsTrigger value="stock-rectification">Stock Rectification</TabsTrigger>
+            <TabsTrigger value="transport-companies">Transport Companies</TabsTrigger>
           </TabsList>
 
           {/* Dealer Management Tab */}
@@ -1202,6 +1261,64 @@ export default function Admin() {
                             </TableRow>
                           );
                         })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="transport-companies" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Transport Companies</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-[2fr_1fr] md:items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor="transport-company-name">Add transport company</Label>
+                    <Input
+                      id="transport-company-name"
+                      placeholder="e.g. Snowy Logistics"
+                      value={newTransportCompany}
+                      onChange={(event) => setNewTransportCompany(event.target.value)}
+                    />
+                  </div>
+                  <Button onClick={addTransportCompany} className="w-full md:w-auto">
+                    Add company
+                  </Button>
+                </div>
+
+                {sortedTransportCompanies.length === 0 ? (
+                  <p className="text-slate-500 text-center py-6">No transport companies added yet.</p>
+                ) : (
+                  <div className="rounded-lg border overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Company</TableHead>
+                          <TableHead>ID</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedTransportCompanies.map((company) => (
+                          <TableRow key={company.id}>
+                            <TableCell className="font-medium">{company.name}</TableCell>
+                            <TableCell className="text-xs text-slate-500">{company.id}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => deleteTransportCompany(company.id)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Remove
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                   </div>

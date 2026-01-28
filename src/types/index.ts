@@ -163,3 +163,4 @@ export interface StockToCustomerRecord {
 
 // Export dealer types
 export * from './dealer';
+export * from "./transport";
