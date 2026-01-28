@@ -10,8 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
-  MapPin,
-  Package,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -200,7 +198,6 @@ export default function Sidebar({
     const path = location.pathname;
     if (path.includes('/inventory-management')) return 'inventory-management';
     if (path.includes('/finance-report')) return 'finance-report';
-    if (path.includes('/transport-preference')) return 'transport-preference';
     if (path.includes('/inventorystock')) return 'inventorystock';
     if (path.includes('/unsigned')) return 'unsigned';
     if (path.includes('/dealerorders')) return 'dealerorders';
@@ -248,12 +245,6 @@ export default function Sidebar({
       end: true
     });
     navigationItems.splice(5, 0, {
-      path: `${basePath}/transport-preference`,
-      label: "Transport Preference",
-      icon: MapPin,
-      end: true,
-    });
-    navigationItems.splice(6, 0, {
       path: `${basePath}/show-management`,
       label: "Show Management",
       icon: ClipboardList,
