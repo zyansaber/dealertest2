@@ -12,6 +12,7 @@ import DealerPortal from "./pages/DealerPortal";
 import AccessRestricted from "./pages/AccessRestricted";
 import InventoryStockPage from "@/pages/InventoryStockPage";
 import DealerDashboard from "./pages/DealerDashboard";
+import DealerOverallDashboard from "./pages/DealerOverallDashboard";
 import UnsignedEmptySlots from "./pages/UnsignedEmptySlots";
 import PasswordLogin from "./pages/PasswordLogin";
 import ProtectedMainRoute from "./components/ProtectedMainRoute";
@@ -96,6 +97,16 @@ const AppShell = () => {
         {/* Standalone internal snapshot page (no sidebar) */}
         <Route path="/xxx/internal-snowy-2487" element={<InternalSnowyPage />} />
 
+        {/* Overall dashboard (no dealer slug) */}
+        <Route
+          path="/overall-dashboard"
+          element={
+            <ProtectedMainRoute>
+              <DealerOverallDashboard />
+            </ProtectedMainRoute>
+          }
+        />
+
         {/* 单个 Dealer 路由 - 使用 /dealer/ 前缀 */}
         <Route
           path="/dealer/:dealerSlug"
@@ -110,6 +121,14 @@ const AppShell = () => {
           element={
             <ProtectedDealerRoute>
               <DealerDashboard />
+            </ProtectedDealerRoute>
+          }
+        />
+        <Route
+          path="/dealer/:dealerSlug/overall-dashboard"
+          element={
+            <ProtectedDealerRoute>
+              <DealerOverallDashboard />
             </ProtectedDealerRoute>
           }
         />
