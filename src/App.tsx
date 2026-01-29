@@ -12,7 +12,6 @@ import DealerPortal from "./pages/DealerPortal";
 import AccessRestricted from "./pages/AccessRestricted";
 import InventoryStockPage from "@/pages/InventoryStockPage";
 import DealerDashboard from "./pages/DealerDashboard";
-import DealerOverallDashboard from "./pages/DealerOverallDashboard";
 import UnsignedEmptySlots from "./pages/UnsignedEmptySlots";
 import PasswordLogin from "./pages/PasswordLogin";
 import ProtectedMainRoute from "./components/ProtectedMainRoute";
@@ -111,14 +110,6 @@ const AppShell = () => {
           element={
             <ProtectedDealerRoute>
               <DealerDashboard />
-            </ProtectedDealerRoute>
-          }
-        />
-        <Route
-          path="/dealer/:dealerSlug/overall-dashboard"
-          element={
-            <ProtectedDealerRoute>
-              <DealerOverallDashboard />
             </ProtectedDealerRoute>
           }
         />
