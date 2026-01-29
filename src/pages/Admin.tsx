@@ -104,6 +104,7 @@ export default function Admin() {
         name: newDealer.trim(),
         code,
         isActive: true,
+        initialTarget2026: 0,
         createdAt: new Date().toISOString()
       });
       
@@ -265,6 +266,22 @@ export default function Admin() {
     } catch (error) {
       console.error("Failed to save dealer SAP code:", error);
       toast.error("Failed to save SAP code. Please try again.");
+    }
+  };
+
+  const updateInitialTarget2026 = async (dealerSlug: string, value: string) => {
+    const config = dealerConfigs[dealerSlug];
+    if (!config) return;
+    const parsed = Number(value);
+    try {
+      await setDealerConfig(dealerSlug, {
+        ...config,
+        initialTarget2026: Number.isFinite(parsed) ? parsed : 0,
+      });
+      toast.success("Initial target (2026) saved");
+    } catch (error) {
+      console.error("Failed to save initial target:", error);
+      toast.error("Failed to save initial target. Please try again.");
     }
   };
 
@@ -612,6 +629,17 @@ export default function Admin() {
                                   </option>
                                 ))} 
                               </select>
+                            </div>
+
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                              <Label className="text-sm font-medium min-w-[240px]">Initial Target (2026)</Label>
+                              <Input
+                                type="number"
+                                inputMode="numeric"
+                                className="flex-1"
+                                value={config.initialTarget2026 ?? 0}
+                                onChange={(e) => updateInitialTarget2026(dealerSlug, e.target.value)}
+                              />
                             </div>
 
                             {deliveryToEnabled && (
