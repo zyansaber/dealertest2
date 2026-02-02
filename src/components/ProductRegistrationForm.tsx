@@ -192,6 +192,8 @@ const regionOptionsByCountry = (country: string): RegionOption[] => {
   return EMPTY_STATE;
 };
 
+const trimModelForPayload = (model?: string | null) => (model ?? "").trim().split(/\s+/)[0] ?? "";
+
 export default function ProductRegistrationForm({ open, onOpenChange, initial, onCompleted }: Props) {
   const [dealerConfig, setDealerConfig] = useState<any>(null);
   const [sharedForm, setSharedForm] = useState({
@@ -360,7 +362,9 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     };
   }, [filePreviewUrl]);
 
-  const buildProductPayload = (): ProductRegistrationData => ({
+  const buildProductPayload = (): ProductRegistrationData => {
+    const trimmedModel = trimModelForPayload(sharedForm.model);
+    return {
     First_Name__c: sharedForm.firstName,
     Last_Name__c: sharedForm.lastName,
     Email__c: sharedForm.email,
@@ -376,7 +380,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     State_Region__c: selectedRegion?.productValue ?? "",
     Chassis_Number__c: sharedForm.chassisNumber,
     Brand__c: sharedForm.brand,
-    Model__c: sharedForm.model,
+    Model__c: trimmedModel,
     Dealership_Purchased_From__c: sharedForm.dealershipCode,
     Handover_Date__c: sharedForm.handoverDate,
     VIN__c: sharedForm.vin,
@@ -397,19 +401,22 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     stateRegion: selectedRegion?.productValue ?? "",
     chassisNumber: sharedForm.chassisNumber,
     brand: sharedForm.brand,
-    model: sharedForm.model,
+    model: trimmedModel,
     dealershipPurchasedFrom: sharedForm.dealershipCode,
     handoverDate: sharedForm.handoverDate,
     vin: sharedForm.vin,
-  });
+    };
+  };
 
-  const buildCustomerPayload = (): CustomerDetailsPayload => ({
+  const buildCustomerPayload = (): CustomerDetailsPayload => {
+    const trimmedModel = trimModelForPayload(sharedForm.model);
+    return {
     Email__c: sharedForm.email,
     First_Name__c: sharedForm.firstName,
     Last_Name__c: sharedForm.lastName,
     Mobile_Number__c: sharedForm.mobile,
     Handover_Date__c: sharedForm.handoverDate,
-    Model__c: sharedForm.model,
+    Model__c: trimmedModel,
     Country__c: sharedForm.country,
     State_AU__c: sharedForm.country === "AU" ? selectedRegion?.customerValue ?? "" : "",
     State_NZ__c: sharedForm.country === "NZ" ? selectedRegion?.customerValue ?? "" : "",
@@ -422,7 +429,8 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
     Forms_Submitted: customerExtras.formsSubmitted,
     source: customerExtras.source,
     chassisNumber: sharedForm.chassisNumber,
-  });
+    };
+  };
 
     const runChainedSubmissionAndUpload = async () => {
       try {
@@ -482,7 +490,7 @@ export default function ProductRegistrationForm({ open, onOpenChange, initial, o
 
     const handoverData = {
       chassis: sharedForm.chassisNumber,
-      model: sharedForm.model || null,
+      model: trimModelForPayload(sharedForm.model) || null,
       dealerName: initial?.dealerName || dealerConfig?.name || null,
       dealerSlug,
       handoverAt: initial?.handoverAt || new Date().toISOString(),

@@ -367,6 +367,8 @@ type CustomerExtras = {
   source: string;
 };
 
+const trimModelForPayload = (model?: string | null) => (model ?? "").trim().split(/\s+/)[0] ?? "";
+
 const SalesforceTest = () => {
   const [sharedForm, setSharedForm] = useState<SharedForm>({
     firstName: "John",
@@ -520,68 +522,74 @@ const SalesforceTest = () => {
     setProofPayload((prev) => ({ ...prev, base64Data, fileName: file.name }));
   };
 
-  const buildProductPayload = (): ProductRegistrationData => ({
-    First_Name__c: sharedForm.firstName,
-    Last_Name__c: sharedForm.lastName,
-    Email__c: sharedForm.email,
-    Mobile_Number__c: sharedForm.mobile,
-    Mobile__c: sharedForm.mobile,
-    Phone_Number__c: sharedForm.phone,
-    Phone__c: sharedForm.phone,
-    Street_Address__c: sharedForm.streetAddress,
-    Suburb__c: sharedForm.suburb,
-    Sync_with_SAP__c: "true",
-    Country__c: sharedForm.country,
-    Postcode__c: sharedForm.postcode,
-    State_Region__c: selectedRegion?.productValue ?? "",
-    Chassis_Number__c: sharedForm.chassisNumber,
-    Brand__c: sharedForm.brand,
-    Model__c: sharedForm.model,
-    Dealership_Purchased_From__c: sharedForm.dealershipCode,
-    Handover_Date__c: sharedForm.handoverDate,
-    VIN__c: sharedForm.vin,
-    // camelCase mirrors
-    firstName: sharedForm.firstName,
-    lastName: sharedForm.lastName,
-    email: sharedForm.email,
-    mobileNumber: sharedForm.mobile,
-    mobile: sharedForm.mobile,
-    phoneNumber: sharedForm.phone,
-    phone: sharedForm.phone,
-    streetAddress: sharedForm.streetAddress,
-    suburb: sharedForm.suburb,
-    syncWithSap: "true",
-    country: sharedForm.country,
-    postcode: sharedForm.postcode,
-    stateRegion: selectedRegion?.productValue ?? "",
-    chassisNumber: sharedForm.chassisNumber,
-    brand: sharedForm.brand,
-    model: sharedForm.model,
-    dealershipPurchasedFrom: sharedForm.dealershipCode,
-    handoverDate: sharedForm.handoverDate,
-    vin: sharedForm.vin,
-  });
+  const buildProductPayload = (): ProductRegistrationData => {
+    const trimmedModel = trimModelForPayload(sharedForm.model);
+    return {
+      First_Name__c: sharedForm.firstName,
+      Last_Name__c: sharedForm.lastName,
+      Email__c: sharedForm.email,
+      Mobile_Number__c: sharedForm.mobile,
+      Mobile__c: sharedForm.mobile,
+      Phone_Number__c: sharedForm.phone,
+      Phone__c: sharedForm.phone,
+      Street_Address__c: sharedForm.streetAddress,
+      Suburb__c: sharedForm.suburb,
+      Sync_with_SAP__c: "true",
+      Country__c: sharedForm.country,
+      Postcode__c: sharedForm.postcode,
+      State_Region__c: selectedRegion?.productValue ?? "",
+      Chassis_Number__c: sharedForm.chassisNumber,
+      Brand__c: sharedForm.brand,
+      Model__c: trimmedModel,
+      Dealership_Purchased_From__c: sharedForm.dealershipCode,
+      Handover_Date__c: sharedForm.handoverDate,
+      VIN__c: sharedForm.vin,
+      // camelCase mirrors
+      firstName: sharedForm.firstName,
+      lastName: sharedForm.lastName,
+      email: sharedForm.email,
+      mobileNumber: sharedForm.mobile,
+      mobile: sharedForm.mobile,
+      phoneNumber: sharedForm.phone,
+      phone: sharedForm.phone,
+      streetAddress: sharedForm.streetAddress,
+      suburb: sharedForm.suburb,
+      syncWithSap: "true",
+      country: sharedForm.country,
+      postcode: sharedForm.postcode,
+      stateRegion: selectedRegion?.productValue ?? "",
+      chassisNumber: sharedForm.chassisNumber,
+      brand: sharedForm.brand,
+      model: trimmedModel,
+      dealershipPurchasedFrom: sharedForm.dealershipCode,
+      handoverDate: sharedForm.handoverDate,
+      vin: sharedForm.vin,
+    };
+  };
 
-  const buildCustomerPayload = (): CustomerDetailsPayload => ({
-    Email__c: sharedForm.email,
-    First_Name__c: sharedForm.firstName,
-    Last_Name__c: sharedForm.lastName,
-    Mobile_Number__c: sharedForm.mobile,
-    Handover_Date__c: sharedForm.handoverDate,
-    Model__c: sharedForm.model,
-    Country__c: sharedForm.country,
-    State_AU__c: sharedForm.country === "AU" ? selectedRegion?.customerValue ?? "" : "",
-    State_NZ__c: sharedForm.country === "NZ" ? selectedRegion?.customerValue ?? "" : "",
-    Postcode__c: sharedForm.postcode,
-    Dealership_Purchased_From__c: sharedForm.dealershipCode,
-    Brand: sharedForm.brand,
-    Origin_Type: customerExtras.originType,
-    Lifecycle_Stage: customerExtras.lifecycleStage,
-    Form_Name_SAP_Sync: customerExtras.formNameSapSync,
-    Forms_Submitted: customerExtras.formsSubmitted,
-    source: customerExtras.source,
-    chassisNumber: sharedForm.chassisNumber,
-  });
+  const buildCustomerPayload = (): CustomerDetailsPayload => {
+    const trimmedModel = trimModelForPayload(sharedForm.model);
+    return {
+      Email__c: sharedForm.email,
+      First_Name__c: sharedForm.firstName,
+      Last_Name__c: sharedForm.lastName,
+      Mobile_Number__c: sharedForm.mobile,
+      Handover_Date__c: sharedForm.handoverDate,
+      Model__c: trimmedModel,
+      Country__c: sharedForm.country,
+      State_AU__c: sharedForm.country === "AU" ? selectedRegion?.customerValue ?? "" : "",
+      State_NZ__c: sharedForm.country === "NZ" ? selectedRegion?.customerValue ?? "" : "",
+      Postcode__c: sharedForm.postcode,
+      Dealership_Purchased_From__c: sharedForm.dealershipCode,
+      Brand: sharedForm.brand,
+      Origin_Type: customerExtras.originType,
+      Lifecycle_Stage: customerExtras.lifecycleStage,
+      Form_Name_SAP_Sync: customerExtras.formNameSapSync,
+      Forms_Submitted: customerExtras.formsSubmitted,
+      source: customerExtras.source,
+      chassisNumber: sharedForm.chassisNumber,
+    };
+  };
 
   const runCallableSubmission = async () => {
     setCallableResult("Submitting via Firebase Function...");
