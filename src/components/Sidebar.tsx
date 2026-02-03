@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -412,6 +413,22 @@ export default function Sidebar({
                 </div>
               ))}
             </nav>
+          </div>
+        )}
+
+        {dealerSlug && (
+          <div className="border-b border-slate-800 px-2 py-3">
+            <NavLink
+              to="/stock-rectification/frankston"
+              className={({ isActive }) =>
+                `stock-rectification-glow flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${
+                  isActive ? "bg-amber-500/20 text-amber-100" : "text-amber-200 hover:bg-amber-500/10"
+                }`
+              }
+            >
+              <Sparkles className="h-4 w-4" />
+              {!isCollapsed && <span>Stock Rectification project</span>}
+            </NavLink>
           </div>
         )}
 
