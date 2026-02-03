@@ -18,7 +18,20 @@ export const FINANCE_REPORT_ENABLED_SLUGS = new Set<string>([
   "traralgon",
 ]);
 
+export const STOCK_RECTIFICATION_ENABLED_SLUGS = new Set<string>([
+  "frankston",
+  "geelong",
+  "launceston",
+  "st-james",
+  "traralgon",
+]);
+
 export const isFinanceReportEnabled = (slug?: string): boolean => {
   if (!slug) return false;
   return FINANCE_REPORT_ENABLED_SLUGS.has(slug);
+};
+
+export const isStockRectificationEnabled = (slug?: string): boolean => {
+  if (!slug) return false;
+  return STOCK_RECTIFICATION_ENABLED_SLUGS.has(slug);
 };

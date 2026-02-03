@@ -933,11 +933,68 @@ export async function reportInvalidStock(dealerSlug: string, chassis: string) {
   await set(targetRef, { chassis, dealerSlug, createdAt: now, source: "report-invalid-stock" });
 }
 
+export async function reportInvalidStockWithReason(
+  dealerSlug: string,
+  chassis: string,
+  payload: {
+    reason: string;
+    note?: string | null;
+    model?: string | null;
+    reportedBy?: string | null;
+    source?: string;
+  }
+) {
+  const targetRef = ref(database, `stockrectification/${dealerSlug}/${chassis}`);
+  const now = new Date().toISOString();
+  await set(targetRef, {
+    chassis,
+    dealerSlug,
+    createdAt: now,
+    updatedAt: now,
+    reason: payload.reason,
+    note: payload.note ?? null,
+    model: payload.model ?? null,
+    reportedBy: payload.reportedBy ?? null,
+    source: payload.source ?? "report-invalid-stock",
+  });
+}
+
 export function subscribeToStockRectificationAll(cb: (value: Record<string, any>) => void) {
   const r = ref(database, "stockrectification");
   const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
+}
+
+export async function addStockRectificationToYardPending(
+  dealerSlug: string,
+  payload: {
+    chassis: string;
+    model?: string | null;
+    reason: string;
+    note?: string | null;
+    requestedBy?: string | null;
+    source?: string;
+  }
+) {
+  const targetRef = ref(database, `yardpending/${dealerSlug}/${payload.chassis}`);
+  const now = new Date().toISOString();
+  await set(targetRef, {
+    chassis: payload.chassis,
+    requestedAt: now,
+    receivedAt: null,
+    dealerSlug,
+    dealer: dealerSlug,
+    model: payload.model ?? null,
+    customer: null,
+    manual: true,
+    type: "Stock",
+    status: "pending",
+    reason: payload.reason,
+    note: payload.note ?? null,
+    requestedBy: payload.requestedBy ?? null,
+    source: payload.source ?? "stock-rectification",
+  });
 }
 
 /** -------------------- Product Registration -------------------- */

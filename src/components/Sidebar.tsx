@@ -7,6 +7,7 @@ import {
   Truck,
   DollarSign,
   ClipboardList,
+  Sparkles,
   ChevronLeft,
   ChevronRight,
   Circle,
@@ -17,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import type { ScheduleItem } from "@/types";
-import { isFinanceReportEnabled, normalizeDealerSlug } from "@/lib/dealerUtils";
+import { isFinanceReportEnabled, isStockRectificationEnabled, normalizeDealerSlug } from "@/lib/dealerUtils";
 import {
   dealerNameToSlug,
   subscribeShowDealerMappings,
@@ -48,6 +49,7 @@ type NavigationItem = {
   children?: NavigationItem[];
   isSubItem?: boolean;
   isDisabled?: boolean;
+  isHighlight?: boolean;
 };
 
 /** ---- 安全工具函数：统一兜底，避免 undefined.toLowerCase 报错 ---- */
@@ -202,6 +204,7 @@ export default function Sidebar({
     if (path.includes('/unsigned')) return 'unsigned';
     if (path.includes('/dealerorders')) return 'dealerorders';
     if (path.includes('/yard')) return 'yard';
+    if (path.includes('/stock-rectification')) return 'stock-rectification';
     if (path.includes('/dashboard')) return 'dashboard';
     return 'dealerorders';
   };
@@ -238,13 +241,26 @@ export default function Sidebar({
   ];
 
   if (!isGroup) {
-    navigationItems.splice(4, 0, {
+    const rectificationInsertIndex = 4;
+    if (isStockRectificationEnabled(normalizedDealerSlug)) {
+      navigationItems.splice(rectificationInsertIndex, 0, {
+        path: `${basePath}/stock-rectification`,
+        label: "Stock Rectification project",
+        icon: Sparkles,
+        end: true,
+        isHighlight: true,
+      });
+    }
+    const inventoryInsertIndex = isStockRectificationEnabled(normalizedDealerSlug)
+      ? rectificationInsertIndex + 1
+      : rectificationInsertIndex;
+    navigationItems.splice(inventoryInsertIndex, 0, {
       path: `${basePath}/inventory-management`,
       label: "Inventory Management",
       icon: ClipboardList,
       end: true
     });
-    navigationItems.splice(5, 0, {
+    navigationItems.splice(inventoryInsertIndex + 1, 0, {
       path: `${basePath}/show-management`,
       label: "Show Management",
       icon: ClipboardList,
@@ -292,7 +308,9 @@ export default function Sidebar({
         isActive
           ? "bg-slate-800 text-white shadow-inner"
           : "text-slate-200 hover:bg-slate-800 hover:text-white"
-      } ${item.isSubItem ? "text-[13px]" : ""} ${item.isDisabled ? "cursor-default opacity-0" : ""}`}
+      } ${item.isSubItem ? "text-[13px]" : ""} ${item.isDisabled ? "cursor-default opacity-0" : ""} ${
+        item.isHighlight ? "stock-rectification-glow text-amber-100 hover:text-white" : ""
+      }`}
     >
       <div className={`relative ${item.isSubItem ? "text-slate-400" : ""}`}>
         <item.icon className={`${item.isSubItem ? "h-4 w-4" : "h-5 w-5"}`} />
