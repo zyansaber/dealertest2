@@ -7,6 +7,7 @@ export type ShowOrder = {
   model?: string;
   orderType?: string;
   status?: string;
+  orderStatusId?: string;
   salesperson?: string;
   customerName?: string;
   chassisNumber?: string;

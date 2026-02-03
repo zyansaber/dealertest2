@@ -25,6 +25,7 @@ import {
   formatShowDate,
   parseFlexibleDateToDate,
   subscribeToShows,
+  subscribeToShowOrderStatusOptions,
   subscribeToShowOrders,
   subscribeToShowTasks,
   updateShowOrder,
@@ -32,6 +33,7 @@ import {
 } from "@/lib/showDatabase";
 import { sendDealerConfirmationEmail } from "@/lib/email";
 import type { ShowOrder } from "@/types/showOrder";
+import type { ShowOrderStatusOption } from "@/types/showOrderStatusOption";
 import type { ShowRecord } from "@/types/show";
 import type { TeamMember } from "@/types/teamMember";
 import type { ShowTask } from "@/types/showTask";
@@ -257,6 +259,7 @@ export default function ShowManagement() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [showMappings, setShowMappings] = useState<Record<string, ShowDealerMapping>>({});
   const [showTasks, setShowTasks] = useState<ShowTask[]>([]);
+  const [orderStatusOptions, setOrderStatusOptions] = useState<ShowOrderStatusOption[]>([]);
 
   useEffect(() => {
     const unsub = subscribeToShowOrders((data) => {
@@ -291,6 +294,13 @@ export default function ShowManagement() {
   }, []);
 
   useEffect(() => {
+    const unsub = subscribeToShowOrderStatusOptions((data) => {
+      setOrderStatusOptions(data);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
     const loadTeamMembers = async () => {
       try {
         const data = await fetchTeamMembers();
@@ -315,6 +325,16 @@ export default function ShowManagement() {
     });
     return map;
   }, [shows]);
+
+  const orderStatusMap = useMemo(() => {
+    const map: Record<string, ShowOrderStatusOption> = {};
+    orderStatusOptions.forEach((option) => {
+      if (option.id) {
+        map[option.id] = option;
+      }
+    });
+    return map;
+  }, [orderStatusOptions]);
 
   const stringifyDisplayField = (value: unknown) => {
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -1023,7 +1043,7 @@ export default function ShowManagement() {
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Salesperson</TableHead>
                       <TableHead className="font-semibold">Order Type</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
+                      <TableHead className="font-semibold">show manager confirmation</TableHead>
                       <TableHead className="font-semibold">Dealer Confirmation</TableHead>
                       <TableHead className="font-semibold">Chassis Number</TableHead>
                       <TableHead className="font-semibold">Details</TableHead>
@@ -1032,8 +1052,9 @@ export default function ShowManagement() {
                   <TableBody>
                     {ordersForDealer.map((order) => {
                       const show = showMap[order.showId];
-                      const isCancelled = (order.status || "").toLowerCase() === "cancelled";
                       const chassisValue = chassisDrafts[order.orderId] ?? order.chassisNumber ?? "";
+                      const managerConfirmation =
+                        stringifyDisplayField(orderStatusMap[order.orderStatusId || ""]?.label) || "no status";
                       return (
                         <TableRow key={order.orderId}>
                           <TableCell className="font-semibold text-slate-900">{order.orderId}</TableCell>
@@ -1045,10 +1066,8 @@ export default function ShowManagement() {
                           <TableCell>{stringifyDisplayField(order.model) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.salesperson) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
-                          <TableCell>
-                            <div className={isCancelled ? "text-rose-600 font-medium" : "text-slate-700"}>
-                              {isCancelled ? "Cancelled by show manager" : stringifyDisplayField(order.status) || "Pending"}
-                            </div>
+                          <TableCell className="text-slate-700">
+                            {managerConfirmation}
                           </TableCell>
                           <TableCell>
                             {order.dealerConfirm ? (
