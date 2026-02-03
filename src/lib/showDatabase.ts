@@ -147,7 +147,6 @@ export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) =
       model: item.model || "",
       orderType: item.orderType || "",
       status: item.status || "",
-      orderStatusId: item.orderStatusId || "",
       salesperson: item.salesperson || "",
       chassisNumber: item.chassisNumber || "",
       customerName: item.customerName || item.customer || "",
