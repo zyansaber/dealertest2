@@ -36,6 +36,7 @@ import SalesforceTest from "./pages/SalesforceTest";
 import OcrPage from "./pages/OcrPage";
 import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 import YardReceive from "./pages/YardReceive";
+import StockRectificationProject from "./pages/StockRectificationProject";
 
 const queryClient = new QueryClient();
 
@@ -153,6 +154,14 @@ const AppShell = () => {
           element={
             <ProtectedDealerRoute>
               <DealerYard />
+            </ProtectedDealerRoute>
+          }
+        />
+        <Route
+          path="/dealer/:dealerSlug/stock-rectification"
+          element={
+            <ProtectedDealerRoute>
+              <StockRectificationProject />
             </ProtectedDealerRoute>
           }
         />
