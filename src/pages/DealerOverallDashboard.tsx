@@ -228,29 +228,6 @@ export default function DealerOverallDashboard() {
   }, [isGlobalView]);
 
   useEffect(() => {
-    if (!isGlobalView || dealerOptions.length === 0) return undefined;
-
-    const perDealer = new Map<string, Record<string, AnyRecord>>();
-    const unsubs = dealerOptions.map(({ slug }) =>
-      subscribeToYardStock(slug, (data) => {
-        perDealer.set(slug, data || {});
-        const merged: Record<string, AnyRecord> = {};
-        perDealer.forEach((entries, dealerKey) => {
-          Object.entries(entries || {}).forEach(([chassis, payload]) => {
-            if (chassis === "dealer-chassis") return;
-            merged[`${dealerKey}-${chassis}`] = payload;
-          });
-        });
-        setGlobalYardStock(merged);
-      })
-    );
-
-    return () => {
-      unsubs.forEach((unsub) => unsub?.());
-    };
-  }, [dealerOptions, isGlobalView]);
-
-  useEffect(() => {
     if (!dealerSlug) {
       setDealerConfig(null);
       return;
@@ -306,6 +283,29 @@ export default function DealerOverallDashboard() {
       .map(([slug, config]) => ({ slug, name: config?.name || prettifyDealerName(slug) }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [dealerConfigs]);
+
+  useEffect(() => {
+    if (!isGlobalView || dealerOptions.length === 0) return undefined;
+
+    const perDealer = new Map<string, Record<string, AnyRecord>>();
+    const unsubs = dealerOptions.map(({ slug }) =>
+      subscribeToYardStock(slug, (data) => {
+        perDealer.set(slug, data || {});
+        const merged: Record<string, AnyRecord> = {};
+        perDealer.forEach((entries, dealerKey) => {
+          Object.entries(entries || {}).forEach(([chassis, payload]) => {
+            if (chassis === "dealer-chassis") return;
+            merged[`${dealerKey}-${chassis}`] = payload;
+          });
+        });
+        setGlobalYardStock(merged);
+      })
+    );
+
+    return () => {
+      unsubs.forEach((unsub) => unsub?.());
+    };
+  }, [dealerOptions, isGlobalView]);
 
   const hasAccess = useMemo(() => {
     if (!dealerSlug) return true;
