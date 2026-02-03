@@ -2,6 +2,7 @@ import { getApps, initializeApp } from "firebase/app";
 import { DataSnapshot, get, getDatabase, off, onValue, ref, update } from "firebase/database";
 import type { ShowRecord } from "@/types/show";
 import type { ShowOrder } from "@/types/showOrder";
+import type { ShowOrderStatusOption } from "@/types/showOrderStatusOption";
 import type { TeamMember } from "@/types/teamMember";
 import type { ShowTask } from "@/types/showTask";
 
@@ -147,6 +148,7 @@ export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) =
       model: item.model || "",
       orderType: item.orderType || "",
       status: item.status || "",
+      orderStatusId: item.orderStatusId || "",
       salesperson: item.salesperson || "",
       chassisNumber: item.chassisNumber || "",
       customerName: item.customerName || item.customer || "",
@@ -167,6 +169,32 @@ export const subscribeToShowOrders = (callback: (orders: ShowOrder[]) => void) =
 
   onValue(ordersRef, handler);
   return () => off(ordersRef, "value", handler);
+};
+
+export const subscribeToShowOrderStatusOptions = (callback: (options: ShowOrderStatusOption[]) => void) => {
+  const optionsRef = ref(showDatabase, "orderStatusOptions");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const raw = snapshot.val();
+    const list: any[] = raw
+      ? Array.isArray(raw)
+        ? raw.filter(Boolean)
+        : Object.entries(raw).map(([key, value]) => ({ id: key, ...(value as any) }))
+      : [];
+
+    const normalized: ShowOrderStatusOption[] = list.map((item: any) => ({
+      id: item.id || "",
+      label: item.label || "",
+      color: item.color || "",
+      description: item.description || "",
+      sortOrder: typeof item.sortOrder === "number" ? item.sortOrder : Number(item.sortOrder ?? 0),
+    }));
+
+    callback(normalized.filter((item) => item.id));
+  };
+
+  onValue(optionsRef, handler);
+  return () => off(optionsRef, "value", handler);
 };
 
 export const subscribeToShowTasks = (callback: (tasks: ShowTask[]) => void) => {
