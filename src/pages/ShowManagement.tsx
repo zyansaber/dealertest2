@@ -1023,7 +1023,7 @@ export default function ShowManagement() {
                       <TableHead className="font-semibold">Model</TableHead>
                       <TableHead className="font-semibold">Salesperson</TableHead>
                       <TableHead className="font-semibold">Order Type</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
+                      <TableHead className="font-semibold">show manager confirmation</TableHead>
                       <TableHead className="font-semibold">Dealer Confirmation</TableHead>
                       <TableHead className="font-semibold">Chassis Number</TableHead>
                       <TableHead className="font-semibold">Details</TableHead>
@@ -1032,8 +1032,9 @@ export default function ShowManagement() {
                   <TableBody>
                     {ordersForDealer.map((order) => {
                       const show = showMap[order.showId];
-                      const isCancelled = (order.status || "").toLowerCase() === "cancelled";
                       const chassisValue = chassisDrafts[order.orderId] ?? order.chassisNumber ?? "";
+                      const managerConfirmation =
+                        stringifyDisplayField(order.orderStatusId) || "no status";
                       return (
                         <TableRow key={order.orderId}>
                           <TableCell className="font-semibold text-slate-900">{order.orderId}</TableCell>
@@ -1045,10 +1046,8 @@ export default function ShowManagement() {
                           <TableCell>{stringifyDisplayField(order.model) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.salesperson) || "-"}</TableCell>
                           <TableCell>{stringifyDisplayField(order.orderType) || "-"}</TableCell>
-                          <TableCell>
-                            <div className={isCancelled ? "text-rose-600 font-medium" : "text-slate-700"}>
-                              {isCancelled ? "Cancelled by show manager" : stringifyDisplayField(order.status) || "Pending"}
-                            </div>
+                          <TableCell className="text-slate-700">
+                            {managerConfirmation}
                           </TableCell>
                           <TableCell>
                             {order.dealerConfirm ? (
