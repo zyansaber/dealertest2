@@ -464,6 +464,19 @@ export default function Sidebar({
                 )}
               </div>
             )}
+
+            {!isCollapsed && dealerSlug && (
+              <NavLink
+                to={`${basePath}/stock-rectification`}
+                className={({ isActive }) =>
+                  `stock-rectification-glow mt-3 block rounded-md px-3 py-2 text-sm font-semibold transition ${
+                    isActive ? "bg-amber-200 text-amber-900" : "bg-amber-50 text-amber-900 hover:bg-amber-100"
+                  }`
+                }
+              >
+                stock Rectification project
+              </NavLink>
+            )}
           </div>
         )}
 
