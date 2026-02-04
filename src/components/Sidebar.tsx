@@ -199,7 +199,6 @@ export default function Sidebar({
     if (path.includes('/inventory-management')) return 'inventory-management';
     if (path.includes('/finance-report')) return 'finance-report';
     if (path.includes('/inventorystock')) return 'inventorystock';
-    if (path.includes('/stock-rectification')) return 'stock-rectification';
     if (path.includes('/unsigned')) return 'unsigned';
     if (path.includes('/dealerorders')) return 'dealerorders';
     if (path.includes('/yard')) return 'yard';
@@ -235,7 +234,6 @@ export default function Sidebar({
     { path: isGroup ? `${basePath}/dealerorders` : basePath, label: "Dealer Orders", icon: BarChart3, end: !isGroup },
     { path: `${basePath}/inventorystock`, label: "Factory Inventory", icon: Factory, end: true },
     { path: `${basePath}/yard`, label: "Yard Inventory & On The Road", icon: Truck, end: true },
-    { path: `${basePath}/stock-rectification`, label: "Stock Rectification", icon: ClipboardList, end: true },
     { path: `${basePath}/unsigned`, label: "Unsigned & Empty Slots", icon: FileX, end: true },
   ];
 
