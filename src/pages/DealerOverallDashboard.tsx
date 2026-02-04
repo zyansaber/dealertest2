@@ -461,8 +461,8 @@ export default function DealerOverallDashboard() {
   }, [dealerOrdersAll, selectedYear, today]);
 
   const monthlyOrderTrend = useMemo(() => {
-    const base = startOfMonth(new Date(selectedYear, 11 - 5, 1));
-    const buckets = Array.from({ length: 6 }).map((_, index) => {
+    const base = startOfMonth(new Date(selectedYear, 0, 1));
+    const buckets = Array.from({ length: 12 }).map((_, index) => {
       const start = startOfMonth(addMonths(base, index));
       return {
         label: monthFormatter.format(start),
@@ -862,12 +862,8 @@ export default function DealerOverallDashboard() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm text-slate-600">Modified Yearly Target in {selectedYear}</CardTitle>
               </CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                <div className={`text-3xl font-bold tracking-tight ${deltaColor(forecastYearCount, initialTarget)}`}>
-                  {formatNumber(forecastYearCount)}
-                </div>
-                <p className="text-xs text-slate-500">Initial Target: {formatNumber(initialTarget)}</p>
-                <DeltaIndicator actual={forecastYearCount} target={initialTarget} />
+              <CardContent className="pt-0">
+                <div className="text-3xl font-bold tracking-tight text-slate-300">—</div>
               </CardContent>
             </Card>
 
@@ -890,13 +886,8 @@ export default function DealerOverallDashboard() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm text-slate-600">Production confirmed in {selectedYear}</CardTitle>
               </CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                <div className="text-3xl font-bold tracking-tight text-slate-900">
-                  {formatNumber(forecastYearWithChassis)}
-                </div>
-                <p className="text-xs text-slate-500">
-                  Initial target YTD: {formatNumber(Math.round(ytdTarget))}
-                </p>
+              <CardContent className="pt-0">
+                <div className="text-3xl font-bold tracking-tight text-slate-300">—</div>
               </CardContent>
             </Card>
 
@@ -1004,7 +995,7 @@ export default function DealerOverallDashboard() {
                           : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                       }`}
                     >
-                      Week
+                      Last 10 Weeks
                     </button>
                     <button
                       type="button"
