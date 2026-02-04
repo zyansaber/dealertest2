@@ -927,61 +927,14 @@ export async function dispatchFromYard(dealerSlug: string, chassis: string) {
 }
 
 /** -------------------- Stock rectification -------------------- */
-export type StockRectificationReportInput = {
-  reason?: string | null;
-  customReason?: string | null;
-  source?: "report-invalid-stock" | "add-to-yard";
-  reportedAt?: string | null;
-  note?: string | null;
-};
-
-export async function saveStockRectificationReport(
-  dealerSlug: string,
-  chassis: string,
-  input: StockRectificationReportInput = {}
-) {
-  const targetRef = ref(database, `stockrectification/${dealerSlug}/${chassis}`);
-  const now = new Date().toISOString();
-  await update(targetRef, {
-    chassis,
-    dealerSlug,
-    createdAt: input.reportedAt ?? now,
-    updatedAt: now,
-    reason: input.reason ?? null,
-    customReason: input.customReason ?? null,
-    source: input.source ?? "report-invalid-stock",
-    note: input.note ?? null,
-  });
-}
-
 export async function reportInvalidStock(dealerSlug: string, chassis: string) {
-  await saveStockRectificationReport(dealerSlug, chassis, { source: "report-invalid-stock" });
-}
-
-export async function updateStockRectificationNote(
-  dealerSlug: string,
-  chassis: string,
-  note: string | null
-) {
   const targetRef = ref(database, `stockrectification/${dealerSlug}/${chassis}`);
   const now = new Date().toISOString();
-  await update(targetRef, {
-    chassis,
-    dealerSlug,
-    updatedAt: now,
-    note,
-  });
+  await set(targetRef, { chassis, dealerSlug, createdAt: now, source: "report-invalid-stock" });
 }
 
 export function subscribeToStockRectificationAll(cb: (value: Record<string, any>) => void) {
   const r = ref(database, "stockrectification");
-  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
-  onValue(r, handler);
-  return () => off(r, "value", handler);
-}
-
-export function subscribeToStockRectification(dealerSlug: string, cb: (value: Record<string, any>) => void) {
-  const r = ref(database, `stockrectification/${dealerSlug}`);
   const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
