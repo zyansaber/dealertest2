@@ -38,7 +38,6 @@ import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 import YardReceive from "./pages/YardReceive";
 import StockRectificationProject from "./pages/StockRectificationProject";
 import DealerStockRectification from "./pages/DealerStockRectification";
-import OrderReceivedSummary from "./pages/OrderReceivedSummary";
 
 const queryClient = new QueryClient();
 
@@ -60,16 +59,6 @@ const AppShell = () => {
 
         {/* Standalone yard receive upload page (public) */}
         <Route path="/yard-receive" element={<YardReceive />} />
-
-        {/* Special Order Received Date summary page */}
-        <Route
-          path="/order-received-summary"
-          element={
-            <ProtectedMainRoute>
-              <OrderReceivedSummary />
-            </ProtectedMainRoute>
-          }
-        />
 
         {/* Stock rectification project */}
         <Route
