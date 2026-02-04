@@ -36,6 +36,8 @@ import SalesforceTest from "./pages/SalesforceTest";
 import OcrPage from "./pages/OcrPage";
 import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 import YardReceive from "./pages/YardReceive";
+import StockRectificationProject from "./pages/StockRectificationProject";
+import DealerStockRectification from "./pages/DealerStockRectification";
 
 const queryClient = new QueryClient();
 
@@ -57,6 +59,24 @@ const AppShell = () => {
 
         {/* Standalone yard receive upload page (public) */}
         <Route path="/yard-receive" element={<YardReceive />} />
+
+        {/* Stock rectification project */}
+        <Route
+          path="/stock-rectification"
+          element={
+            <ProtectedMainRoute>
+              <Navigate to="/stock-rectification/frankston" replace />
+            </ProtectedMainRoute>
+          }
+        />
+        <Route
+          path="/stock-rectification/:dealerSlug"
+          element={
+            <ProtectedMainRoute>
+              <StockRectificationProject />
+            </ProtectedMainRoute>
+          }
+        />
 
         {/* 主仪表板（需要密码验证） */}
         <Route
@@ -153,6 +173,14 @@ const AppShell = () => {
           element={
             <ProtectedDealerRoute>
               <DealerYard />
+            </ProtectedDealerRoute>
+          }
+        />
+        <Route
+          path="/dealer/:dealerSlug/stock-rectification"
+          element={
+            <ProtectedDealerRoute>
+              <DealerStockRectification />
             </ProtectedDealerRoute>
           }
         />
