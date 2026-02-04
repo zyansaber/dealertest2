@@ -51,8 +51,12 @@ const formatDate = (value?: string | null) => {
   return d.toLocaleDateString();
 };
 
-export default function StockRectificationProject() {
-  const { dealerSlug } = useParams<{ dealerSlug: string }>();
+type StockRectificationViewProps = {
+  dealerSlug?: string;
+  showDealerList?: boolean;
+};
+
+export function StockRectificationView({ dealerSlug, showDealerList = true }: StockRectificationViewProps) {
   const navigate = useNavigate();
   const [yardStock, setYardStock] = useState<Record<string, any>>({});
   const [yardPending, setYardPending] = useState<Record<string, any>>({});
@@ -70,16 +74,25 @@ export default function StockRectificationProject() {
   const [reportLoading, setReportLoading] = useState(false);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
 
-  const currentDealer = useMemo(
-    () => DEALERS.find((dealer) => dealer.slug === dealerSlug) ?? DEALERS[0],
-    [dealerSlug]
-  );
+  const currentDealer = useMemo(() => {
+    if (dealerSlug) {
+      return DEALERS.find((dealer) => dealer.slug === dealerSlug) ?? null;
+    }
+    return DEALERS[0];
+  }, [dealerSlug]);
 
   useEffect(() => {
-    if (!dealerSlug || !DEALERS.some((dealer) => dealer.slug === dealerSlug)) {
-      navigate(`/stock-rectification/${DEALERS[0].slug}`, { replace: true });
+    if (showDealerList) {
+      if (!dealerSlug || !DEALERS.some((dealer) => dealer.slug === dealerSlug)) {
+        navigate(`/stock-rectification/${DEALERS[0].slug}`, { replace: true });
+      }
+      return;
     }
-  }, [dealerSlug, navigate]);
+
+    if (!dealerSlug || !DEALERS.some((dealer) => dealer.slug === dealerSlug)) {
+      navigate("/access-restricted", { replace: true });
+    }
+  }, [dealerSlug, navigate, showDealerList]);
 
   useEffect(() => {
     if (!currentDealer?.slug) return;
@@ -220,196 +233,169 @@ export default function StockRectificationProject() {
     }
   };
 
-  return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-50">
-      <aside className="w-64 border-r border-slate-800 bg-slate-900 p-4">
-        <div className="mb-6">
-          <div className="stock-rectification-glow rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100">
-            Stock Rectification project
-          </div>
-        </div>
-        <nav className="space-y-2">
-          {DEALERS.map((dealer) => (
-            <NavLink
-              key={dealer.slug}
-              to={`/stock-rectification/${dealer.slug}`}
-              className={({ isActive }) =>
-                `block rounded-md px-3 py-2 text-sm transition ${
-                  isActive
-                    ? "bg-slate-800 text-white"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`
-              }
-            >
-              {dealer.name}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
+  const content = (
+    <>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-white">
+          Stock Rectification project — {currentDealer?.name ?? ""}
+        </h1>
+        <p className="text-sm text-slate-400 mt-1">
+          Review yard inventory and report invalid stock with reasons for {currentDealer?.name ?? ""}.
+        </p>
+      </div>
 
-      <main className="flex-1 p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-white">
-            Stock Rectification project — {currentDealer.name}
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Review yard inventory and report invalid stock with reasons for {currentDealer.name}.
-          </p>
-        </div>
-
-        <div className="grid gap-6">
-          <Card className="border-slate-800 bg-slate-900">
-            <CardHeader>
-              <CardTitle className="text-slate-100">Add to yard (requires reason)</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-[1fr_1fr_1fr_auto]">
-              <div className="space-y-2">
-                <Label htmlFor="add-chassis">Chassis</Label>
+      <div className="grid gap-6">
+        <Card className="border-slate-800 bg-slate-900">
+          <CardHeader>
+            <CardTitle className="text-slate-100">Add to yard (requires reason)</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-[1fr_1fr_1fr_auto]">
+            <div className="space-y-2">
+              <Label htmlFor="add-chassis">Chassis</Label>
+              <Input
+                id="add-chassis"
+                placeholder="Enter chassis"
+                value={addChassis}
+                onChange={(event) => setAddChassis(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-model">Model (optional)</Label>
+              <Input
+                id="add-model"
+                placeholder="Model"
+                value={addModel}
+                onChange={(event) => setAddModel(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Select value={addReason} onValueChange={setAddReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  {REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>
+                      {reason}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {addReason === "Other" && (
                 <Input
-                  id="add-chassis"
-                  placeholder="Enter chassis"
-                  value={addChassis}
-                  onChange={(event) => setAddChassis(event.target.value)}
+                  placeholder="Enter custom reason"
+                  value={addCustomReason}
+                  onChange={(event) => setAddCustomReason(event.target.value)}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="add-model">Model (optional)</Label>
-                <Input
-                  id="add-model"
-                  placeholder="Model"
-                  value={addModel}
-                  onChange={(event) => setAddModel(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Reason</Label>
-                <Select value={addReason} onValueChange={setAddReason}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select reason" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REASONS.map((reason) => (
-                      <SelectItem key={reason} value={reason}>
-                        {reason}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {addReason === "Other" && (
-                  <Input
-                    placeholder="Enter custom reason"
-                    value={addCustomReason}
-                    onChange={(event) => setAddCustomReason(event.target.value)}
-                  />
-                )}
-              </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={handleAddToYard}
-                  className="bg-sky-600 hover:bg-sky-700"
-                  disabled={addLoading}
-                >
-                  {addLoading ? "Saving..." : "Add to yard"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              )}
+            </div>
+            <div className="flex items-end">
+              <Button
+                onClick={handleAddToYard}
+                className="bg-sky-600 hover:bg-sky-700"
+                disabled={addLoading}
+              >
+                {addLoading ? "Saving..." : "Add to yard"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-          <Card className="border-slate-800 bg-slate-900">
-            <CardHeader>
-              <CardTitle className="text-slate-100">Yard Inventory</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {rows.length === 0 ? (
-                <div className="text-sm text-slate-400">No units in yard inventory.</div>
-              ) : (
-                <div className="rounded-lg border border-slate-800 overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-semibold text-slate-200">Chassis</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Model</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Customer</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Received At</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Status</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Report invalid stock</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Reported</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Reason</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Note</TableHead>
-                        <TableHead className="font-semibold text-slate-200">Note Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rows.map((row) => {
-                        const report = reports?.[row.chassis] ?? null;
-                        const reportedReason = report?.reason ? String(report.reason) : "";
-                        const reportedCustom = report?.customReason ? String(report.customReason) : "";
-                        const reasonDisplay = reportedReason
-                          ? reportedReason === "Other" && reportedCustom
-                            ? `${reportedReason}: ${reportedCustom}`
-                            : reportedReason
-                          : "-";
-                        const noteValue =
-                          noteDrafts[row.chassis] !== undefined
-                            ? noteDrafts[row.chassis]
-                            : report?.note
-                            ? String(report.note)
-                            : "";
-                        return (
-                          <TableRow key={row.chassis} className={row.isPending ? "bg-amber-500/10" : undefined}>
-                            <TableCell className="font-medium text-slate-100">{row.chassis}</TableCell>
-                            <TableCell className="text-slate-200">{row.model}</TableCell>
-                            <TableCell className="text-slate-200">{row.customer}</TableCell>
-                            <TableCell className="text-slate-200">{row.receivedAt}</TableCell>
-                            <TableCell className="text-slate-200">{row.type}</TableCell>
-                            <TableCell>
-                              {report ? (
-                                <span className="text-xs font-semibold uppercase text-emerald-400">Reported</span>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="border-amber-400 text-amber-200 hover:bg-amber-500/10"
-                                  onClick={() => openReportDialog(row.chassis, row.model)}
-                                >
-                                  Report
-                                </Button>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-slate-200">{report ? "Yes" : "No"}</TableCell>
-                            <TableCell className="text-slate-200">{reasonDisplay}</TableCell>
-                            <TableCell className="text-slate-200">
-                              <Input
-                                value={noteValue}
-                                placeholder="Add note"
-                                onChange={(event) =>
-                                  setNoteDrafts((prev) => ({
-                                    ...prev,
-                                    [row.chassis]: event.target.value,
-                                  }))
-                                }
-                              />
-                            </TableCell>
-                            <TableCell>
+        <Card className="border-slate-800 bg-slate-900">
+          <CardHeader>
+            <CardTitle className="text-slate-100">Yard Inventory</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {rows.length === 0 ? (
+              <div className="text-sm text-slate-400">No units in yard inventory.</div>
+            ) : (
+              <div className="rounded-lg border border-slate-800 overflow-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-semibold text-slate-200">Chassis</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Model</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Customer</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Received At</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Status</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Report invalid stock</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Reported</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Reason</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Note</TableHead>
+                      <TableHead className="font-semibold text-slate-200">Note Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => {
+                      const report = reports?.[row.chassis] ?? null;
+                      const reportedReason = report?.reason ? String(report.reason) : "";
+                      const reportedCustom = report?.customReason ? String(report.customReason) : "";
+                      const reasonDisplay = reportedReason
+                        ? reportedReason === "Other" && reportedCustom
+                          ? `${reportedReason}: ${reportedCustom}`
+                          : reportedReason
+                        : "-";
+                      const noteValue =
+                        noteDrafts[row.chassis] !== undefined
+                          ? noteDrafts[row.chassis]
+                          : report?.note
+                          ? String(report.note)
+                          : "";
+                      return (
+                        <TableRow key={row.chassis} className={row.isPending ? "bg-amber-500/10" : undefined}>
+                          <TableCell className="font-medium text-slate-100">{row.chassis}</TableCell>
+                          <TableCell className="text-slate-200">{row.model}</TableCell>
+                          <TableCell className="text-slate-200">{row.customer}</TableCell>
+                          <TableCell className="text-slate-200">{row.receivedAt}</TableCell>
+                          <TableCell className="text-slate-200">{row.type}</TableCell>
+                          <TableCell>
+                            {report ? (
+                              <span className="text-xs font-semibold uppercase text-emerald-400">Reported</span>
+                            ) : (
                               <Button
                                 size="sm"
-                                variant="secondary"
-                                onClick={() => handleSaveNote(row.chassis)}
+                                variant="outline"
+                                className="border-amber-400 text-amber-200 hover:bg-amber-500/10"
+                                onClick={() => openReportDialog(row.chassis, row.model)}
                               >
-                                Save
+                                Report
                               </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </main>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-slate-200">{report ? "Yes" : "No"}</TableCell>
+                          <TableCell className="text-slate-200">{reasonDisplay}</TableCell>
+                          <TableCell className="text-slate-200">
+                            <Input
+                              value={noteValue}
+                              placeholder="Add note"
+                              onChange={(event) =>
+                                setNoteDrafts((prev) => ({
+                                  ...prev,
+                                  [row.chassis]: event.target.value,
+                                }))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleSaveNote(row.chassis)}
+                            >
+                              Save
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Dialog open={reportOpen} onOpenChange={setReportOpen}>
         <DialogContent className="bg-slate-950 text-slate-100 border-slate-800">
@@ -460,6 +446,45 @@ export default function StockRectificationProject() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
+
+  if (showDealerList) {
+    return (
+      <div className="flex min-h-screen bg-slate-950 text-slate-50">
+        <aside className="w-64 border-r border-slate-800 bg-slate-900 p-4">
+          <div className="mb-6">
+            <div className="stock-rectification-glow rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-100">
+              Stock Rectification project
+            </div>
+          </div>
+          <nav className="space-y-2">
+            {DEALERS.map((dealer) => (
+              <NavLink
+                key={dealer.slug}
+                to={`/stock-rectification/${dealer.slug}`}
+                className={({ isActive }) =>
+                  `block rounded-md px-3 py-2 text-sm transition ${
+                    isActive
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  }`
+                }
+              >
+                {dealer.name}
+              </NavLink>
+            ))}
+          </nav>
+        </aside>
+        <main className="flex-1 p-6">{content}</main>
+      </div>
+    );
+  }
+
+  return <div className="flex-1 p-6 bg-slate-950 text-slate-50">{content}</div>;
+}
+
+export default function StockRectificationProject() {
+  const { dealerSlug } = useParams<{ dealerSlug: string }>();
+  return <StockRectificationView dealerSlug={dealerSlug} showDealerList />;
 }

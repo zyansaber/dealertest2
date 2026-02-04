@@ -37,6 +37,7 @@ import OcrPage from "./pages/OcrPage";
 import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 import YardReceive from "./pages/YardReceive";
 import StockRectificationProject from "./pages/StockRectificationProject";
+import DealerStockRectification from "./pages/DealerStockRectification";
 
 const queryClient = new QueryClient();
 
@@ -172,6 +173,14 @@ const AppShell = () => {
           element={
             <ProtectedDealerRoute>
               <DealerYard />
+            </ProtectedDealerRoute>
+          }
+        />
+        <Route
+          path="/dealer/:dealerSlug/stock-rectification"
+          element={
+            <ProtectedDealerRoute>
+              <DealerStockRectification />
             </ProtectedDealerRoute>
           }
         />
