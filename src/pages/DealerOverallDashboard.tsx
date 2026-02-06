@@ -617,7 +617,6 @@ export default function DealerOverallDashboard() {
       customer: 0,
       dispatched: 0,
       total: 0,
-      stockPct: 0,
       customerPct: 0,
     }));
 
@@ -647,16 +646,13 @@ export default function DealerOverallDashboard() {
     });
 
     let runningTotal = 0;
-    let runningStock = 0;
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      runningStock += bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucket.total;
-      const stockPct = runningTotal ? (runningStock / runningTotal) * 100 : 0;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, stockPct, customerPct };
+      return { ...bucket, customerPct };
     });
   }, [dealerOrders, dealerCampervanSchedule, planningBuckets]);
 
@@ -680,7 +676,6 @@ export default function DealerOverallDashboard() {
         stock: 0,
         customer: 0,
         total: 0,
-        stockPct: 0,
         customerPct: 0,
       };
     });
@@ -712,16 +707,13 @@ export default function DealerOverallDashboard() {
     });
 
     let runningTotal = 0;
-    let runningStock = 0;
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      runningStock += bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucket.total;
-      const stockPct = runningTotal ? (runningStock / runningTotal) * 100 : 0;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, stockPct, customerPct };
+      return { ...bucket, customerPct };
     });
   }, [dealerCampervanSchedule, dealerOrdersAll, today]);
 
@@ -736,7 +728,6 @@ export default function DealerOverallDashboard() {
         stock: 0,
         customer: 0,
         total: 0,
-        stockPct: 0,
         customerPct: 0,
       };
     });
@@ -763,16 +754,13 @@ export default function DealerOverallDashboard() {
     });
 
     let runningTotal = 0;
-    let runningStock = 0;
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      runningStock += bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucket.total;
-      const stockPct = runningTotal ? (runningStock / runningTotal) * 100 : 0;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, stockPct, customerPct };
+      return { ...bucket, customerPct };
     });
   }, [orderReceivedYearOrders, selectedYear]);
 
@@ -1638,7 +1626,6 @@ export default function DealerOverallDashboard() {
                     stock: { label: "Stock", color: "#3b82f6" },
                     customer: { label: "Customer", color: "#10b981" },
                     dispatched: { label: "Dispatched", color: "#94a3b8" },
-                    stockPct: { label: "Stock % (Acc)", color: "#2563eb" },
                     customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
                   }}
                   className="h-80"
@@ -1671,14 +1658,6 @@ export default function DealerOverallDashboard() {
                     </Bar>
                     <Line
                       type="monotone"
-                      dataKey="stockPct"
-                      stroke="var(--color-stockPct)"
-                      yAxisId="pct"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
                       dataKey="customerPct"
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
@@ -1688,7 +1667,7 @@ export default function DealerOverallDashboard() {
                       <LabelList
                         dataKey="customerPct"
                         position="right"
-                        formatter={(value: number, index: number, payload: any) =>
+                        formatter={(value: number, index: number) =>
                           index === orderVolumeByMonth.length - 1 ? `${value.toFixed(1)}%` : ""
                         }
                       />
@@ -1737,7 +1716,6 @@ export default function DealerOverallDashboard() {
                   config={{
                     stock: { label: "Stock", color: "#3b82f6" },
                     customer: { label: "Customer", color: "#10b981" },
-                    stockPct: { label: "Stock % (Acc)", color: "#2563eb" },
                     customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
                   }}
                   className="h-80"
@@ -1769,14 +1747,6 @@ export default function DealerOverallDashboard() {
                     </Bar>
                     <Line
                       type="monotone"
-                      dataKey="stockPct"
-                      stroke="var(--color-stockPct)"
-                      yAxisId="pct"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
                       dataKey="customerPct"
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
@@ -1786,7 +1756,7 @@ export default function DealerOverallDashboard() {
                       <LabelList
                         dataKey="customerPct"
                         position="right"
-                        formatter={(value: number, index: number, payload: any) =>
+                        formatter={(value: number, index: number) =>
                           index ===
                           (trendMode === "week" ? weeklyOrderTrend.length - 1 : monthlyOrderTrend.length - 1)
                             ? `${value.toFixed(1)}%`
