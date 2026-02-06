@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, LabelList, Line, XAxis, YAxis } from "recharts";
 
 import Sidebar from "@/components/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +22,16 @@ import { isDealerGroup } from "@/types/dealer";
 
 const PLANNING_MONTHS = 8;
 const monthFormatter = new Intl.DateTimeFormat("en-AU", { month: "short", year: "numeric" });
+const FACTORY_DEALER_NAMES = ["Frankston", "Launceston", "ST James", "Traralgon", "Geelong"];
+const FACTORY_DEALER_TOTAL_SLUG = "factory-dealer-total";
+const GREEN_RV_NAMES = ["Heatherbrae", "Gympie", "Green Show", "Slacks Creek", "Bundaberg", "Forest Glen", "Toowoomba"];
+const GREEN_RV_TOTAL_SLUG = "green-rv-total";
+const NEW_ZEALAND_NAMES = ["Christchurch", "CMG Campers", "Vanari"];
+const NEW_ZEALAND_TOTAL_SLUG = "new-zealand-total";
+const JV_NAMES = ["Heatherbrae", "Gympie", "Toowoomba", "Bundaberg", "Townsville"];
+const JV_TOTAL_SLUG = "jv-total";
+const EXTERNAL_TOTAL_SLUG = "external-total";
+const ALLOWED_MODEL_RANGES = new Set(["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB"]);
 
 type AnyRecord = Record<string, any>;
 
@@ -37,6 +47,7 @@ type ModelRangeRow = {
   recentPgi: number;
   recentHandover: number;
   incoming: number[];
+  last5WeeksOrders: number;
 };
 
 const toStr = (value: unknown) => String(value ?? "");
@@ -122,6 +133,14 @@ const isUnsigned = (order: ScheduleItem) => {
   return hasChassis(order) && (!signed || signed === "no");
 };
 
+const isRegentFinished = (order: ScheduleItem) => {
+  const raw = toStr((order as any)?.["Regent Production"]).trim().toLowerCase();
+  return raw === "finished" || raw === "finish";
+};
+
+const getCampervanOrderReceivedDate = (item: CampervanScheduleItem) =>
+  parseFlexibleDateToDate((item as any)?.signedOrderReceived ?? (item as any)?.orderReceivedDate ?? undefined);
+
 const isEmptySlot = (order: ScheduleItem) => {
   const hasDealer = toStr(order.Dealer).trim() !== "";
   const hasChassisKey = Object.prototype.hasOwnProperty.call(order ?? {}, "Chassis");
@@ -183,6 +202,13 @@ export default function DealerOverallDashboard() {
   const normalizedSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
   const [selectedDealerSlug, setSelectedDealerSlug] = useState<string | null>(null);
   const dealerSlug = isGlobalView ? selectedDealerSlug : normalizedSlug;
+  const isFactoryDealerAggregate = dealerSlug === FACTORY_DEALER_TOTAL_SLUG;
+  const isGreenRvAggregate = dealerSlug === GREEN_RV_TOTAL_SLUG;
+  const isNewZealandAggregate = dealerSlug === NEW_ZEALAND_TOTAL_SLUG;
+  const isExternalAggregate = dealerSlug === EXTERNAL_TOTAL_SLUG;
+  const isJvAggregate = dealerSlug === JV_TOTAL_SLUG;
+  const isGroupAggregate =
+    isFactoryDealerAggregate || isGreenRvAggregate || isNewZealandAggregate || isExternalAggregate || isJvAggregate;
 
   const [allOrders, setAllOrders] = useState<ScheduleItem[]>([]);
   const [campervanSchedule, setCampervanSchedule] = useState<CampervanScheduleItem[]>([]);
@@ -192,6 +218,16 @@ export default function DealerOverallDashboard() {
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [trendMode, setTrendMode] = useState<"week" | "month">("week");
+  const [dealerSearch, setDealerSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    factory: false,
+    greenRv: false,
+    newZealand: false,
+    jv: false,
+    external: false,
+    dealers: false,
+  });
   const [expandedRange, setExpandedRange] = useState<string | null>(null);
   const [yardStock, setYardStock] = useState<Record<string, AnyRecord>>({});
   const [globalYardStock, setGlobalYardStock] = useState<Record<string, AnyRecord>>({});
@@ -204,7 +240,7 @@ export default function DealerOverallDashboard() {
         setAllOrders(data || []);
         setLoading(false);
       },
-      { includeNoChassis: true, includeNoCustomer: true }
+      { includeNoChassis: true, includeNoCustomer: true, includeFinished: true }
     );
 
     const unsubCampervan = subscribeToCampervanSchedule((data) => {
@@ -227,11 +263,102 @@ export default function DealerOverallDashboard() {
     }
   }, [isGlobalView]);
 
+  const buildDealerSlugs = useMemo(
+    () => (names: string[]) => {
+      const normalizedNames = new Set(names.map((name) => slugifyDealerName(name)));
+      const slugs = new Set<string>(normalizedNames);
+      Object.entries(dealerConfigs || {}).forEach(([slug, config]) => {
+        const configName = slugifyDealerName(config?.name ?? "");
+        if (normalizedNames.has(configName)) {
+          slugs.add(slug);
+        }
+      });
+      return Array.from(slugs);
+    },
+    [dealerConfigs]
+  );
+
+  const buildDealerOptions = useMemo(
+    () => (names: string[]) =>
+      names.map((name) => {
+        const normalized = slugifyDealerName(name);
+        const match = Object.entries(dealerConfigs || {}).find(([, config]) => slugifyDealerName(config?.name ?? "") === normalized);
+        const slug = match?.[0] ?? normalized;
+        const displayName = match?.[1]?.name ?? name;
+        return { slug, name: displayName };
+      }),
+    [dealerConfigs]
+  );
+
+  const factoryDealerSlugs = useMemo(() => buildDealerSlugs(FACTORY_DEALER_NAMES), [buildDealerSlugs]);
+  const greenRvSlugs = useMemo(() => buildDealerSlugs(GREEN_RV_NAMES), [buildDealerSlugs]);
+  const newZealandSlugs = useMemo(() => buildDealerSlugs(NEW_ZEALAND_NAMES), [buildDealerSlugs]);
+  const jvSlugs = useMemo(() => buildDealerSlugs(JV_NAMES), [buildDealerSlugs]);
+  const factoryDealerOptions = useMemo(() => buildDealerOptions(FACTORY_DEALER_NAMES), [buildDealerOptions]);
+  const greenRvOptions = useMemo(() => buildDealerOptions(GREEN_RV_NAMES), [buildDealerOptions]);
+  const newZealandOptions = useMemo(() => buildDealerOptions(NEW_ZEALAND_NAMES), [buildDealerOptions]);
+  const jvOptions = useMemo(() => buildDealerOptions(JV_NAMES), [buildDealerOptions]);
+
+  const dealerOptions = useMemo(() => {
+    return Object.entries(dealerConfigs || {})
+      .filter(([, config]) => config && !isDealerGroup(config))
+      .map(([slug, config]) => ({ slug, name: config?.name || prettifyDealerName(slug) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dealerConfigs]);
+
+  const externalOptions = useMemo(() => {
+    const excludedNames = new Set(
+      [...FACTORY_DEALER_NAMES, ...GREEN_RV_NAMES, ...NEW_ZEALAND_NAMES, ...JV_NAMES].map((name) =>
+        slugifyDealerName(name)
+      )
+    );
+    return dealerOptions.filter((dealer) => !excludedNames.has(slugifyDealerName(dealer.name)));
+  }, [dealerOptions]);
+
+  const externalSlugs = useMemo(() => externalOptions.map((dealer) => dealer.slug), [externalOptions]);
+
+  const aggregateSlugMap = useMemo(
+    () => ({
+      [FACTORY_DEALER_TOTAL_SLUG]: factoryDealerSlugs,
+      [GREEN_RV_TOTAL_SLUG]: greenRvSlugs,
+      [NEW_ZEALAND_TOTAL_SLUG]: newZealandSlugs,
+      [EXTERNAL_TOTAL_SLUG]: externalSlugs,
+      [JV_TOTAL_SLUG]: jvSlugs,
+    }),
+    [externalSlugs, factoryDealerSlugs, greenRvSlugs, jvSlugs, newZealandSlugs]
+  );
+
+  const activeAggregateSlugs = aggregateSlugMap[dealerSlug ?? ""] ?? [];
+
   useEffect(() => {
     if (!dealerSlug) {
       setDealerConfig(null);
       return;
     }
+
+    if (isGroupAggregate) {
+      setDealerConfig(null);
+      setConfigLoading(false);
+      const perDealer = new Map<string, Record<string, AnyRecord>>();
+      const unsubs = activeAggregateSlugs.map((slug) =>
+        subscribeToHandover(slug, (data) => {
+          perDealer.set(slug, data || {});
+          const merged: Record<string, AnyRecord> = {};
+          perDealer.forEach((records, dealerKey) => {
+            Object.entries(records || {}).forEach(([chassis, payload]) => {
+              merged[`${dealerKey}-${chassis}`] = payload;
+            });
+          });
+          setHandoverRecords(merged);
+        })
+      );
+      const unsubPgi = subscribeToPGIRecords((data) => setPgiRecords(data || {}));
+      return () => {
+        unsubs.forEach((unsub) => unsub?.());
+        unsubPgi?.();
+      };
+    }
+
     setConfigLoading(true);
 
     const unsubConfig = subscribeDealerConfig(dealerSlug, (config) => {
@@ -249,19 +376,27 @@ export default function DealerOverallDashboard() {
       unsubHandover?.();
       unsubPgi?.();
     };
-  }, [dealerSlug]);
+  }, [activeAggregateSlugs, dealerSlug, isGroupAggregate]);
 
   const dealerOrdersAll = useMemo(() => {
     if (!dealerSlug) return allOrders || [];
+    if (isGroupAggregate) {
+      return (allOrders || []).filter((order) => activeAggregateSlugs.includes(slugifyDealerName(order?.Dealer)));
+    }
     return (allOrders || []).filter((order) => slugifyDealerName(order?.Dealer) === dealerSlug);
-  }, [allOrders, dealerSlug]);
+  }, [activeAggregateSlugs, allOrders, dealerSlug, isGroupAggregate]);
 
   const dealerCampervanSchedule = useMemo(() => {
     if (!dealerSlug) return campervanSchedule || [];
+    if (isGroupAggregate) {
+      return (campervanSchedule || []).filter((item) =>
+        activeAggregateSlugs.includes(slugifyDealerName((item as any)?.dealer ?? (item as any)?.Dealer))
+      );
+    }
     return (campervanSchedule || []).filter(
       (item) => slugifyDealerName((item as any)?.dealer ?? (item as any)?.Dealer) === dealerSlug
     );
-  }, [campervanSchedule, dealerSlug]);
+  }, [activeAggregateSlugs, campervanSchedule, dealerSlug, isGroupAggregate]);
 
   const dealerOrders = useMemo(
     () => dealerOrdersAll.filter((order) => hasChassis(order) && toStr(order.Customer).trim() !== ""),
@@ -270,6 +405,11 @@ export default function DealerOverallDashboard() {
 
   const dealerDisplayName = useMemo(() => {
     if (!dealerSlug) return "Overall";
+    if (isFactoryDealerAggregate) return "Factory Dealer (Total)";
+    if (isGreenRvAggregate) return "Green RV (Total)";
+    if (isNewZealandAggregate) return "New Zealand (Total)";
+    if (isExternalAggregate) return "External Dealers (Total)";
+    if (isJvAggregate) return "JV (Total)";
     if (dealerConfig?.name) return dealerConfig.name;
     const fallbackConfig = dealerConfigs?.[dealerSlug];
     if (fallbackConfig?.name) return fallbackConfig.name;
@@ -277,12 +417,36 @@ export default function DealerOverallDashboard() {
     return fromOrder && fromOrder.trim().length > 0 ? fromOrder : prettifyDealerName(dealerSlug);
   }, [dealerConfig, dealerConfigs, dealerOrdersAll, dealerSlug]);
 
-  const dealerOptions = useMemo(() => {
-    return Object.entries(dealerConfigs || {})
-      .filter(([, config]) => config && !isDealerGroup(config))
-      .map(([slug, config]) => ({ slug, name: config?.name || prettifyDealerName(slug) }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [dealerConfigs]);
+  const filteredOptions = useMemo(() => {
+    const searchValue = dealerSearch.trim().toLowerCase();
+    const applyFilter = (options: { slug: string; name: string }[]) =>
+      searchValue ? options.filter((option) => option.name.toLowerCase().includes(searchValue)) : options;
+
+    return {
+      factory: applyFilter(factoryDealerOptions),
+      greenRv: applyFilter(greenRvOptions),
+      newZealand: applyFilter(newZealandOptions),
+      jv: applyFilter(jvOptions),
+      external: applyFilter(externalOptions),
+      dealers: applyFilter(dealerOptions),
+    };
+  }, [dealerOptions, dealerSearch, externalOptions, factoryDealerOptions, greenRvOptions, jvOptions, newZealandOptions]);
+
+  const dealerSearchSuggestions = useMemo(() => {
+    const totals = [
+      { slug: FACTORY_DEALER_TOTAL_SLUG, name: "Factory Dealer (Total)" },
+      { slug: GREEN_RV_TOTAL_SLUG, name: "Green RV (Total)" },
+      { slug: NEW_ZEALAND_TOTAL_SLUG, name: "New Zealand (Total)" },
+      { slug: EXTERNAL_TOTAL_SLUG, name: "External Dealers (Total)" },
+    ];
+    return [{ slug: "overall", name: "Overall" }, ...totals, ...dealerOptions];
+  }, [dealerOptions]);
+
+  const filteredSearchSuggestions = useMemo(() => {
+    const query = dealerSearch.trim().toLowerCase();
+    if (!query) return [];
+    return dealerSearchSuggestions.filter((option) => option.name.toLowerCase().includes(query)).slice(0, 8);
+  }, [dealerSearch, dealerSearchSuggestions]);
 
   useEffect(() => {
     if (!isGlobalView || dealerOptions.length === 0) return undefined;
@@ -307,12 +471,7 @@ export default function DealerOverallDashboard() {
     };
   }, [dealerOptions, isGlobalView]);
 
-  const hasAccess = useMemo(() => {
-    if (!dealerSlug) return true;
-    if (configLoading) return true;
-    if (!dealerConfig) return false;
-    return dealerConfig.isActive;
-  }, [dealerConfig, configLoading]);
+  const hasAccess = useMemo(() => true, []);
 
   const today = useMemo(() => {
     const now = new Date();
@@ -320,7 +479,14 @@ export default function DealerOverallDashboard() {
     return now;
   }, []);
 
-  const initialTarget = useMemo(() => getTargetValue(dealerConfig), [dealerConfig]);
+  const initialTarget = useMemo(() => {
+    if (!dealerSlug) {
+      return Object.values(dealerConfigs || {}).reduce((sum, config) => sum + getTargetValue(config), 0);
+    }
+    return getTargetValue(dealerConfig);
+  }, [dealerConfig, dealerConfigs, dealerSlug]);
+
+  const isUnfilteredYear = selectedYear === 2025;
 
   const forecastYearOrders = useMemo(
     () => dealerOrdersAll.filter((order) => getYear(order["Forecast Production Date"]) === selectedYear),
@@ -330,9 +496,23 @@ export default function DealerOverallDashboard() {
   const forecastYearCount = forecastYearOrders.length;
   const forecastYearWithChassis = forecastYearOrders.filter((order) => hasChassis(order)).length;
 
+  const orderReceivedYearOrders = useMemo(() => {
+    const scheduleOrders = dealerOrdersAll.filter((order) => {
+      const parsed = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
+      if (!parsed) return false;
+      return parsed.getFullYear() === selectedYear;
+    });
+    const campervanOrders = dealerCampervanSchedule.filter((item) => {
+      const parsed = getCampervanOrderReceivedDate(item);
+      if (!parsed) return false;
+      return parsed.getFullYear() === selectedYear;
+    });
+    return { scheduleOrders, campervanOrders };
+  }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
+
   const orderReceivedYearCount = useMemo(
-    () => dealerOrdersAll.filter((order) => getYear(order["Order Received Date"]) === selectedYear).length,
-    [dealerOrdersAll, selectedYear]
+    () => orderReceivedYearOrders.scheduleOrders.length + orderReceivedYearOrders.campervanOrders.length,
+    [orderReceivedYearOrders]
   );
 
   const totalDaysInYear = useMemo(() => {
@@ -353,13 +533,21 @@ export default function DealerOverallDashboard() {
 
   const ordersLastTenWeeks = useMemo(() => {
     const start = addDays(today, -70);
-    return dealerOrdersAll.filter((order) => {
-      const parsed = parseDate(order["Order Received Date"]);
+    const schedule = dealerOrdersAll.filter((order) => {
+      const parsed = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
       return parsed ? parsed >= start && parsed <= today : false;
     });
-  }, [dealerOrdersAll, today]);
+    const campervan = dealerCampervanSchedule.filter((item) => {
+      const parsed = getCampervanOrderReceivedDate(item);
+      return parsed ? parsed >= start && parsed <= today : false;
+    });
+    return { schedule, campervan };
+  }, [dealerCampervanSchedule, dealerOrdersAll, today]);
 
-  const avgOrdersLastTenWeeks = ordersLastTenWeeks.length / 10;
+  const avgOrdersLastTenWeeks = (ordersLastTenWeeks.schedule.length + ordersLastTenWeeks.campervan.length) / 10;
+  const avgOrdersYearly =
+    (orderReceivedYearOrders.scheduleOrders.length + orderReceivedYearOrders.campervanOrders.length) / (totalDaysInYear / 7);
+  const avgOrdersDisplay = isUnfilteredYear ? avgOrdersYearly : avgOrdersLastTenWeeks;
   const targetPerWeek = initialTarget ? initialTarget / 52 : 0;
 
   const unsignedCount = useMemo(
@@ -387,30 +575,69 @@ export default function DealerOverallDashboard() {
     });
   }, [selectedYear]);
 
-  const activeYardStock = useMemo(() => (isGlobalView ? globalYardStock : yardStock), [globalYardStock, isGlobalView, yardStock]);
+  const planningBuckets = useMemo<MonthBucket[]>(() => {
+    const base = startOfMonth(today);
+    return Array.from({ length: PLANNING_MONTHS }, (_, index) => {
+      const start = startOfMonth(addMonths(base, index));
+      return {
+        start,
+        end: startOfMonth(addMonths(start, 1)),
+        label: monthFormatter.format(start),
+      };
+    });
+  }, [today]);
+
+  const aggregateYardStock = useMemo(() => {
+    if (!isGlobalView) return {};
+    const merged: Record<string, AnyRecord> = {};
+    Object.entries(globalYardStock || {}).forEach(([key, payload]) => {
+      if (key === "dealer-chassis") return;
+      if (activeAggregateSlugs.some((slug) => key.startsWith(`${slug}-`))) {
+        merged[key] = payload;
+      }
+    });
+    return merged;
+  }, [activeAggregateSlugs, globalYardStock, isGlobalView]);
+
+  const activeYardStock = useMemo(() => {
+    if (isGlobalView) {
+      if (isGroupAggregate) return aggregateYardStock;
+      if (dealerSlug) return yardStock;
+      return globalYardStock;
+    }
+    return yardStock;
+  }, [aggregateYardStock, dealerSlug, globalYardStock, isGlobalView, isGroupAggregate, yardStock]);
 
   const orderVolumeByMonth = useMemo(() => {
-    const buckets = monthBuckets.map((bucket) => ({
+    const buckets = planningBuckets.map((bucket) => ({
       label: bucket.label,
       start: bucket.start,
       end: bucket.end,
       stock: 0,
       customer: 0,
+      dispatched: 0,
       total: 0,
+      stockPct: 0,
+      customerPct: 0,
     }));
 
-    const addToBucket = (date: Date | null, type: "stock" | "customer") => {
+    const addToBucket = (date: Date | null, type: "stock" | "customer" | "dispatched") => {
       if (!date) return;
       const shifted = addDays(date, 30);
-      if (shifted.getFullYear() !== selectedYear) return;
       const bucket = buckets.find((entry) => shifted >= entry.start && shifted < entry.end);
       if (!bucket) return;
       bucket[type] += 1;
-      bucket.total += 1;
+      if (type !== "dispatched") {
+        bucket.total += 1;
+      }
     };
 
     dealerOrders.forEach((order) => {
       const forecastDate = parseDate(order["Forecast Production Date"]);
+      if (isRegentFinished(order)) {
+        addToBucket(forecastDate, "dispatched");
+        return;
+      }
       addToBucket(forecastDate, isStockOrder(order) ? "stock" : "customer");
     });
 
@@ -419,10 +646,23 @@ export default function DealerOverallDashboard() {
       addToBucket(forecastDate, "customer");
     });
 
-    return buckets;
-  }, [dealerOrders, dealerCampervanSchedule, monthBuckets, selectedYear]);
+    let runningTotal = 0;
+    let runningStock = 0;
+    let runningCustomer = 0;
+
+    return buckets.map((bucket) => {
+      runningStock += bucket.stock;
+      runningCustomer += bucket.customer;
+      runningTotal += bucket.total;
+      const stockPct = runningTotal ? (runningStock / runningTotal) * 100 : 0;
+      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      return { ...bucket, stockPct, customerPct };
+    });
+  }, [dealerOrders, dealerCampervanSchedule, planningBuckets]);
 
   const weeklyOrderTrend = useMemo(() => {
+    const trendBaseDate = today;
+
     const startOfWeek = (date: Date) => {
       const d = new Date(date);
       const day = d.getDay();
@@ -433,19 +673,22 @@ export default function DealerOverallDashboard() {
     };
 
     const buckets = Array.from({ length: 10 }).map((_, index) => {
-      const weekStart = addDays(startOfWeek(today), -7 * (9 - index));
+      const weekStart = addDays(startOfWeek(trendBaseDate), -7 * (9 - index));
       return {
         weekStart,
         label: weekStart.toLocaleDateString("en-AU", { month: "short", day: "numeric" }),
         stock: 0,
         customer: 0,
         total: 0,
+        stockPct: 0,
+        customerPct: 0,
       };
     });
 
     dealerOrdersAll.forEach((order) => {
-      const receivedDate = parseDate(order["Order Received Date"]);
+      const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
       if (!receivedDate) return;
+      if (receivedDate < addDays(trendBaseDate, -70) || receivedDate > trendBaseDate) return;
       const weekStart = startOfWeek(receivedDate);
       const bucket = buckets.find((item) => item.weekStart.getTime() === weekStart.getTime());
       if (!bucket) return;
@@ -457,12 +700,34 @@ export default function DealerOverallDashboard() {
       bucket.total += 1;
     });
 
-    return buckets;
-  }, [dealerOrdersAll, selectedYear, today]);
+    dealerCampervanSchedule.forEach((item) => {
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (!receivedDate) return;
+      if (receivedDate < addDays(trendBaseDate, -70) || receivedDate > trendBaseDate) return;
+      const weekStart = startOfWeek(receivedDate);
+      const bucket = buckets.find((entry) => entry.weekStart.getTime() === weekStart.getTime());
+      if (!bucket) return;
+      bucket.customer += 1;
+      bucket.total += 1;
+    });
+
+    let runningTotal = 0;
+    let runningStock = 0;
+    let runningCustomer = 0;
+
+    return buckets.map((bucket) => {
+      runningStock += bucket.stock;
+      runningCustomer += bucket.customer;
+      runningTotal += bucket.total;
+      const stockPct = runningTotal ? (runningStock / runningTotal) * 100 : 0;
+      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      return { ...bucket, stockPct, customerPct };
+    });
+  }, [dealerCampervanSchedule, dealerOrdersAll, today]);
 
   const monthlyOrderTrend = useMemo(() => {
-    const base = startOfMonth(new Date(selectedYear, 11 - 5, 1));
-    const buckets = Array.from({ length: 6 }).map((_, index) => {
+    const base = startOfMonth(new Date(selectedYear, 0, 1));
+    const buckets = Array.from({ length: 12 }).map((_, index) => {
       const start = startOfMonth(addMonths(base, index));
       return {
         label: monthFormatter.format(start),
@@ -471,6 +736,8 @@ export default function DealerOverallDashboard() {
         stock: 0,
         customer: 0,
         total: 0,
+        stockPct: 0,
+        customerPct: 0,
       };
     });
 
@@ -483,13 +750,31 @@ export default function DealerOverallDashboard() {
       bucket.total += 1;
     };
 
-    dealerOrdersAll.forEach((order) => {
-      const receivedDate = parseDate(order["Order Received Date"]);
+    orderReceivedYearOrders.scheduleOrders.forEach((order) => {
+      const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
+      if (!receivedDate) return;
       addToBucket(receivedDate, isStockOrder(order) ? "stock" : "customer");
     });
 
-    return buckets;
-  }, [dealerOrdersAll, selectedYear, today]);
+    orderReceivedYearOrders.campervanOrders.forEach((item) => {
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (!receivedDate) return;
+      addToBucket(receivedDate, "customer");
+    });
+
+    let runningTotal = 0;
+    let runningStock = 0;
+    let runningCustomer = 0;
+
+    return buckets.map((bucket) => {
+      runningStock += bucket.stock;
+      runningCustomer += bucket.customer;
+      runningTotal += bucket.total;
+      const stockPct = runningTotal ? (runningStock / runningTotal) * 100 : 0;
+      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      return { ...bucket, stockPct, customerPct };
+    });
+  }, [orderReceivedYearOrders, selectedYear]);
 
   const scheduleByChassis = useMemo(() => {
     const map: Record<string, Partial<ScheduleItem>> = {};
@@ -512,6 +797,7 @@ export default function DealerOverallDashboard() {
           recentPgi: 0,
           recentHandover: 0,
           incoming: Array(monthBuckets.length).fill(0),
+          last5WeeksOrders: 0,
         });
       }
       return rangeMap.get(key)!;
@@ -529,7 +815,14 @@ export default function DealerOverallDashboard() {
 
     const threeMonthsAgo = startOfDay(addMonths(today, -3));
     Object.entries(pgiRecords || {}).forEach(([chassis, rec]) => {
-      if (dealerSlug && slugifyDealerName((rec as any)?.dealer) !== dealerSlug) return;
+      if (dealerSlug) {
+        const recordDealer = slugifyDealerName((rec as any)?.dealer);
+        if (isGroupAggregate) {
+          if (!activeAggregateSlugs.includes(recordDealer)) return;
+        } else if (recordDealer !== dealerSlug) {
+          return;
+        }
+      }
       const date =
         parseDate((rec as any)?.pgidate) ||
         parseDate((rec as any)?.PGIDate) ||
@@ -543,7 +836,13 @@ export default function DealerOverallDashboard() {
 
     Object.entries(handoverRecords || {}).forEach(([chassis, rec]) => {
       const dealerFromRec = slugifyDealerName((rec as any)?.dealerSlug || (rec as any)?.dealerName || "");
-      if (dealerSlug && dealerFromRec !== dealerSlug) return;
+      if (dealerSlug) {
+        if (isGroupAggregate) {
+          if (!activeAggregateSlugs.includes(dealerFromRec)) return;
+        } else if (dealerFromRec !== dealerSlug) {
+          return;
+        }
+      }
       const date = parseDate((rec as any)?.handoverAt) || parseDate((rec as any)?.createdAt);
       if (!date || date < threeMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
@@ -585,8 +884,36 @@ export default function DealerOverallDashboard() {
       });
     }
 
-    return Array.from(rangeMap.values()).sort((a, b) => a.modelRange.localeCompare(b.modelRange));
-  }, [activeYardStock, dealerCampervanSchedule, dealerOrdersAll, dealerSlug, handoverRecords, monthBuckets, pgiRecords, scheduleByChassis, selectedYear, today]);
+    const last5WeeksStart = addDays(today, -35);
+    dealerOrdersAll.forEach((item) => {
+      const receivedDate = parseFlexibleDateToDate((item as any)?.["Order Received Date"] ?? undefined);
+      if (!receivedDate || receivedDate < last5WeeksStart || receivedDate > today) return;
+      const range = getModelRange((item as any)?.Model, (item as any)?.Chassis);
+      ensureRange(range).last5WeeksOrders += 1;
+    });
+
+    dealerCampervanSchedule.forEach((item) => {
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (!receivedDate || receivedDate < last5WeeksStart || receivedDate > today) return;
+      const range = getModelRange(item.model, item.chassisNumber);
+      ensureRange(range).last5WeeksOrders += 1;
+    });
+
+    return Array.from(rangeMap.values())
+      .filter((row) => ALLOWED_MODEL_RANGES.has(row.modelRange))
+      .sort((a, b) => a.modelRange.localeCompare(b.modelRange));
+  }, [
+    activeYardStock,
+    dealerCampervanSchedule,
+    dealerOrdersAll,
+    dealerSlug,
+    handoverRecords,
+    monthBuckets,
+    pgiRecords,
+    scheduleByChassis,
+    selectedYear,
+    today,
+  ]);
 
   const regentProductionCounts = useMemo(() => {
     const labels = [
@@ -609,8 +936,6 @@ export default function DealerOverallDashboard() {
     };
 
     dealerOrdersAll.forEach((order) => {
-      const forecastYear = getYear(order["Forecast Production Date"]);
-      if (forecastYear !== selectedYear) return;
       const raw = toStr((order as any)?.["Regent Production"]).trim();
       if (!raw) return;
       const lowered = normalize(raw);
@@ -620,10 +945,16 @@ export default function DealerOverallDashboard() {
     });
 
     return labels.map((label) => ({ label, count: counts[label] }));
-  }, [dealerOrdersAll, selectedYear]);
+  }, [dealerOrdersAll]);
 
   const modelRangeDetails = useMemo(() => {
-    type Detail = { incoming: number[]; currentStock: number; recentHandover: number; recentPgi: number };
+    type Detail = {
+      incoming: number[];
+      currentStock: number;
+      recentHandover: number;
+      recentPgi: number;
+      last5WeeksOrders: number;
+    };
     const details = new Map<string, Record<string, Detail>>();
     const ensure = (range: string, model: string) => {
       const rangeKey = range || "UNK";
@@ -638,6 +969,7 @@ export default function DealerOverallDashboard() {
           currentStock: 0,
           recentHandover: 0,
           recentPgi: 0,
+          last5WeeksOrders: 0,
         };
       }
       return bucket[modelKey];
@@ -656,7 +988,14 @@ export default function DealerOverallDashboard() {
 
     const threeMonthsAgo = startOfDay(addMonths(today, -3));
     Object.entries(pgiRecords || {}).forEach(([chassis, rec]) => {
-      if (dealerSlug && slugifyDealerName((rec as any)?.dealer) !== dealerSlug) return;
+      if (dealerSlug) {
+        const recordDealer = slugifyDealerName((rec as any)?.dealer);
+        if (isGroupAggregate) {
+          if (!activeAggregateSlugs.includes(recordDealer)) return;
+        } else if (recordDealer !== dealerSlug) {
+          return;
+        }
+      }
       const date =
         parseDate((rec as any)?.pgidate) ||
         parseDate((rec as any)?.PGIDate) ||
@@ -671,7 +1010,13 @@ export default function DealerOverallDashboard() {
 
     Object.entries(handoverRecords || {}).forEach(([chassis, rec]) => {
       const dealerFromRec = slugifyDealerName((rec as any)?.dealerSlug || (rec as any)?.dealerName || "");
-      if (dealerSlug && dealerFromRec !== dealerSlug) return;
+      if (dealerSlug) {
+        if (isGroupAggregate) {
+          if (!activeAggregateSlugs.includes(dealerFromRec)) return;
+        } else if (dealerFromRec !== dealerSlug) {
+          return;
+        }
+      }
       const date = parseDate((rec as any)?.handoverAt) || parseDate((rec as any)?.createdAt);
       if (!date || date < threeMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
@@ -698,6 +1043,23 @@ export default function DealerOverallDashboard() {
       assignToMonth(range, modelLabel, (item as any)?.["Forecast Production Date"]);
     });
 
+    const last5WeeksStart = addDays(today, -35);
+    dealerOrdersAll.forEach((item) => {
+      const receivedDate = parseFlexibleDateToDate((item as any)?.["Order Received Date"] ?? undefined);
+      if (!receivedDate || receivedDate < last5WeeksStart || receivedDate > today) return;
+      const range = getModelRange((item as any)?.Model, (item as any)?.Chassis);
+      const modelLabel = toStr((item as any)?.Model).trim() || range;
+      ensure(range, modelLabel).last5WeeksOrders += 1;
+    });
+
+    dealerCampervanSchedule.forEach((item) => {
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (!receivedDate || receivedDate < last5WeeksStart || receivedDate > today) return;
+      const range = getModelRange(item.model, item.chassisNumber);
+      const modelLabel = toStr(item.model).trim() || range;
+      ensure(range, modelLabel).last5WeeksOrders += 1;
+    });
+
     dealerCampervanSchedule.forEach((item) => {
       const range = getModelRange(item.model, item.chassisNumber);
       const modelLabel = toStr(item.model).trim() || range;
@@ -710,13 +1072,37 @@ export default function DealerOverallDashboard() {
     dealerCampervanSchedule,
     dealerOrdersAll,
     dealerSlug,
+    activeAggregateSlugs,
     handoverRecords,
+    isGroupAggregate,
     monthBuckets,
     pgiRecords,
     scheduleByChassis,
     selectedYear,
     today,
   ]);
+
+  const modelRangeBarStats = useMemo(() => {
+    let maxCurrent = 0;
+    let maxTotal = 0;
+    let maxLast5 = 0;
+
+    modelRangeRows.forEach((row) => {
+      maxCurrent = Math.max(maxCurrent, row.currentStock);
+      maxTotal = Math.max(maxTotal, row.incoming.reduce((sum, val) => sum + val, 0));
+      maxLast5 = Math.max(maxLast5, row.last5WeeksOrders);
+    });
+
+    modelRangeDetails.forEach((models) => {
+      Object.values(models).forEach((detail) => {
+        maxCurrent = Math.max(maxCurrent, detail.currentStock);
+        maxTotal = Math.max(maxTotal, detail.incoming.reduce((sum, val) => sum + val, 0));
+        maxLast5 = Math.max(maxLast5, detail.last5WeeksOrders);
+      });
+    });
+
+    return { maxCurrent, maxTotal, maxLast5 };
+  }, [modelRangeDetails, modelRangeRows]);
 
   const topModelOrders = useMemo(() => {
     const start = new Date(selectedYear, 0, 1);
@@ -741,8 +1127,42 @@ export default function DealerOverallDashboard() {
     });
 
     dealerCampervanSchedule.forEach((item) => {
-      const receivedDate = parseDate((item as any)?.orderReceivedDate ?? (item as any)?.OrderReceivedDate ?? (item as any)?.orderDate);
+      const receivedDate = getCampervanOrderReceivedDate(item);
       if (!receivedDate || receivedDate < start || receivedDate >= end) return;
+      addEntry(toStr(item.model).trim(), "customer");
+    });
+
+    return Array.from(bucket.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+  }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
+
+  const forecastTopModelOrders = useMemo(() => {
+    const start = new Date(selectedYear, 0, 1);
+    const end = new Date(selectedYear + 1, 0, 1);
+    const bucket = new Map<string, { model: string; stock: number; customer: number; total: number }>();
+
+    const addEntry = (model: string, type: "stock" | "customer") => {
+      const key = model.trim() || "Unknown";
+      if (key.toLowerCase() === "unknown") return;
+      if (!bucket.has(key)) {
+        bucket.set(key, { model: key, stock: 0, customer: 0, total: 0 });
+      }
+      const entry = bucket.get(key)!;
+      entry[type] += 1;
+      entry.total += 1;
+    };
+
+    dealerOrdersAll.forEach((order) => {
+      const forecastDate = parseDate(order["Forecast Production Date"]);
+      if (!forecastDate || forecastDate < start || forecastDate >= end) return;
+      const model = toStr(order.Model).trim();
+      addEntry(model, isStockOrder(order) ? "stock" : "customer");
+    });
+
+    dealerCampervanSchedule.forEach((item) => {
+      const forecastDate = parseDate(item.forecastProductionDate);
+      if (!forecastDate || forecastDate < start || forecastDate >= end) return;
       addEntry(toStr(item.model).trim(), "customer");
     });
 
@@ -755,26 +1175,7 @@ export default function DealerOverallDashboard() {
     return Object.keys(activeYardStock || {}).filter((key) => key !== "dealer-chassis").length;
   }, [activeYardStock]);
 
-  if (!configLoading && !hasAccess) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <Card className="max-w-md">
-          <CardContent className="text-center py-16">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CircleDot className="w-8 h-8 text-red-600" />
-            </div>
-            <CardTitle className="text-xl text-slate-700 mb-2">Access Denied</CardTitle>
-            <p className="text-slate-500 mb-6">
-              This dealer portal is currently inactive or does not exist. Please contact the administrator for access.
-            </p>
-            <p className="text-sm text-slate-400">Dealer: {dealerDisplayName}</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (loading || configLoading) {
+  if (loading || (!isGlobalView && configLoading)) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-slate-600">Loading overall dashboard…</div>
@@ -787,36 +1188,298 @@ export default function DealerOverallDashboard() {
 
   const totalIncoming = (incoming: number[]) => incoming.reduce((sum, value) => sum + value, 0);
 
+  const renderBarCell = (value: number, maxValue: number, color: string) => {
+    const width = maxValue > 0 ? Math.min(100, (value / maxValue) * 100) : 0;
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <div className="h-2 w-24 rounded-full bg-slate-200">
+          <div className="h-2 rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
+        </div>
+        <span className="tabular-nums">{value}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="flex min-h-screen">
       {isGlobalView ? (
-        <aside className="w-64 border-r border-slate-200 bg-slate-950 text-slate-100">
-          <div className="p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Dealers</div>
-            <div className="mt-3 space-y-1">
+        <aside className="w-64 border-r border-slate-200 bg-slate-950 text-slate-100 h-screen overflow-y-auto sticky top-0">
+          <div className="p-4 space-y-6 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700/70 [&::-webkit-scrollbar-track]:bg-slate-900/60">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Dealer Search</label>
+              <input
+                type="text"
+                value={dealerSearch}
+                onChange={(event) => {
+                  setDealerSearch(event.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+                placeholder="Search dealers..."
+                className="mt-2 w-full rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-700"
+              />
+              {searchOpen && filteredSearchSuggestions.length > 0 && (
+                <div className="mt-2 rounded-md border border-slate-800 bg-slate-950 shadow-lg">
+                  {filteredSearchSuggestions.map((option) => (
+                    <button
+                      key={option.slug}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        if (option.slug === "overall") {
+                          setSelectedDealerSlug(null);
+                        } else {
+                          setSelectedDealerSlug(option.slug);
+                        }
+                        setDealerSearch(option.name);
+                        setSearchOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-900"
+                    >
+                      {option.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="mt-3 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDealerSlug(null)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ring-1 ring-transparent ${
+                    dealerSlug === null
+                      ? "bg-slate-800 text-white ring-emerald-500/40"
+                      : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  <span>Overall</span>
+                </button>
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 shadow-sm">
               <button
                 type="button"
-                onClick={() => setSelectedDealerSlug(null)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
-                  dealerSlug === null ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-800 hover:text-white"
-                }`}
+                onClick={() => setExpandedSections((prev) => ({ ...prev, factory: !prev.factory }))}
+                className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-300"
               >
-                Overall
+                <span>Factory dealer</span>
+                <span className="text-slate-400">{expandedSections.factory ? "−" : "+"}</span>
               </button>
-              {dealerOptions.map((dealer) => (
+              {expandedSections.factory && (
+                <div className="mt-3 space-y-1 pl-2">
                 <button
-                  key={dealer.slug}
                   type="button"
-                  onClick={() => setSelectedDealerSlug(dealer.slug)}
+                  onClick={() => setSelectedDealerSlug(FACTORY_DEALER_TOTAL_SLUG)}
                   className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    dealerSlug === dealer.slug
+                    dealerSlug === FACTORY_DEALER_TOTAL_SLUG
                       ? "bg-slate-800 text-white"
                       : "text-slate-200 hover:bg-slate-800 hover:text-white"
                   }`}
                 >
-                  {dealer.name}
+                  Factory Dealer (Total)
                 </button>
-              ))}
+                {filteredOptions.factory.map((dealer) => (
+                  <button
+                    key={dealer.slug}
+                    type="button"
+                    onClick={() => setSelectedDealerSlug(dealer.slug)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      dealerSlug === dealer.slug
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {dealer.name}
+                  </button>
+                ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setExpandedSections((prev) => ({ ...prev, greenRv: !prev.greenRv }))}
+                className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-300"
+              >
+                <span>Green RV</span>
+                <span className="text-slate-400">{expandedSections.greenRv ? "−" : "+"}</span>
+              </button>
+              {expandedSections.greenRv && (
+                <div className="mt-3 space-y-1 pl-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDealerSlug(GREEN_RV_TOTAL_SLUG)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    dealerSlug === GREEN_RV_TOTAL_SLUG
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  Green RV (Total)
+                </button>
+                {filteredOptions.greenRv.map((dealer) => (
+                  <button
+                    key={dealer.slug}
+                    type="button"
+                    onClick={() => setSelectedDealerSlug(dealer.slug)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      dealerSlug === dealer.slug
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {dealer.name}
+                  </button>
+                ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setExpandedSections((prev) => ({ ...prev, newZealand: !prev.newZealand }))}
+                className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-300"
+              >
+                <span>New Zealand</span>
+                <span className="text-slate-400">{expandedSections.newZealand ? "−" : "+"}</span>
+              </button>
+              {expandedSections.newZealand && (
+                <div className="mt-3 space-y-1 pl-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDealerSlug(NEW_ZEALAND_TOTAL_SLUG)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    dealerSlug === NEW_ZEALAND_TOTAL_SLUG
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  New Zealand (Total)
+                </button>
+                {filteredOptions.newZealand.map((dealer) => (
+                  <button
+                    key={dealer.slug}
+                    type="button"
+                    onClick={() => setSelectedDealerSlug(dealer.slug)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      dealerSlug === dealer.slug
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {dealer.name}
+                  </button>
+                ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setExpandedSections((prev) => ({ ...prev, jv: !prev.jv }))}
+                className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-300"
+              >
+                <span>JV</span>
+                <span className="text-slate-400">{expandedSections.jv ? "−" : "+"}</span>
+              </button>
+              {expandedSections.jv && (
+                <div className="mt-3 space-y-1 pl-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDealerSlug(JV_TOTAL_SLUG)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      dealerSlug === JV_TOTAL_SLUG
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    JV (Total)
+                  </button>
+                  {filteredOptions.jv.map((dealer) => (
+                    <button
+                      key={dealer.slug}
+                      type="button"
+                      onClick={() => setSelectedDealerSlug(dealer.slug)}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                        dealerSlug === dealer.slug
+                          ? "bg-slate-800 text-white"
+                          : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      {dealer.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setExpandedSections((prev) => ({ ...prev, external: !prev.external }))}
+                className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-300"
+              >
+                <span>External dealers</span>
+                <span className="text-slate-400">{expandedSections.external ? "−" : "+"}</span>
+              </button>
+              {expandedSections.external && (
+                <div className="mt-3 space-y-1 pl-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDealerSlug(EXTERNAL_TOTAL_SLUG)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    dealerSlug === EXTERNAL_TOTAL_SLUG
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  External Dealers (Total)
+                </button>
+                {filteredOptions.external.map((dealer) => (
+                  <button
+                    key={dealer.slug}
+                    type="button"
+                    onClick={() => setSelectedDealerSlug(dealer.slug)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      dealerSlug === dealer.slug
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {dealer.name}
+                  </button>
+                ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setExpandedSections((prev) => ({ ...prev, dealers: !prev.dealers }))}
+                className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-300"
+              >
+                <span>Dealers</span>
+                <span className="text-slate-400">{expandedSections.dealers ? "−" : "+"}</span>
+              </button>
+              {expandedSections.dealers && (
+                <div className="mt-3 space-y-1 pl-2">
+                  {filteredOptions.dealers.map((dealer) => (
+                    <button
+                      key={dealer.slug}
+                      type="button"
+                      onClick={() => setSelectedDealerSlug(dealer.slug)}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition ${
+                        dealerSlug === dealer.slug
+                          ? "bg-slate-800 text-white"
+                          : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      {dealer.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </aside>
@@ -857,19 +1520,21 @@ export default function DealerOverallDashboard() {
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Card className="overflow-hidden border-slate-200">
-              <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-lime-500 to-teal-500" />
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-600">Modified Yearly Target in {selectedYear}</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                <div className={`text-3xl font-bold tracking-tight ${deltaColor(forecastYearCount, initialTarget)}`}>
-                  {formatNumber(forecastYearCount)}
-                </div>
-                <p className="text-xs text-slate-500">Initial Target: {formatNumber(initialTarget)}</p>
-                <DeltaIndicator actual={forecastYearCount} target={initialTarget} />
-              </CardContent>
-            </Card>
+            {selectedYear !== 2025 && (
+              <Card className="overflow-hidden border-slate-200">
+                <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-lime-500 to-teal-500" />
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-slate-600">Modified Yearly Target in {selectedYear}</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-2">
+                  <div className={`text-3xl font-bold tracking-tight ${deltaColor(forecastYearCount, initialTarget)}`}>
+                    {formatNumber(forecastYearCount)}
+                  </div>
+                  <p className="text-xs text-slate-500">Initial Target: {formatNumber(initialTarget)}</p>
+                  <DeltaIndicator actual={forecastYearCount} target={initialTarget} />
+                </CardContent>
+              </Card>
+            )}
 
             <Card className="overflow-hidden border-slate-200">
               <div className="h-1 w-full bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500" />
@@ -885,29 +1550,33 @@ export default function DealerOverallDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="overflow-hidden border-slate-200">
-              <div className="h-1 w-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500" />
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-600">Production confirmed in {selectedYear}</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                <div className="text-3xl font-bold tracking-tight text-slate-900">
-                  {formatNumber(forecastYearWithChassis)}
-                </div>
-                <p className="text-xs text-slate-500">
-                  Initial target YTD: {formatNumber(Math.round(ytdTarget))}
-                </p>
-              </CardContent>
-            </Card>
+            {selectedYear !== 2025 && (
+              <Card className="overflow-hidden border-slate-200">
+                <div className="h-1 w-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500" />
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-slate-600">Production confirmed in {selectedYear}</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-2">
+                  <div className="text-3xl font-bold tracking-tight text-slate-900">
+                    {formatNumber(forecastYearWithChassis)}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Initial target YTD: {formatNumber(Math.round(ytdTarget))}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             <Card className="overflow-hidden border-slate-200">
               <div className="h-1 w-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500" />
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-600">Avg Orders (Last 10 Weeks)</CardTitle>
+                <CardTitle className="text-sm text-slate-600">
+                  {isUnfilteredYear ? `Avg Orders (${selectedYear})` : "Avg Orders (Last 10 Weeks)"}
+                </CardTitle>
               </CardHeader>
               <CardContent className="pt-0 space-y-2">
                 <div className="text-3xl font-bold tracking-tight text-slate-900">
-                  {formatDecimal(avgOrdersLastTenWeeks)}
+                  {formatDecimal(avgOrdersDisplay)}
                 </div>
                 <p className="text-xs text-slate-500">
                   Target per week: {formatDecimal(targetPerWeek)}
@@ -956,32 +1625,74 @@ export default function DealerOverallDashboard() {
 
         <div className="flex-1 space-y-6 p-6">
           <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Forecast Delivery Volume (+30 days)</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Next {PLANNING_MONTHS} months, stacked by customer vs stock (schedule + campervan).
-                </p>
+          <Card>
+            <CardHeader>
+              <CardTitle>Forecast Delivery Volume (+30 days)</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Next {PLANNING_MONTHS} months, stacked by customer vs stock (schedule + campervan).
+              </p>
               </CardHeader>
               <CardContent>
                 <ChartContainer
                   config={{
                     stock: { label: "Stock", color: "#3b82f6" },
                     customer: { label: "Customer", color: "#10b981" },
-                    total: { label: "Total", color: "#0f172a" },
+                    dispatched: { label: "Dispatched", color: "#94a3b8" },
+                    stockPct: { label: "Stock % (Acc)", color: "#2563eb" },
+                    customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
                   }}
                   className="h-80"
                 >
-                  <BarChart data={orderVolumeByMonth} margin={{ top: 20, left: 16, right: 16, bottom: 12 }} barCategoryGap="20%" barGap={4}>
+                  <BarChart
+                    data={orderVolumeByMonth}
+                    margin={{ top: 20, left: 16, right: 16, bottom: 12 }}
+                    barCategoryGap="20%"
+                    barGap={4}
+                  >
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
+                    <YAxis
+                      yAxisId="pct"
+                      orientation="right"
+                      tickFormatter={(value) => `${value}%`}
+                      domain={[0, 100]}
+                      tickLine={false}
+                      axisLine={false}
+                      width={40}
+                      tickMargin={8}
+                    />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <ChartLegend content={<ChartLegendContent />} />
                     <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="production" />
-                    <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="production">
+                    <Bar dataKey="customer" fill="var(--color-customer)" radius={[0, 0, 0, 0]} stackId="production" />
+                    <Bar dataKey="dispatched" fill="var(--color-dispatched)" radius={[6, 6, 0, 0]} stackId="production">
                       <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
                     </Bar>
+                    <Line
+                      type="monotone"
+                      dataKey="stockPct"
+                      stroke="var(--color-stockPct)"
+                      yAxisId="pct"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="customerPct"
+                      stroke="var(--color-customerPct)"
+                      yAxisId="pct"
+                      strokeWidth={2}
+                      dot={false}
+                    >
+                      <LabelList
+                        dataKey="customerPct"
+                        position="right"
+                        formatter={(value: number, index: number, payload: any) =>
+                          index === orderVolumeByMonth.length - 1 ? `${value.toFixed(1)}%` : ""
+                        }
+                      />
+                    </Line>
                   </BarChart>
                 </ChartContainer>
               </CardContent>
@@ -1026,6 +1737,8 @@ export default function DealerOverallDashboard() {
                   config={{
                     stock: { label: "Stock", color: "#3b82f6" },
                     customer: { label: "Customer", color: "#10b981" },
+                    stockPct: { label: "Stock % (Acc)", color: "#2563eb" },
+                    customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
                   }}
                   className="h-80"
                 >
@@ -1038,44 +1751,54 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
+                    <YAxis
+                      yAxisId="pct"
+                      orientation="right"
+                      tickFormatter={(value) => `${value}%`}
+                      domain={[0, 100]}
+                      tickLine={false}
+                      axisLine={false}
+                      width={40}
+                      tickMargin={8}
+                    />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <ChartLegend content={<ChartLegendContent />} />
                     <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="trend" />
                     <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="trend">
                       <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
                     </Bar>
+                    <Line
+                      type="monotone"
+                      dataKey="stockPct"
+                      stroke="var(--color-stockPct)"
+                      yAxisId="pct"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="customerPct"
+                      stroke="var(--color-customerPct)"
+                      yAxisId="pct"
+                      strokeWidth={2}
+                      dot={false}
+                    >
+                      <LabelList
+                        dataKey="customerPct"
+                        position="right"
+                        formatter={(value: number, index: number, payload: any) =>
+                          index ===
+                          (trendMode === "week" ? weeklyOrderTrend.length - 1 : monthlyOrderTrend.length - 1)
+                            ? `${value.toFixed(1)}%`
+                            : ""
+                        }
+                      />
+                    </Line>
                   </BarChart>
                 </ChartContainer>
               </CardContent>
             </Card>
           </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Regent Production Status (Non-finished)</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Counts of Regent Production stages for {selectedYear} (excluding blank/finished).
-              </p>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer
-                config={{
-                  count: { label: "Units", color: "#6366f1" },
-                }}
-                className="h-72"
-              >
-                <BarChart data={regentProductionCounts} margin={{ top: 16, left: 16, right: 16, bottom: 12 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]}>
-                    <LabelList dataKey="count" position="top" offset={8} fill="#0f172a" />
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader>
@@ -1087,9 +1810,10 @@ export default function DealerOverallDashboard() {
                 <TableHeader className="bg-slate-100/80">
                   <TableRow className="border-b border-slate-200">
                     <TableHead className="text-left text-xs uppercase tracking-wide text-slate-600">Model Range</TableHead>
-                    <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Current Yard Stock</TableHead>
-                    <TableHead className="text-right text-xs uppercase tracking-wide text-red-600">Handover (Last 3 Months)</TableHead>
-                    <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Factory PGI (Last 3 Months)</TableHead>
+                    <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Yard</TableHead>
+                    <TableHead className="text-right text-xs uppercase tracking-wide text-red-600">Handover 3m</TableHead>
+                    <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">PGI 3m</TableHead>
+                    <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Last 5 Weeksorders</TableHead>
                     {monthBuckets.map((bucket, idx) => (
                       <TableHead
                         key={bucket.label}
@@ -1104,7 +1828,7 @@ export default function DealerOverallDashboard() {
                 <TableBody>
                   {modelRangeRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5 + monthBuckets.length}>
+                      <TableCell colSpan={6 + monthBuckets.length}>
                         <div className="py-6 text-center text-slate-500">No model range data available.</div>
                       </TableCell>
                     </TableRow>
@@ -1135,13 +1859,16 @@ export default function DealerOverallDashboard() {
                               </button>
                             </TableCell>
                             <TableCell className="text-right font-semibold tabular-nums text-slate-900">
-                              {row.currentStock}
+                              {renderBarCell(row.currentStock, modelRangeBarStats.maxCurrent, "#0ea5e9")}
                             </TableCell>
                             <TableCell className="text-right font-semibold tabular-nums text-red-600">
                               {row.recentHandover}
                             </TableCell>
                             <TableCell className="text-right font-semibold tabular-nums text-slate-900">
                               {row.recentPgi}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold tabular-nums text-slate-900">
+                              {renderBarCell(row.last5WeeksOrders, modelRangeBarStats.maxLast5, "#f97316")}
                             </TableCell>
                             {row.incoming.map((value, idx) => (
                               <TableCell
@@ -1152,16 +1879,21 @@ export default function DealerOverallDashboard() {
                               </TableCell>
                             ))}
                             <TableCell className="text-right font-semibold tabular-nums text-slate-900">
-                              {totalIncoming(row.incoming)}
+                              {renderBarCell(totalIncoming(row.incoming), modelRangeBarStats.maxTotal, "#22c55e")}
                             </TableCell>
                           </TableRow>
                           {isExpanded &&
                             detailEntries.map(([model, detailRow]) => (
                               <TableRow key={`${row.modelRange}-${model}`} className="border-b border-slate-200/70 bg-slate-50/80">
                                 <TableCell className="pl-8 text-sm font-medium text-slate-700">{model}</TableCell>
-                                <TableCell className="text-right text-sm text-slate-600">{detailRow.currentStock}</TableCell>
+                                <TableCell className="text-right text-sm text-slate-600">
+                                  {renderBarCell(detailRow.currentStock, modelRangeBarStats.maxCurrent, "#0ea5e9")}
+                                </TableCell>
                                 <TableCell className="text-right text-sm text-red-600">{detailRow.recentHandover}</TableCell>
                                 <TableCell className="text-right text-sm text-slate-600">{detailRow.recentPgi}</TableCell>
+                                <TableCell className="text-right text-sm text-slate-600">
+                                  {renderBarCell(detailRow.last5WeeksOrders, modelRangeBarStats.maxLast5, "#f97316")}
+                                </TableCell>
                                 {detailRow.incoming.map((value, idx) => (
                                   <TableCell
                                     key={`${row.modelRange}-${model}-${idx}`}
@@ -1171,7 +1903,11 @@ export default function DealerOverallDashboard() {
                                   </TableCell>
                                 ))}
                                 <TableCell className="text-right font-semibold tabular-nums text-slate-900">
-                                  {detailRow.incoming.reduce((sum, val) => sum + val, 0)}
+                                  {renderBarCell(
+                                    detailRow.incoming.reduce((sum, val) => sum + val, 0),
+                                    modelRangeBarStats.maxTotal,
+                                    "#22c55e"
+                                  )}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1183,36 +1919,100 @@ export default function DealerOverallDashboard() {
               </Table>
             </CardContent>
           </Card>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Top 10 Models (Order Received {selectedYear})</CardTitle>
+                <p className="text-sm text-muted-foreground">Order received volume split by customer vs stock.</p>
+              </CardHeader>
+              <CardContent>
+                {topModelOrders.length === 0 ? (
+                  <p className="text-muted-foreground">No order received data for {selectedYear}.</p>
+                ) : (
+                  <ChartContainer
+                    config={{
+                      stock: { label: "Stock", color: "#3b82f6" },
+                      customer: { label: "Customer", color: "#10b981" },
+                      total: { label: "Total", color: "#0f172a" },
+                    }}
+                    className="h-[420px]"
+                  >
+                    <BarChart data={topModelOrders} margin={{ top: 16, left: 16, right: 16, bottom: 12 }} layout="vertical">
+                      <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                      <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="model" tickLine={false} axisLine={false} width={140} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartLegend content={<ChartLegendContent />} />
+                      <Bar dataKey="stock" fill="var(--color-stock)" stackId="top10" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="customer" fill="var(--color-customer)" stackId="top10" radius={[0, 6, 6, 0]}>
+                        <LabelList dataKey="total" position="right" fill="#0f172a" />
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Top 10 Models (Forecast {selectedYear})</CardTitle>
+                <p className="text-sm text-muted-foreground">Forecast production volume split by customer vs stock.</p>
+              </CardHeader>
+              <CardContent>
+                {forecastTopModelOrders.length === 0 ? (
+                  <p className="text-muted-foreground">No forecast production data for {selectedYear}.</p>
+                ) : (
+                  <ChartContainer
+                    config={{
+                      stock: { label: "Stock", color: "#3b82f6" },
+                      customer: { label: "Customer", color: "#10b981" },
+                      total: { label: "Total", color: "#0f172a" },
+                    }}
+                    className="h-[420px]"
+                  >
+                    <BarChart
+                      data={forecastTopModelOrders}
+                      margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
+                      layout="vertical"
+                    >
+                      <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                      <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="model" tickLine={false} axisLine={false} width={140} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartLegend content={<ChartLegendContent />} />
+                      <Bar dataKey="stock" fill="var(--color-stock)" stackId="forecast10" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="customer" fill="var(--color-customer)" stackId="forecast10" radius={[0, 6, 6, 0]}>
+                        <LabelList dataKey="total" position="right" fill="#0f172a" />
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
           <Card>
             <CardHeader>
-              <CardTitle>Top 10 Models (Last 12 Months)</CardTitle>
-              <p className="text-sm text-muted-foreground">Order received volume split by customer vs stock.</p>
+              <CardTitle>Regent Production Status (Non-finished)</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Counts of Regent Production stages for {selectedYear} (excluding blank/finished).
+              </p>
             </CardHeader>
             <CardContent>
-              {topModelOrders.length === 0 ? (
-                <p className="text-muted-foreground">No order received data in the last 12 months.</p>
-              ) : (
-                <ChartContainer
-                  config={{
-                    stock: { label: "Stock", color: "#3b82f6" },
-                    customer: { label: "Customer", color: "#10b981" },
-                    total: { label: "Total", color: "#0f172a" },
-                  }}
-                  className="h-[420px]"
-                >
-                  <BarChart data={topModelOrders} margin={{ top: 16, left: 16, right: 16, bottom: 12 }} layout="vertical">
-                    <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                    <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="model" tickLine={false} axisLine={false} width={140} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    <Bar dataKey="stock" fill="var(--color-stock)" stackId="top10" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="customer" fill="var(--color-customer)" stackId="top10" radius={[0, 6, 6, 0]}>
-                      <LabelList dataKey="total" position="right" fill="#0f172a" />
-                    </Bar>
-                  </BarChart>
-                </ChartContainer>
-              )}
+              <ChartContainer
+                config={{
+                  count: { label: "Units", color: "#6366f1" },
+                }}
+                className="h-96"
+              >
+                <BarChart data={regentProductionCounts} margin={{ top: 16, left: 16, right: 16, bottom: 12 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]}>
+                    <LabelList dataKey="count" position="top" offset={8} fill="#0f172a" />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
             </CardContent>
           </Card>
         </div>
