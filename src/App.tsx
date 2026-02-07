@@ -120,11 +120,7 @@ const AppShell = () => {
         {/* Overall dashboard (no dealer slug) */}
         <Route
           path="/overall-dashboard"
-          element={
-            <ProtectedMainRoute>
-              <DealerOverallDashboard />
-            </ProtectedMainRoute>
-          }
+          element={<DealerOverallDashboard />}
         />
 
         {/* 单个 Dealer 路由 - 使用 /dealer/ 前缀 */}
