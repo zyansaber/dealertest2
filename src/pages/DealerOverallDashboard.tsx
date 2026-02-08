@@ -649,9 +649,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
@@ -711,9 +710,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
@@ -759,51 +757,12 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
   }, [orderReceivedYearOrders, selectedYear]);
-
-  const forecastRatioRows = useMemo(() => {
-    let runningCustomer = 0;
-    let runningTotal = 0;
-    return orderVolumeByMonth.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
-      runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return {
-        label: bucket.label,
-        customer: bucket.customer,
-        stock: bucket.stock,
-        cumulativeCustomer: runningCustomer,
-        cumulativeTotal: runningTotal,
-        customerPct,
-      };
-    });
-  }, [orderVolumeByMonth]);
-
-  const orderReceivedRatioRows = useMemo(() => {
-    let runningCustomer = 0;
-    let runningTotal = 0;
-    return monthlyOrderTrend.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
-      runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return {
-        label: bucket.label,
-        customer: bucket.customer,
-        stock: bucket.stock,
-        cumulativeCustomer: runningCustomer,
-        cumulativeTotal: runningTotal,
-        customerPct,
-      };
-    });
-  }, [monthlyOrderTrend]);
 
   const scheduleByChassis = useMemo(() => {
     const map: Record<string, Partial<ScheduleItem>> = {};
@@ -1703,13 +1662,14 @@ export default function DealerOverallDashboard() {
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
                       strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 4 }}
+                      dot={false}
                     >
                       <LabelList
                         dataKey="customerPct"
-                        position="top"
-                        formatter={(value: number) => `${value.toFixed(1)}%`}
+                        position="right"
+                        formatter={(value: number, index: number) =>
+                          index === orderVolumeByMonth.length - 1 ? `${value.toFixed(1)}%` : ""
+                        }
                       />
                     </Line>
                   </BarChart>
@@ -1791,13 +1751,17 @@ export default function DealerOverallDashboard() {
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
                       strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 4 }}
+                      dot={false}
                     >
                       <LabelList
                         dataKey="customerPct"
-                        position="top"
-                        formatter={(value: number) => `${value.toFixed(1)}%`}
+                        position="right"
+                        formatter={(value: number, index: number) =>
+                          index ===
+                          (trendMode === "week" ? weeklyOrderTrend.length - 1 : monthlyOrderTrend.length - 1)
+                            ? `${value.toFixed(1)}%`
+                            : ""
+                        }
                       />
                     </Line>
                   </BarChart>
@@ -1925,93 +1889,6 @@ export default function DealerOverallDashboard() {
               </Table>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Customer Ratio Calculation (Monthly)</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Ratio = cumulative customer / cumulative (customer + stock). Dispatched is excluded.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6 overflow-auto">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700">Forecast Delivery Volume (+30 days)</h3>
-                <Table className="mt-3 min-w-[860px] text-sm">
-                  <TableHeader className="bg-slate-100/80">
-                    <TableRow className="border-b border-slate-200">
-                      <TableHead className="text-left text-xs uppercase tracking-wide text-slate-600">Month</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Customer</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Stock</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">
-                        Cumulative Customer
-                      </TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">
-                        Cumulative Total
-                      </TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Ratio</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Formula</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {forecastRatioRows.map((row) => (
-                      <TableRow key={`forecast-${row.label}`} className="border-b border-slate-200/70">
-                        <TableCell className="font-medium text-slate-900">{row.label}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.customer}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.stock}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.cumulativeCustomer}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.cumulativeTotal}</TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums text-slate-900">
-                          {row.customerPct.toFixed(1)}%
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-xs text-slate-500">
-                          {row.cumulativeCustomer}/{row.cumulativeTotal}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700">Order Received Trend (Monthly)</h3>
-                <Table className="mt-3 min-w-[860px] text-sm">
-                  <TableHeader className="bg-slate-100/80">
-                    <TableRow className="border-b border-slate-200">
-                      <TableHead className="text-left text-xs uppercase tracking-wide text-slate-600">Month</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Customer</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Stock</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">
-                        Cumulative Customer
-                      </TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">
-                        Cumulative Total
-                      </TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Ratio</TableHead>
-                      <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Formula</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {orderReceivedRatioRows.map((row) => (
-                      <TableRow key={`order-received-${row.label}`} className="border-b border-slate-200/70">
-                        <TableCell className="font-medium text-slate-900">{row.label}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.customer}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.stock}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.cumulativeCustomer}</TableCell>
-                        <TableCell className="text-right tabular-nums text-slate-700">{row.cumulativeTotal}</TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums text-slate-900">
-                          {row.customerPct.toFixed(1)}%
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-xs text-slate-500">
-                          {row.cumulativeCustomer}/{row.cumulativeTotal}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
