@@ -1703,14 +1703,13 @@ export default function DealerOverallDashboard() {
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
                       strokeWidth={2}
-                      dot={false}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 4 }}
                     >
                       <LabelList
                         dataKey="customerPct"
-                        position="right"
-                        formatter={(value: number, index: number) =>
-                          index === orderVolumeByMonth.length - 1 ? `${value.toFixed(1)}%` : ""
-                        }
+                        position="top"
+                        formatter={(value: number) => `${value.toFixed(1)}%`}
                       />
                     </Line>
                   </BarChart>
@@ -1792,17 +1791,13 @@ export default function DealerOverallDashboard() {
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
                       strokeWidth={2}
-                      dot={false}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 4 }}
                     >
                       <LabelList
                         dataKey="customerPct"
-                        position="right"
-                        formatter={(value: number, index: number) =>
-                          index ===
-                          (trendMode === "week" ? weeklyOrderTrend.length - 1 : monthlyOrderTrend.length - 1)
-                            ? `${value.toFixed(1)}%`
-                            : ""
-                        }
+                        position="top"
+                        formatter={(value: number) => `${value.toFixed(1)}%`}
                       />
                     </Line>
                   </BarChart>
