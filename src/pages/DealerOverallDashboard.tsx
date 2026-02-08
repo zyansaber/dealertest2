@@ -649,9 +649,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
@@ -711,9 +710,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
@@ -759,9 +757,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
