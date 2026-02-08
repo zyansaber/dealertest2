@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, LabelList, Line, XAxis, YAxis } from "recharts";
 
 import Sidebar from "@/components/Sidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -649,9 +649,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
@@ -711,9 +710,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
@@ -759,9 +757,8 @@ export default function DealerOverallDashboard() {
     let runningCustomer = 0;
 
     return buckets.map((bucket) => {
-      const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
-      runningTotal += bucketTotal;
+      runningTotal += bucket.total;
       const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
       return { ...bucket, customerPct };
     });
@@ -1633,7 +1630,7 @@ export default function DealerOverallDashboard() {
                   }}
                   className="h-80"
                 >
-                  <ComposedChart
+                  <BarChart
                     data={orderVolumeByMonth}
                     margin={{ top: 20, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
@@ -1665,16 +1662,17 @@ export default function DealerOverallDashboard() {
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
                       strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 4 }}
+                      dot={false}
                     >
                       <LabelList
                         dataKey="customerPct"
-                        position="top"
-                        formatter={(value: number) => `${value.toFixed(1)}%`}
+                        position="right"
+                        formatter={(value: number, index: number) =>
+                          index === orderVolumeByMonth.length - 1 ? `${value.toFixed(1)}%` : ""
+                        }
                       />
                     </Line>
-                  </ComposedChart>
+                  </BarChart>
                 </ChartContainer>
               </CardContent>
             </Card>
@@ -1722,7 +1720,7 @@ export default function DealerOverallDashboard() {
                   }}
                   className="h-80"
                 >
-                  <ComposedChart
+                  <BarChart
                     data={trendMode === "week" ? weeklyOrderTrend : monthlyOrderTrend}
                     margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
@@ -1753,16 +1751,20 @@ export default function DealerOverallDashboard() {
                       stroke="var(--color-customerPct)"
                       yAxisId="pct"
                       strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 4 }}
+                      dot={false}
                     >
                       <LabelList
                         dataKey="customerPct"
-                        position="top"
-                        formatter={(value: number) => `${value.toFixed(1)}%`}
+                        position="right"
+                        formatter={(value: number, index: number) =>
+                          index ===
+                          (trendMode === "week" ? weeklyOrderTrend.length - 1 : monthlyOrderTrend.length - 1)
+                            ? `${value.toFixed(1)}%`
+                            : ""
+                        }
                       />
                     </Line>
-                  </ComposedChart>
+                  </BarChart>
                 </ChartContainer>
               </CardContent>
             </Card>
@@ -1887,7 +1889,6 @@ export default function DealerOverallDashboard() {
               </Table>
             </CardContent>
           </Card>
-
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
