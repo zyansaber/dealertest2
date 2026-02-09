@@ -2,7 +2,7 @@ services:
   - type: web
     name: dealer-portal
     env: static
-    buildCommand: pnpm install && pnpm run build
+    buildCommand: pnpm install --no-frozen-lockfile && pnpm run build
     staticPublishPath: ./dist
     envVars:
       - key: NODE_VERSION
