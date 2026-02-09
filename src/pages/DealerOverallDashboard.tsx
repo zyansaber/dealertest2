@@ -138,8 +138,14 @@ const isRegentFinished = (order: ScheduleItem) => {
   return raw === "finished" || raw === "finish";
 };
 
-const getCampervanOrderReceivedDate = (item: CampervanScheduleItem) =>
-  parseFlexibleDateToDate((item as any)?.signedOrderReceived ?? (item as any)?.orderReceivedDate ?? undefined);
+const getCampervanOrderReceivedDate = (item: CampervanScheduleItem) => {
+  const value = toStr(item.signedOrderReceived).trim();
+  return value ? parseFlexibleDateToDate(value) : null;
+};
+
+const hasCampervanChassis = (item: CampervanScheduleItem) => toStr(item.chassisNumber).trim() !== "";
+
+const isCampervanStock = (item: CampervanScheduleItem) => isStockCustomer(toStr(item.customer));
 
 const isEmptySlot = (order: ScheduleItem) => {
   const hasDealer = toStr(order.Dealer).trim() !== "";
@@ -390,11 +396,11 @@ export default function DealerOverallDashboard() {
     if (!dealerSlug) return campervanSchedule || [];
     if (isGroupAggregate) {
       return (campervanSchedule || []).filter((item) =>
-        activeAggregateSlugs.includes(slugifyDealerName((item as any)?.dealer ?? (item as any)?.Dealer))
+        activeAggregateSlugs.includes(slugifyDealerName((item as any)?.dealer))
       );
     }
     return (campervanSchedule || []).filter(
-      (item) => slugifyDealerName((item as any)?.dealer ?? (item as any)?.Dealer) === dealerSlug
+      (item) => slugifyDealerName((item as any)?.dealer) === dealerSlug
     );
   }, [activeAggregateSlugs, campervanSchedule, dealerSlug, isGroupAggregate]);
 
@@ -641,8 +647,10 @@ export default function DealerOverallDashboard() {
     });
 
     dealerCampervanSchedule.forEach((item) => {
+      if (!hasCampervanChassis(item)) return;
       const forecastDate = parseDate(item.forecastProductionDate);
-      addToBucket(forecastDate, "customer");
+      if (!forecastDate) return;
+      addToBucket(forecastDate, isCampervanStock(item) ? "stock" : "customer");
     });
 
     let runningTotal = 0;
@@ -703,7 +711,11 @@ export default function DealerOverallDashboard() {
       const weekStart = startOfWeek(receivedDate);
       const bucket = buckets.find((entry) => entry.weekStart.getTime() === weekStart.getTime());
       if (!bucket) return;
-      bucket.customer += 1;
+      if (isCampervanStock(item)) {
+        bucket.stock += 1;
+      } else {
+        bucket.customer += 1;
+      }
       bucket.total += 1;
     });
 
@@ -752,7 +764,7 @@ export default function DealerOverallDashboard() {
     orderReceivedYearOrders.campervanOrders.forEach((item) => {
       const receivedDate = getCampervanOrderReceivedDate(item);
       if (!receivedDate) return;
-      addToBucket(receivedDate, "customer");
+      addToBucket(receivedDate, isCampervanStock(item) ? "stock" : "customer");
     });
 
     let runningTotal = 0;
@@ -862,6 +874,8 @@ export default function DealerOverallDashboard() {
       });
 
       dealerCampervanSchedule.forEach((item) => {
+        if (!hasCampervanChassis(item)) return;
+        if (!isCampervanStock(item)) return;
         const forecastDate = parseDate(item.forecastProductionDate);
         if (!forecastDate) return;
         const arrivalDate = addDays(forecastDate, 30);
@@ -1053,6 +1067,8 @@ export default function DealerOverallDashboard() {
     });
 
     dealerCampervanSchedule.forEach((item) => {
+      if (!hasCampervanChassis(item)) return;
+      if (!isCampervanStock(item)) return;
       const range = getModelRange(item.model, item.chassisNumber);
       const modelLabel = toStr(item.model).trim() || range;
       assignToMonth(range, modelLabel, item.forecastProductionDate);
@@ -1121,7 +1137,7 @@ export default function DealerOverallDashboard() {
     dealerCampervanSchedule.forEach((item) => {
       const receivedDate = getCampervanOrderReceivedDate(item);
       if (!receivedDate || receivedDate < start || receivedDate >= end) return;
-      addEntry(toStr(item.model).trim(), "customer");
+      addEntry(toStr(item.model).trim(), isCampervanStock(item) ? "stock" : "customer");
     });
 
     return Array.from(bucket.values())
@@ -1153,9 +1169,10 @@ export default function DealerOverallDashboard() {
     });
 
     dealerCampervanSchedule.forEach((item) => {
+      if (!hasCampervanChassis(item)) return;
       const forecastDate = parseDate(item.forecastProductionDate);
       if (!forecastDate || forecastDate < start || forecastDate >= end) return;
-      addEntry(toStr(item.model).trim(), "customer");
+      addEntry(toStr(item.model).trim(), isCampervanStock(item) ? "stock" : "customer");
     });
 
     return Array.from(bucket.values())
