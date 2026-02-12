@@ -22,7 +22,8 @@ import {
   generateRandomCode,
   dealerNameToSlug,
   subscribeToStockRectificationAll,
-  subscribeToYardPendingAll
+  subscribeToYardPendingAll,
+  clearDealerRectificationData
 } from "@/lib/firebase";
 import { isDealerGroup } from "@/types/dealer";
 import { ALL_DEALERSHIP_OPTIONS } from "@/constants/productRegistrationOptions";
@@ -42,6 +43,7 @@ export default function Admin() {
   const [bulkReceiving, setBulkReceiving] = useState(false);
   const [historyDealerSlug, setHistoryDealerSlug] = useState("");
   const [historyUpdating, setHistoryUpdating] = useState(false);
+  const [rectificationClearingDealer, setRectificationClearingDealer] = useState<string | null>(null);
 
   // Dealer Group states
   const [newGroupName, setNewGroupName] = useState("");
@@ -266,6 +268,20 @@ export default function Admin() {
     } catch (error) {
       console.error("Failed to save dealer SAP code:", error);
       toast.error("Failed to save SAP code. Please try again.");
+    }
+  };
+
+  const clearRectificationForDealer = async (dealerSlug: string) => {
+    const dealerName = dealerConfigs?.[dealerSlug]?.name || dealerSlug;
+    try {
+      setRectificationClearingDealer(dealerSlug);
+      await clearDealerRectificationData(dealerSlug);
+      toast.success(`Cleared stock rectification data for ${dealerName}`);
+    } catch (error) {
+      console.error("Failed to clear stock rectification data:", error);
+      toast.error("Failed to clear stock rectification data. Please try again.");
+    } finally {
+      setRectificationClearingDealer(null);
     }
   };
 
@@ -1208,6 +1224,7 @@ export default function Admin() {
                         <TableRow>
                           <TableHead className="font-semibold">Dealer</TableHead>
                           <TableHead className="font-semibold">Chassis</TableHead>
+                          <TableHead className="font-semibold text-right">Action</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1226,6 +1243,16 @@ export default function Admin() {
                                   <span className="text-xs uppercase tracking-wide text-slate-500">Add to yard:</span>{" "}
                                   {pendingEntries.length > 0 ? pendingEntries.join(", ") : "—"}
                                 </div>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => clearRectificationForDealer(dealerSlug)}
+                                  disabled={rectificationClearingDealer === dealerSlug}
+                                >
+                                  {rectificationClearingDealer === dealerSlug ? "Clearing..." : "Clear reported fields"}
+                                </Button>
                               </TableCell>
                             </TableRow>
                           );

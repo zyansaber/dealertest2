@@ -1010,6 +1010,12 @@ export function subscribeToStockRectification(dealerSlug: string, cb: (value: Re
   return () => off(r, "value", handler);
 }
 
+export async function clearDealerRectificationData(dealerSlug: string) {
+  const stockRectificationRef = ref(database, `stockrectification/${dealerSlug}`);
+  const yardPendingRef = ref(database, `yardpending/${dealerSlug}`);
+  await Promise.all([remove(stockRectificationRef), remove(yardPendingRef)]);
+}
+
 /** -------------------- Product Registration -------------------- */
 type CustomerAddress = {
   street: string;
