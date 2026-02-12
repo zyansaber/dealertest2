@@ -111,44 +111,67 @@ INNER JOIN (
 """
 
 SQL_STOCK = r'''
-SELECT DISTINCT 
-    vbak."VBELN" AS "销售订单号", 
+WITH yard_stock AS (
+    SELECT
+        nsmka."VBELN",
+        nsmka."MATNR",
+        nsmka."ERSDA",
+        nsmka."KALAB",
+        nsmka."WERKS",
+        nsmka."LGORT"
+    FROM "SAPHANADB"."NSDM_V_MSKA" nsmka
+    WHERE nsmka."WERKS" IN ('3211', '3411')
+      AND nsmka."LGORT" IN ('0002', '0004', '0006', '0008', '0099')
+      AND nsmka."KALAB" > 0
+      AND nsmka."MATNR" LIKE 'Z12%'
+),
+last_movement AS (
+    SELECT
+        mseg."KDAUF" AS "VBELN",
+        mseg."BWART" AS "LAST_BWART",
+        ROW_NUMBER() OVER (
+            PARTITION BY mseg."KDAUF"
+            ORDER BY mseg."BUDAT_MKPF" DESC, mseg."MBLNR" DESC, mseg."ZEILE" DESC
+        ) AS rn
+    FROM "SAPHANADB"."NSDM_V_MSEG" mseg
+    WHERE mseg."KDAUF" IS NOT NULL
+      AND mseg."KDPOS" = 10
+)
+SELECT DISTINCT
+    vbak."VBELN" AS "销售订单号",
     vbak."VDATU" AS "需求交货日期",
     objk."SERNR" AS "序列号",
-    nsmka."MATNR" AS "物料号",
+    ys."MATNR" AS "物料号",
     SUBSTRING(makt."MAKTX", 1, 5) AS "Model Year",
     SUBSTRING(makt."MAKTX", 6)    AS "Model",
-    nsmka."ERSDA" AS "创建日期",
-    nsmka."KALAB" AS "库存数量",
-    CASE 
-        WHEN nsmka."WERKS" = '3211' AND nsmka."LGORT" = '0002' THEN 'St James'
-        WHEN nsmka."WERKS" = '3211' AND nsmka."LGORT" = '0004' THEN 'Traralgon'
-        WHEN nsmka."WERKS" = '3211' AND nsmka."LGORT" = '0006' THEN 'Launceston'
-        WHEN nsmka."WERKS" = '3211' AND nsmka."LGORT" = '0008' THEN 'Geelong'
-        WHEN nsmka."WERKS" = '3411' AND nsmka."LGORT" IN ('0002','0099') THEN 'Frankston'
-        ELSE 'Unknown' 
+    ys."ERSDA" AS "创建日期",
+    ys."KALAB" AS "库存数量",
+    CASE
+        WHEN ys."WERKS" = '3211' AND ys."LGORT" = '0002' THEN 'St James'
+        WHEN ys."WERKS" = '3211' AND ys."LGORT" = '0004' THEN 'Traralgon'
+        WHEN ys."WERKS" = '3211' AND ys."LGORT" = '0006' THEN 'Launceston'
+        WHEN ys."WERKS" = '3211' AND ys."LGORT" = '0008' THEN 'Geelong'
+        WHEN ys."WERKS" = '3411' AND ys."LGORT" IN ('0002', '0099') THEN 'Frankston'
+        ELSE 'Unknown'
     END AS "Location Name",
-    mseg."BWART" AS "移动类型"
-FROM "SAPHANADB"."VBAK" vbak
+    lm."LAST_BWART" AS "最后移动类型"
+FROM yard_stock ys
+JOIN "SAPHANADB"."VBAK" vbak
+  ON vbak."VBELN" = ys."VBELN"
 LEFT JOIN "SAPHANADB"."SER02" ser02
        ON vbak."VBELN" = ser02."SDAUFNR"
       AND ser02."POSNR" = '000010'
 LEFT JOIN "SAPHANADB"."OBJK" objk
        ON ser02."OBKNR" = objk."OBKNR"
-LEFT JOIN "SAPHANADB"."NSDM_V_MSKA" nsmka
-       ON vbak."VBELN" = nsmka."VBELN"
 LEFT JOIN "SAPHANADB"."MAKT" makt
-       ON makt."MATNR" = nsmka."MATNR"
+       ON makt."MATNR" = ys."MATNR"
       AND makt."SPRAS" = 'E'
-LEFT JOIN "SAPHANADB"."MSEG" mseg
-       ON mseg."MATNR" = nsmka."MATNR"
-WHERE 
-    ser02."SDAUFNR" IS NOT NULL
-    AND nsmka."WERKS" IN ('3211', '3411')
-    AND nsmka."LGORT" IN ('0002', '0004', '0006', '0008', '0099')
-    AND nsmka."KALAB" <> 0
-    AND nsmka."MATNR" LIKE 'Z12%'
-ORDER BY vbak."VBELN", objk."SERNR", nsmka."MATNR";
+LEFT JOIN last_movement lm
+       ON lm."VBELN" = vbak."VBELN"
+      AND lm.rn = 1
+WHERE ser02."SDAUFNR" IS NOT NULL
+  AND COALESCE(lm."LAST_BWART", '') <> '601'
+ORDER BY vbak."VBELN", objk."SERNR", ys."MATNR";
 '''
 
 # ---------- args ----------
