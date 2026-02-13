@@ -146,6 +146,13 @@ function parseDDMMYYYY(dateStr?: string | null): Date | null {
   }
   return null;
 }
+function parseHandoverDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const fromDdMm = parseDDMMYYYY(value);
+  if (fromDdMm) return fromDdMm;
+  const fromNative = new Date(value);
+  return isNaN(fromNative.getTime()) ? null : fromNative;
+}
 function daysSinceISO(iso?: string | null): number {
   if (!iso) return 0;
   const d = new Date(iso);
@@ -817,7 +824,7 @@ export default function DealerYard() {
       handoverList.filter(
         (x) =>
           dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate)
+          isDateWithinRange(parseHandoverDate(x.handoverAt), kpiStartDate, kpiEndDate)
       ).length,
     [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
   );
@@ -827,7 +834,7 @@ export default function DealerYard() {
       handoverList.filter(
         (x) =>
           dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate) &&
+          isDateWithinRange(parseHandoverDate(x.handoverAt), kpiStartDate, kpiEndDate) &&
           isSecondhandChassis(x.chassis)
       ).length,
     [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
@@ -837,7 +844,7 @@ export default function DealerYard() {
     return handoverList
       .filter((row) => dealerSlug === row.dealerSlugFromRec)
       .map((row) => {
-        const handoverDate = row.handoverAt ? new Date(row.handoverAt) : null;
+        const handoverDate = parseHandoverDate(row.handoverAt);
         return { ...row, handoverDate };
       })
       .sort((a, b) => {
@@ -977,7 +984,7 @@ export default function DealerYard() {
   const handoversMonthlyData = useMemo(() => {
     const map: Record<string, { key: string; label: string; count: number }> = {};
     handoverList.forEach((x) => {
-      const d = x.handoverAt ? new Date(x.handoverAt) : null;
+      const d = parseHandoverDate(x.handoverAt);
       if (!d) return;
       if (dealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
       const key = fmtMonthKey(d);
@@ -1010,7 +1017,7 @@ export default function DealerYard() {
     const handoversByWeek: number[] = starts.map((s, i) => {
       const e = nextStarts[i];
       return handoverList.filter((x) => {
-        const d = x.handoverAt ? new Date(x.handoverAt) : null;
+        const d = parseHandoverDate(x.handoverAt);
         return d && d >= s && d < e && x.dealerSlugFromRec === dealerSlug;
       }).length;
     });
