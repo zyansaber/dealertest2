@@ -130,22 +130,27 @@ export default function OrderDetails({
 
   const daysElapsed = getDaysElapsed();
 
+  const isCompletedTimelineDate = (value: string | null | undefined): boolean => {
+    if (!value) return false;
+    return parseDate(value) !== null;
+  };
+
   const getTimelineStages = (): TimelineStage[] => {
     const stages: TimelineStage[] = [
       {
         name: "Order Received",
         date: order["Order Received Date"],
-        status: order["Order Received Date"] ? "completed" : "pending"
+        status: isCompletedTimelineDate(order["Order Received Date"]) ? "completed" : "pending"
       },
       {
         name: "Signed Plans Received",
         date: order["Signed Plans Received"],
-        status: order["Signed Plans Received"] ? "completed" : "pending"
+        status: isCompletedTimelineDate(order["Signed Plans Received"]) ? "completed" : "pending"
       },
       {
         name: "Purchase Order Sent",
         date: order["Purchase Order Sent"],
-        status: order["Purchase Order Sent"] ? "completed" : "pending"
+        status: isCompletedTimelineDate(order["Purchase Order Sent"]) ? "completed" : "pending"
       }
     ];
 
@@ -154,17 +159,17 @@ export default function OrderDetails({
         {
           name: "Left Port",
           date: dateTrack["Left Port"],
-          status: dateTrack["Left Port"] ? "completed" : "pending"
+          status: isCompletedTimelineDate(dateTrack["Left Port"]) ? "completed" : "pending"
         },
         {
           name: "Received in Melbourne",
           date: dateTrack["Received in Melbourne"],
-          status: dateTrack["Received in Melbourne"] ? "completed" : "pending"
+          status: isCompletedTimelineDate(dateTrack["Received in Melbourne"]) ? "completed" : "pending"
         },
         {
           name: "Dispatched from Factory",
           date: dateTrack["Dispatched from Factory"],
-          status: dateTrack["Dispatched from Factory"] ? "completed" : "pending"
+          status: isCompletedTimelineDate(dateTrack["Dispatched from Factory"]) ? "completed" : "pending"
         }
       );
     } else {
