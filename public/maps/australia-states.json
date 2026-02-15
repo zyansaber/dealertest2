@@ -1,0 +1,69 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Western Australia" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[112,-14],[129,-14],[129,-35],[121,-35],[114,-34],[112,-25],[112,-14]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Northern Territory" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[129,-11],[138,-11],[138,-26],[129,-26],[129,-11]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "South Australia" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[129,-26],[141,-26],[141,-38],[129,-38],[129,-26]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Queensland" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[138,-10],[154,-10],[154,-29],[141,-29],[138,-26],[138,-10]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "New South Wales" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[141,-29],[154,-29],[154,-37],[141,-37],[141,-29]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Victoria" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[141,-37],[150,-37],[147,-39],[141,-39],[141,-37]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Tasmania" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[145,-40],[149,-40],[148,-43],[145,-43],[145,-40]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Australian Capital Territory" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[148.8,-35.1],[149.3,-35.1],[149.3,-35.7],[148.8,-35.7],[148.8,-35.1]]]
+      }
+    }
+  ]
+}
