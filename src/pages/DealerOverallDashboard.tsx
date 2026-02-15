@@ -4,7 +4,6 @@ import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxe
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
 
 import Sidebar from "@/components/Sidebar";
-import AustraliaDealerMap from "@/components/AustraliaDealerMap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -33,16 +32,6 @@ const JV_NAMES = ["Heatherbrae", "Gympie", "Toowoomba", "Bundaberg", "Townsville
 const JV_TOTAL_SLUG = "jv-total";
 const EXTERNAL_TOTAL_SLUG = "external-total";
 const ALLOWED_MODEL_RANGES = new Set(["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB"]);
-const MAP_STATE_ORDER = ["WA", "NT", "SA", "QLD", "NSW", "ACT", "VIC", "TAS", "NZ"] as const;
-
-const normalizeDealerState = (value?: unknown) => {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  if (MAP_STATE_ORDER.includes(normalized as (typeof MAP_STATE_ORDER)[number])) {
-    return normalized as (typeof MAP_STATE_ORDER)[number];
-  }
-  if (normalized === "NEW ZEALAND") return "NZ";
-  return "UNASSIGNED";
-};
 
 type AnyRecord = Record<string, any>;
 
@@ -237,7 +226,6 @@ export default function DealerOverallDashboard() {
   const [trendMode, setTrendMode] = useState<"week" | "month">("week");
   const [dealerSearch, setDealerSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [selectedMapState, setSelectedMapState] = useState<string>("ALL");
   const [expandedSections, setExpandedSections] = useState({
     factory: false,
     greenRv: false,
@@ -335,21 +323,6 @@ export default function DealerOverallDashboard() {
 
   const externalSlugs = useMemo(() => externalOptions.map((dealer) => dealer.slug), [externalOptions]);
 
-  const dealersByState = useMemo(() => {
-    const bucket: Record<string, { slug: string; name: string }[]> = {};
-    dealerOptions.forEach((dealer) => {
-      const state = normalizeDealerState(dealerConfigs?.[dealer.slug]?.state);
-      if (!bucket[state]) bucket[state] = [];
-      bucket[state].push(dealer);
-    });
-    return bucket;
-  }, [dealerConfigs, dealerOptions]);
-
-  const filteredStateSlugs = useMemo(() => {
-    if (selectedMapState === "ALL") return null;
-    return new Set((dealersByState[selectedMapState] || []).map((dealer) => dealer.slug));
-  }, [dealersByState, selectedMapState]);
-
   const aggregateSlugMap = useMemo(
     () => ({
       [FACTORY_DEALER_TOTAL_SLUG]: factoryDealerSlugs,
@@ -412,21 +385,15 @@ export default function DealerOverallDashboard() {
   }, [activeAggregateSlugs, dealerSlug, isGroupAggregate]);
 
   const dealerOrdersAll = useMemo(() => {
-    if (!dealerSlug) {
-      if (!filteredStateSlugs) return allOrders || [];
-      return (allOrders || []).filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
-    }
+    if (!dealerSlug) return allOrders || [];
     if (isGroupAggregate) {
       return (allOrders || []).filter((order) => activeAggregateSlugs.includes(slugifyDealerName(order?.Dealer)));
     }
     return (allOrders || []).filter((order) => slugifyDealerName(order?.Dealer) === dealerSlug);
-  }, [activeAggregateSlugs, allOrders, dealerSlug, filteredStateSlugs, isGroupAggregate]);
+  }, [activeAggregateSlugs, allOrders, dealerSlug, isGroupAggregate]);
 
   const dealerCampervanSchedule = useMemo(() => {
-    if (!dealerSlug) {
-      if (!filteredStateSlugs) return campervanSchedule || [];
-      return (campervanSchedule || []).filter((item) => filteredStateSlugs.has(slugifyDealerName((item as any)?.dealer)));
-    }
+    if (!dealerSlug) return campervanSchedule || [];
     if (isGroupAggregate) {
       return (campervanSchedule || []).filter((item) =>
         activeAggregateSlugs.includes(slugifyDealerName((item as any)?.dealer))
@@ -435,7 +402,7 @@ export default function DealerOverallDashboard() {
     return (campervanSchedule || []).filter(
       (item) => slugifyDealerName((item as any)?.dealer) === dealerSlug
     );
-  }, [activeAggregateSlugs, campervanSchedule, dealerSlug, filteredStateSlugs, isGroupAggregate]);
+  }, [activeAggregateSlugs, campervanSchedule, dealerSlug, isGroupAggregate]);
 
   const dealerOrders = useMemo(
     () => dealerOrdersAll.filter((order) => hasChassis(order) && toStr(order.Customer).trim() !== ""),
@@ -520,16 +487,10 @@ export default function DealerOverallDashboard() {
 
   const initialTarget = useMemo(() => {
     if (!dealerSlug) {
-      if (filteredStateSlugs) {
-        return Object.entries(dealerConfigs || {}).reduce(
-          (sum, [slug, config]) => (filteredStateSlugs.has(slug) ? sum + getTargetValue(config) : sum),
-          0
-        );
-      }
       return Object.values(dealerConfigs || {}).reduce((sum, config) => sum + getTargetValue(config), 0);
     }
     return getTargetValue(dealerConfig);
-  }, [dealerConfig, dealerConfigs, dealerSlug, filteredStateSlugs]);
+  }, [dealerConfig, dealerConfigs, dealerSlug]);
 
   const isUnfilteredYear = selectedYear === 2025;
 
@@ -644,28 +605,14 @@ export default function DealerOverallDashboard() {
     return merged;
   }, [activeAggregateSlugs, globalYardStock, isGlobalView]);
 
-  const stateFilteredYardStock = useMemo(() => {
-    if (!isGlobalView || !filteredStateSlugs || dealerSlug) return {};
-    const merged: Record<string, AnyRecord> = {};
-    const filteredSlugList = Array.from(filteredStateSlugs);
-    Object.entries(globalYardStock || {}).forEach(([key, payload]) => {
-      const matchedSlug = filteredSlugList.find((slug) => key === slug || key.startsWith(`${slug}-`));
-      if (matchedSlug) {
-        merged[key] = payload;
-      }
-    });
-    return merged;
-  }, [dealerSlug, filteredStateSlugs, globalYardStock, isGlobalView]);
-
   const activeYardStock = useMemo(() => {
     if (isGlobalView) {
       if (isGroupAggregate) return aggregateYardStock;
-      if (!dealerSlug && filteredStateSlugs) return stateFilteredYardStock;
       if (dealerSlug) return yardStock;
       return globalYardStock;
     }
     return yardStock;
-  }, [aggregateYardStock, dealerSlug, filteredStateSlugs, globalYardStock, isGlobalView, isGroupAggregate, stateFilteredYardStock, yardStock]);
+  }, [aggregateYardStock, dealerSlug, globalYardStock, isGlobalView, isGroupAggregate, yardStock]);
 
   const orderVolumeByMonth = useMemo(() => {
     const buckets = planningBuckets.map((bucket) => ({
@@ -1237,92 +1184,6 @@ export default function DealerOverallDashboard() {
     return Object.keys(activeYardStock || {}).filter((key) => key !== "dealer-chassis").length;
   }, [activeYardStock]);
 
-  const stateSummary = useMemo(() => {
-    const result = MAP_STATE_ORDER.reduce<Record<string, { dealers: number; orders: number; forecast: number; target: number }>>(
-      (acc, code) => {
-        acc[code] = { dealers: 0, orders: 0, forecast: 0, target: 0 };
-        return acc;
-      },
-      {}
-    );
-
-    const dealerStateBySlug = new Map<string, string>();
-    dealerOptions.forEach((dealer) => {
-      const state = normalizeDealerState(dealerConfigs?.[dealer.slug]?.state);
-      dealerStateBySlug.set(dealer.slug, state);
-      if (state !== "UNASSIGNED" && result[state]) {
-        result[state].dealers += 1;
-        result[state].target += getTargetValue(dealerConfigs?.[dealer.slug]);
-      }
-    });
-
-    (allOrders || []).forEach((order) => {
-      const slug = slugifyDealerName(order?.Dealer);
-      const state = dealerStateBySlug.get(slug);
-      if (!state || !result[state]) return;
-      const forecastDate = parseDate(order["Forecast Production Date"]);
-      const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
-      if (forecastDate && forecastDate.getFullYear() === selectedYear) {
-        result[state].forecast += 1;
-      }
-      if (receivedDate && receivedDate.getFullYear() === selectedYear) {
-        result[state].orders += 1;
-      }
-    });
-
-    (campervanSchedule || []).forEach((item) => {
-      const slug = slugifyDealerName((item as any)?.dealer);
-      const state = dealerStateBySlug.get(slug);
-      if (!state || !result[state]) return;
-      const forecastDate = parseDate(item.forecastProductionDate);
-      const receivedDate = getCampervanOrderReceivedDate(item);
-      if (forecastDate && forecastDate.getFullYear() === selectedYear) {
-        result[state].forecast += 1;
-      }
-      if (receivedDate && receivedDate.getFullYear() === selectedYear) {
-        result[state].orders += 1;
-      }
-    });
-
-    return result;
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, selectedYear]);
-
-  const mapDealers = useMemo(() => {
-    const dealerOrderCount = new Map<string, number>();
-
-    (allOrders || []).forEach((order) => {
-      const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
-      if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
-      const slug = slugifyDealerName(order?.Dealer);
-      dealerOrderCount.set(slug, (dealerOrderCount.get(slug) || 0) + 1);
-    });
-
-    (campervanSchedule || []).forEach((item) => {
-      const receivedDate = getCampervanOrderReceivedDate(item);
-      if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
-      const slug = slugifyDealerName((item as any)?.dealer);
-      dealerOrderCount.set(slug, (dealerOrderCount.get(slug) || 0) + 1);
-    });
-
-    return dealerOptions
-      .map((dealer) => ({
-        slug: dealer.slug,
-        name: dealer.name,
-        state: normalizeDealerState(dealerConfigs?.[dealer.slug]?.state) as
-          | "WA"
-          | "NSW"
-          | "QLD"
-          | "VIC"
-          | "TAS"
-          | "NT"
-          | "SA"
-          | "ACT"
-          | "NZ",
-        orders: dealerOrderCount.get(dealer.slug) || 0,
-      }))
-      .filter((dealer) => dealer.state !== "NZ");
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, selectedYear]);
-
   if (loading || (!isGlobalView && configLoading)) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -1666,34 +1527,6 @@ export default function DealerOverallDashboard() {
               ))}
             </div>
           </div>
-
-          {isGlobalView && !dealerSlug && (
-            <>
-              <AustraliaDealerMap
-                dealers={mapDealers}
-                selectedState={selectedMapState}
-                onSelectState={setSelectedMapState}
-              />
-              <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
-                {MAP_STATE_ORDER.map((stateCode) => {
-                  const row = stateSummary[stateCode];
-                  const share = orderReceivedYearCount > 0 ? ((row?.orders || 0) / orderReceivedYearCount) * 100 : 0;
-                  return (
-                    <button
-                      type="button"
-                      key={stateCode}
-                      onClick={() => setSelectedMapState((prev) => (prev === stateCode ? "ALL" : stateCode))}
-                      className={`rounded-lg border p-2 text-left transition ${selectedMapState === stateCode ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
-                    >
-                      <div className="text-xs font-semibold text-slate-700">{stateCode}</div>
-                      <div className="text-xs text-slate-500">{row?.orders || 0} orders</div>
-                      <div className="text-sm font-semibold text-slate-900">{share.toFixed(1)}%</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {selectedYear !== 2025 && (
