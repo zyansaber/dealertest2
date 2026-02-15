@@ -6,10 +6,39 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { isDealerGroup } from "@/types/dealer";
 import { setDealerConfig, subscribeAllDealerConfigs } from "@/lib/firebase";
 
 const STATE_OPTIONS = ["WA", "NT", "SA", "QLD", "NSW", "ACT", "VIC", "TAS", "NZ", "UNASSIGNED"];
+
+const MANAGED_STATE_SLUGS = [
+  "abco",
+  "alldealers",
+  "auswide",
+  "bendigo",
+  "bundaberg",
+  "caravans-wa",
+  "christchurch",
+  "cmg-campers",
+  "dario",
+  "destiny-rv",
+  "forest-glen",
+  "frankston",
+  "geelong",
+  "green-rv",
+  "green-show",
+  "gympie",
+  "heatherbrae",
+  "launceston",
+  "marsden-point",
+  "motorhub",
+  "newcastle-caravans-rv",
+  "selfowned",
+  "slacks-creek",
+  "st-james",
+  "toowoomba",
+  "townsville",
+];
+
 
 const normalizeState = (value: unknown) => {
   const upper = String(value ?? "").trim().toUpperCase();
@@ -25,22 +54,33 @@ export default function DealerStateAdmin() {
     return unsubscribe;
   }, []);
 
-  const dealerRows = useMemo(
-    () =>
-      Object.entries(dealerConfigs || {})
-        .filter(([, config]) => config && !isDealerGroup(config))
-        .map(([slug, config]) => ({ slug, name: config?.name || slug, config }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [dealerConfigs]
-  );
+  const dealerRows = useMemo(() => {
+    const rows = MANAGED_STATE_SLUGS.map((slug) => {
+      const config = dealerConfigs?.[slug] || null;
+      return {
+        slug,
+        name: config?.name || slug,
+        config,
+      };
+    });
+
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
+  }, [dealerConfigs]);
 
   const updateState = async (slug: string, state: string) => {
-    const existing = dealerConfigs?.[slug];
-    if (!existing) return;
+    const existing = dealerConfigs?.[slug] || {};
 
     setSavingSlug(slug);
     try {
       await setDealerConfig(slug, {
+        slug,
+        name: existing?.name || slug,
+        code: existing?.code || slug.toUpperCase().replace(/-/g, "_"),
+        isActive: existing?.isActive ?? true,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        productRegistrationDealerName: existing?.productRegistrationDealerName || existing?.name || slug,
+        initialTarget2026: existing?.initialTarget2026 ?? 0,
+        powerbi_url: existing?.powerbi_url || "",
         ...existing,
         state,
       });

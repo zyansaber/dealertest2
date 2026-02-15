@@ -34,6 +34,35 @@ const JV_TOTAL_SLUG = "jv-total";
 const EXTERNAL_TOTAL_SLUG = "external-total";
 const ALLOWED_MODEL_RANGES = new Set(["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB"]);
 const MAP_STATE_ORDER = ["WA", "NT", "SA", "QLD", "NSW", "ACT", "VIC", "TAS", "NZ"] as const;
+const MANAGED_STATE_SLUGS = new Set([
+  "abco",
+  "alldealers",
+  "auswide",
+  "bendigo",
+  "bundaberg",
+  "caravans-wa",
+  "christchurch",
+  "cmg-campers",
+  "dario",
+  "destiny-rv",
+  "forest-glen",
+  "frankston",
+  "geelong",
+  "green-rv",
+  "green-show",
+  "gympie",
+  "heatherbrae",
+  "launceston",
+  "marsden-point",
+  "motorhub",
+  "newcastle-caravans-rv",
+  "selfowned",
+  "slacks-creek",
+  "st-james",
+  "toowoomba",
+  "townsville",
+]);
+
 
 const normalizeDealerState = (value?: unknown) => {
   const normalized = String(value ?? "").trim().toUpperCase();
@@ -320,7 +349,7 @@ export default function DealerOverallDashboard() {
 
   const dealerOptions = useMemo(() => {
     return Object.entries(dealerConfigs || {})
-      .filter(([, config]) => config && !isDealerGroup(config))
+      .filter(([slug, config]) => config && (!isDealerGroup(config) || MANAGED_STATE_SLUGS.has(slug)))
       .map(([slug, config]) => ({ slug, name: config?.name || prettifyDealerName(slug) }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [dealerConfigs]);
@@ -352,12 +381,12 @@ export default function DealerOverallDashboard() {
   const dealersByState = useMemo(() => {
     const bucket: Record<string, { slug: string; name: string }[]> = {};
     dealerOptions.forEach((dealer) => {
-      const state = normalizeDealerState(dealerConfigs?.[dealer.slug]?.state);
+      const state = dealerStateLookup.get(dealer.slug) || normalizeDealerState(dealerConfigs?.[dealer.slug]?.state);
       if (!bucket[state]) bucket[state] = [];
       bucket[state].push(dealer);
     });
     return bucket;
-  }, [dealerConfigs, dealerOptions]);
+  }, [dealerConfigs, dealerOptions, dealerStateLookup]);
 
   const filteredStateSlugs = useMemo(() => {
     if (selectedMapState === "ALL") return null;
