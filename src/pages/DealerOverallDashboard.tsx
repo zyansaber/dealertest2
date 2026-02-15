@@ -238,6 +238,7 @@ export default function DealerOverallDashboard() {
   const [dealerSearch, setDealerSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedMapState, setSelectedMapState] = useState<string>("ALL");
+  const [selectedModelRangeFilter, setSelectedModelRangeFilter] = useState<string>("ALL");
   const [expandedSections, setExpandedSections] = useState({
     factory: false,
     greenRv: false,
@@ -322,6 +323,19 @@ export default function DealerOverallDashboard() {
       .filter(([, config]) => config && !isDealerGroup(config))
       .map(([slug, config]) => ({ slug, name: config?.name || prettifyDealerName(slug) }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dealerConfigs]);
+
+  const dealerStateLookup = useMemo(() => {
+    const lookup = new Map<string, string>();
+    Object.entries(dealerConfigs || {}).forEach(([slug, config]) => {
+      const state = normalizeDealerState(config?.state);
+      const normalizedSlug = normalizeDealerSlug(slug);
+      const nameSlug = slugifyDealerName(config?.name);
+      lookup.set(slug, state);
+      lookup.set(normalizedSlug, state);
+      if (nameSlug) lookup.set(nameSlug, state);
+    });
+    return lookup;
   }, [dealerConfigs]);
 
   const externalOptions = useMemo(() => {
@@ -1246,19 +1260,23 @@ export default function DealerOverallDashboard() {
       {}
     );
 
-    const dealerStateBySlug = new Map<string, string>();
     dealerOptions.forEach((dealer) => {
-      const state = normalizeDealerState(dealerConfigs?.[dealer.slug]?.state);
-      dealerStateBySlug.set(dealer.slug, state);
+      const state = dealerStateLookup.get(dealer.slug) || normalizeDealerState(dealerConfigs?.[dealer.slug]?.state);
       if (state !== "UNASSIGNED" && result[state]) {
         result[state].dealers += 1;
         result[state].target += getTargetValue(dealerConfigs?.[dealer.slug]);
       }
     });
 
+    const matchesModelRange = (value?: string, chassis?: string) => {
+      if (selectedModelRangeFilter === "ALL") return true;
+      return getModelRange(value, chassis) === selectedModelRangeFilter;
+    };
+
     (allOrders || []).forEach((order) => {
-      const slug = slugifyDealerName(order?.Dealer);
-      const state = dealerStateBySlug.get(slug);
+      if (!matchesModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))) return;
+      const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
+      const state = dealerStateLookup.get(slug);
       if (!state || !result[state]) return;
       const forecastDate = parseDate(order["Forecast Production Date"]);
       const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
@@ -1271,8 +1289,9 @@ export default function DealerOverallDashboard() {
     });
 
     (campervanSchedule || []).forEach((item) => {
-      const slug = slugifyDealerName((item as any)?.dealer);
-      const state = dealerStateBySlug.get(slug);
+      if (!matchesModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))) return;
+      const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
+      const state = dealerStateLookup.get(slug);
       if (!state || !result[state]) return;
       const forecastDate = parseDate(item.forecastProductionDate);
       const receivedDate = getCampervanOrderReceivedDate(item);
@@ -1285,22 +1304,28 @@ export default function DealerOverallDashboard() {
     });
 
     return result;
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, selectedYear]);
+  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, selectedModelRangeFilter, selectedYear]);
 
   const mapDealers = useMemo(() => {
     const dealerOrderCount = new Map<string, number>();
+    const matchesModelRange = (value?: string, chassis?: string) => {
+      if (selectedModelRangeFilter === "ALL") return true;
+      return getModelRange(value, chassis) === selectedModelRangeFilter;
+    };
 
     (allOrders || []).forEach((order) => {
+      if (!matchesModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))) return;
       const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
       if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
-      const slug = slugifyDealerName(order?.Dealer);
+      const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
       dealerOrderCount.set(slug, (dealerOrderCount.get(slug) || 0) + 1);
     });
 
     (campervanSchedule || []).forEach((item) => {
+      if (!matchesModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))) return;
       const receivedDate = getCampervanOrderReceivedDate(item);
       if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
-      const slug = slugifyDealerName((item as any)?.dealer);
+      const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
       dealerOrderCount.set(slug, (dealerOrderCount.get(slug) || 0) + 1);
     });
 
@@ -1308,7 +1333,7 @@ export default function DealerOverallDashboard() {
       .map((dealer) => ({
         slug: dealer.slug,
         name: dealer.name,
-        state: normalizeDealerState(dealerConfigs?.[dealer.slug]?.state) as
+        state: (dealerStateLookup.get(dealer.slug) || normalizeDealerState(dealerConfigs?.[dealer.slug]?.state)) as
           | "WA"
           | "NSW"
           | "QLD"
@@ -1321,7 +1346,12 @@ export default function DealerOverallDashboard() {
         orders: dealerOrderCount.get(dealer.slug) || 0,
       }))
       .filter((dealer) => dealer.state !== "NZ");
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, selectedYear]);
+  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, selectedModelRangeFilter, selectedYear]);
+
+  const modelRangeFilterOptions = useMemo(
+    () => ["ALL", ...modelRangeRows.map((row) => row.modelRange)],
+    [modelRangeRows]
+  );
 
   if (loading || (!isGlobalView && configLoading)) {
     return (
@@ -1673,6 +1703,7 @@ export default function DealerOverallDashboard() {
                 dealers={mapDealers}
                 selectedState={selectedMapState}
                 onSelectState={setSelectedMapState}
+                modelRangeFilter={selectedModelRangeFilter}
               />
               <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
                 {MAP_STATE_ORDER.map((stateCode) => {
@@ -1957,6 +1988,22 @@ export default function DealerOverallDashboard() {
             <CardHeader>
               <CardTitle>Stock Model Outlook (Model Range)</CardTitle>
               <p className="text-sm text-muted-foreground">Aggregated by model range across yard, handover, PGI, and inbound schedule.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {modelRangeFilterOptions.map((range) => (
+                  <button
+                    key={range}
+                    type="button"
+                    onClick={() => setSelectedModelRangeFilter(range)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                      selectedModelRangeFilter === range
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {range === "ALL" ? "All Model Ranges" : range}
+                  </button>
+                ))}
+              </div>
             </CardHeader>
             <CardContent className="overflow-auto">
               <Table className="min-w-[900px] text-sm">
@@ -2000,7 +2047,10 @@ export default function DealerOverallDashboard() {
                             <TableCell className="font-semibold text-slate-900">
                               <button
                                 type="button"
-                                onClick={() => setExpandedRange(isExpanded ? null : row.modelRange)}
+                                onClick={() => {
+                                    setExpandedRange(isExpanded ? null : row.modelRange);
+                                    setSelectedModelRangeFilter((prev) => (prev === row.modelRange ? "ALL" : row.modelRange));
+                                  }}
                                 className="flex items-center gap-2 text-left"
                               >
                                 {isExpanded ? (
