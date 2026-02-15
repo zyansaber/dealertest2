@@ -19,10 +19,10 @@ type Props = {
 };
 
 type GeoFeature = {
-  properties?: { name?: string; STATE_NAME?: string };
+  properties?: { name?: string };
   geometry?: {
     type?: string;
-    coordinates?: number[][][] | number[][][][];
+    coordinates?: number[][][];
   };
 };
 
@@ -45,22 +45,6 @@ const colorScale = (value: number, max: number) => {
   const g = Math.round(lerp(242, 58, ratio));
   const b = Math.round(lerp(254, 138, ratio));
   return `rgb(${r}, ${g}, ${b})`;
-};
-
-const extractRings = (feature: GeoFeature): number[][][] => {
-  const geometryType = feature?.geometry?.type;
-  const coordinates = feature?.geometry?.coordinates;
-  if (!coordinates) return [];
-
-  if (geometryType === "Polygon") {
-    return coordinates as number[][][];
-  }
-
-  if (geometryType === "MultiPolygon") {
-    return (coordinates as number[][][][]).flat();
-  }
-
-  return [];
 };
 
 export default function AustraliaDealerMap({ dealers, selectedState, onSelectState }: Props) {
@@ -117,33 +101,29 @@ export default function AustraliaDealerMap({ dealers, selectedState, onSelectSta
           <div className="h-[520px] w-2/3 overflow-hidden rounded-xl border bg-gradient-to-br from-sky-50 to-indigo-100 p-2">
             <svg viewBox="0 0 720 520" className="h-full w-full">
               {features.map((feature, idx) => {
-                const fullName = feature?.properties?.name || feature?.properties?.STATE_NAME || "";
+                const fullName = feature?.properties?.name || "";
                 const short = stateMap[fullName];
                 if (!short) return null;
                 const value = stateTotals[short] || 0;
                 const isActive = selectedState === short;
-                const rings = extractRings(feature);
-                const mainlandRing = [...rings].sort((a, b) => b.length - a.length)[0] || [];
-                if (!mainlandRing.length) return null;
+                const coords = feature?.geometry?.coordinates?.[0] || [];
+                if (!coords.length) return null;
 
-                const centerX = mainlandRing.reduce((sum, [lon]) => sum + lon, 0) / mainlandRing.length;
-                const centerY = mainlandRing.reduce((sum, [, lat]) => sum + lat, 0) / mainlandRing.length;
+                const centerX = coords.reduce((sum, [lon]) => sum + lon, 0) / coords.length;
+                const centerY = coords.reduce((sum, [, lat]) => sum + lat, 0) / coords.length;
                 const labelX = ((centerX - 111) / (155 - 111)) * 720;
                 const labelY = ((-10 - centerY) / (-10 + 44)) * 520;
 
                 return (
                   <g key={`${fullName}-${idx}`}>
-                    {rings.map((ring, ringIdx) => (
-                      <polygon
-                        key={`${fullName}-${idx}-${ringIdx}`}
-                        points={polygonPoints(ring)}
-                        fill={isActive ? "#2563eb" : colorScale(value, maxOrders)}
-                        stroke="#ffffff"
-                        strokeWidth={1.1}
-                        className="cursor-pointer transition-all duration-200 hover:brightness-95"
-                        onClick={() => onSelectState(isActive ? "ALL" : short)}
-                      />
-                    ))}
+                    <polygon
+                      points={polygonPoints(coords)}
+                      fill={isActive ? "#2563eb" : colorScale(value, maxOrders)}
+                      stroke="#ffffff"
+                      strokeWidth={1.1}
+                      className="cursor-pointer transition-all duration-200 hover:brightness-95"
+                      onClick={() => onSelectState(isActive ? "ALL" : short)}
+                    />
                     <text
                       x={short === "ACT" ? labelX + 24 : labelX}
                       y={short === "ACT" ? labelY + 10 : labelY}
