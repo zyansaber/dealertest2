@@ -16,13 +16,14 @@ type Props = {
   dealers: DealerRow[];
   selectedState: string;
   onSelectState: (state: string) => void;
+  modelRangeFilter?: string;
 };
 
 type GeoFeature = {
-  properties?: { name?: string };
+  properties?: { name?: string; STATE_NAME?: string };
   geometry?: {
     type?: string;
-    coordinates?: number[][][];
+    coordinates?: number[][][] | number[][][][];
   };
 };
 
@@ -47,7 +48,44 @@ const colorScale = (value: number, max: number) => {
   return `rgb(${r}, ${g}, ${b})`;
 };
 
-export default function AustraliaDealerMap({ dealers, selectedState, onSelectState }: Props) {
+const extractRings = (feature: GeoFeature): number[][][] => {
+  const geometryType = feature?.geometry?.type;
+  const coordinates = feature?.geometry?.coordinates;
+  if (!coordinates) return [];
+
+  if (geometryType === "Polygon") {
+    return coordinates as number[][][];
+  }
+
+  if (geometryType === "MultiPolygon") {
+    return (coordinates as number[][][][]).flat();
+  }
+
+  return [];
+};
+
+const describePie = (cx: number, cy: number, radius: number, percent: number) => {
+  const clamped = Math.max(0, Math.min(100, percent));
+  if (clamped <= 0) return "";
+  if (clamped >= 100) {
+    return [
+      `M ${cx} ${cy - radius}`,
+      `A ${radius} ${radius} 0 1 1 ${cx - 0.01} ${cy - radius}`,
+      `A ${radius} ${radius} 0 1 1 ${cx} ${cy - radius}`,
+      "Z",
+    ].join(" ");
+  }
+
+  const angle = (clamped / 100) * Math.PI * 2;
+  const endAngle = -Math.PI / 2 + angle;
+  const x = cx + radius * Math.cos(endAngle);
+  const y = cy + radius * Math.sin(endAngle);
+  const largeArc = clamped > 50 ? 1 : 0;
+
+  return [`M ${cx} ${cy}`, `L ${cx} ${cy - radius}`, `A ${radius} ${radius} 0 ${largeArc} 1 ${x} ${y}`, "Z"].join(" ");
+};
+
+export default function AustraliaDealerMap({ dealers, selectedState, onSelectState, modelRangeFilter = "ALL" }: Props) {
   const [features, setFeatures] = useState<GeoFeature[]>([]);
 
   useEffect(() => {
@@ -66,13 +104,7 @@ export default function AustraliaDealerMap({ dealers, selectedState, onSelectSta
   }, [dealers]);
 
   const maxOrders = useMemo(() => Math.max(0, ...Object.values(stateTotals)), [stateTotals]);
-
-  const filteredDealers = useMemo(() => {
-    if (!selectedState || selectedState === "ALL") return [];
-    return dealers
-      .filter((dealer) => dealer.state === selectedState)
-      .sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name));
-  }, [dealers, selectedState]);
+  const totalOrders = useMemo(() => Object.values(stateTotals).reduce((sum, value) => sum + value, 0), [stateTotals]);
 
   const polygonPoints = (coordinates: number[][]) => {
     const minLon = 111;
@@ -93,77 +125,53 @@ export default function AustraliaDealerMap({ dealers, selectedState, onSelectSta
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <span>Australia Dealer Performance Map</span>
-          <Badge variant="secondary">Click state to filter</Badge>
+          <Badge variant="secondary">Click state to filter · Model Range: {modelRangeFilter}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex gap-6">
-          <div className="h-[520px] w-2/3 overflow-hidden rounded-xl border bg-gradient-to-br from-sky-50 to-indigo-100 p-2">
+        <div className="h-[520px] overflow-hidden rounded-xl border bg-gradient-to-br from-sky-50 to-indigo-100 p-2">
             <svg viewBox="0 0 720 520" className="h-full w-full">
               {features.map((feature, idx) => {
-                const fullName = feature?.properties?.name || "";
+                const fullName = feature?.properties?.name || feature?.properties?.STATE_NAME || "";
                 const short = stateMap[fullName];
                 if (!short) return null;
                 const value = stateTotals[short] || 0;
                 const isActive = selectedState === short;
-                const coords = feature?.geometry?.coordinates?.[0] || [];
-                if (!coords.length) return null;
+                const rings = extractRings(feature);
+                const mainlandRing = [...rings].sort((a, b) => b.length - a.length)[0] || [];
+                if (!mainlandRing.length) return null;
 
-                const centerX = coords.reduce((sum, [lon]) => sum + lon, 0) / coords.length;
-                const centerY = coords.reduce((sum, [, lat]) => sum + lat, 0) / coords.length;
+                const centerX = mainlandRing.reduce((sum, [lon]) => sum + lon, 0) / mainlandRing.length;
+                const centerY = mainlandRing.reduce((sum, [, lat]) => sum + lat, 0) / mainlandRing.length;
                 const labelX = ((centerX - 111) / (155 - 111)) * 720;
                 const labelY = ((-10 - centerY) / (-10 + 44)) * 520;
+                const pieX = short === "ACT" ? labelX + 24 : labelX;
+                const pieY = short === "ACT" ? labelY + 10 : labelY;
+                const share = totalOrders > 0 ? (value / totalOrders) * 100 : 0;
+                const piePath = describePie(pieX, pieY, 22, share);
 
                 return (
                   <g key={`${fullName}-${idx}`}>
-                    <polygon
-                      points={polygonPoints(coords)}
-                      fill={isActive ? "#2563eb" : colorScale(value, maxOrders)}
-                      stroke="#ffffff"
-                      strokeWidth={1.1}
-                      className="cursor-pointer transition-all duration-200 hover:brightness-95"
-                      onClick={() => onSelectState(isActive ? "ALL" : short)}
-                    />
-                    <text
-                      x={short === "ACT" ? labelX + 24 : labelX}
-                      y={short === "ACT" ? labelY + 10 : labelY}
-                      textAnchor="middle"
-                      className="pointer-events-none fill-slate-800 text-[13px] font-semibold"
-                    >
-                      {short}
+                    {rings.map((ring, ringIdx) => (
+                      <polygon
+                        key={`${fullName}-${idx}-${ringIdx}`}
+                        points={polygonPoints(ring)}
+                        fill={isActive ? "#2563eb" : colorScale(value, maxOrders)}
+                        stroke="#ffffff"
+                        strokeWidth={1.1}
+                        className="cursor-pointer transition-all duration-200 hover:brightness-95"
+                        onClick={() => onSelectState(isActive ? "ALL" : short)}
+                      />
+                    ))}
+                    <circle cx={pieX} cy={pieY} r={22} fill="rgba(255,255,255,0.9)" stroke="#cbd5e1" strokeWidth={1.2} />
+                    {piePath ? <path d={piePath} fill={isActive ? "#1d4ed8" : "#2563eb"} opacity={0.9} /> : null}
+                    <text x={pieX} y={pieY + 2} textAnchor="middle" className="pointer-events-none fill-slate-900 text-[10px] font-semibold">
+                      {share.toFixed(0)}%
                     </text>
                   </g>
                 );
               })}
             </svg>
-          </div>
-
-          <div className="w-1/3 border-l pl-6">
-            {(!selectedState || selectedState === "ALL") && (
-              <p className="text-sm text-muted-foreground">Click a state to view dealer rankings and orders.</p>
-            )}
-
-            {selectedState && selectedState !== "ALL" && (
-              <>
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">{selectedState}</h3>
-                  <Badge>{filteredDealers.length} Dealers</Badge>
-                </div>
-
-                <div className="space-y-2">
-                  {filteredDealers.map((dealer) => (
-                    <div
-                      key={dealer.slug}
-                      className="rounded-lg border bg-slate-50 p-3 transition hover:bg-slate-100"
-                    >
-                      <div className="font-medium">{dealer.name}</div>
-                      <div className="text-sm text-muted-foreground">{dealer.orders} Orders</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
         </div>
       </CardContent>
     </Card>
