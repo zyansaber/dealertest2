@@ -13,7 +13,6 @@ import AccessRestricted from "./pages/AccessRestricted";
 import InventoryStockPage from "@/pages/InventoryStockPage";
 import DealerDashboard from "./pages/DealerDashboard";
 import DealerOverallDashboard from "./pages/DealerOverallDashboard";
-import DealerStateAdmin from "./pages/DealerStateAdmin";
 import UnsignedEmptySlots from "./pages/UnsignedEmptySlots";
 import PasswordLogin from "./pages/PasswordLogin";
 import ProtectedMainRoute from "./components/ProtectedMainRoute";
@@ -123,7 +122,6 @@ const AppShell = () => {
           path="/overall-dashboard"
           element={<DealerOverallDashboard />}
         />
-        <Route path="/overall-dashboard/state" element={<DealerStateAdmin />} />
 
         {/* 单个 Dealer 路由 - 使用 /dealer/ 前缀 */}
         <Route
