@@ -1734,24 +1734,6 @@ export default function DealerOverallDashboard() {
                 onSelectState={setSelectedMapState}
                 modelRangeFilter={selectedModelRangeFilter}
               />
-              <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
-                {MAP_STATE_ORDER.map((stateCode) => {
-                  const row = stateSummary[stateCode];
-                  const share = orderReceivedYearCount > 0 ? ((row?.orders || 0) / orderReceivedYearCount) * 100 : 0;
-                  return (
-                    <button
-                      type="button"
-                      key={stateCode}
-                      onClick={() => setSelectedMapState((prev) => (prev === stateCode ? "ALL" : stateCode))}
-                      className={`rounded-lg border p-2 text-left transition ${selectedMapState === stateCode ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
-                    >
-                      <div className="text-xs font-semibold text-slate-700">{stateCode}</div>
-                      <div className="text-xs text-slate-500">{row?.orders || 0} orders</div>
-                      <div className="text-sm font-semibold text-slate-900">{share.toFixed(1)}%</div>
-                    </button>
-                  );
-                })}
-              </div>
             </>
           )}
 
@@ -2017,22 +1999,6 @@ export default function DealerOverallDashboard() {
             <CardHeader>
               <CardTitle>Stock Model Outlook (Model Range)</CardTitle>
               <p className="text-sm text-muted-foreground">Aggregated by model range across yard, handover, PGI, and inbound schedule.</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {modelRangeFilterOptions.map((range) => (
-                  <button
-                    key={range}
-                    type="button"
-                    onClick={() => setSelectedModelRangeFilter(range)}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                      selectedModelRangeFilter === range
-                        ? "border-blue-600 bg-blue-600 text-white"
-                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    {range === "ALL" ? "All Model Ranges" : range}
-                  </button>
-                ))}
-              </div>
             </CardHeader>
             <CardContent className="overflow-auto">
               <Table className="min-w-[900px] text-sm">
