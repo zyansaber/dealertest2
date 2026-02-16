@@ -15,6 +15,7 @@ import {
   subscribeToHandover,
   subscribeToPGIRecords,
   subscribeToSchedule,
+  subscribeToSchedule2024,
   subscribeToYardStock,
 } from "@/lib/firebase";
 import { parseFlexibleDateToDate } from "@/lib/showDatabase";
@@ -257,6 +258,7 @@ export default function DealerOverallDashboard() {
     isFactoryDealerAggregate || isGreenRvAggregate || isNewZealandAggregate || isExternalAggregate || isJvAggregate;
 
   const [allOrders, setAllOrders] = useState<ScheduleItem[]>([]);
+  const [orders2024, setOrders2024] = useState<ScheduleItem[]>([]);
   const [campervanSchedule, setCampervanSchedule] = useState<CampervanScheduleItem[]>([]);
   const [dealerConfig, setDealerConfig] = useState<any>(null);
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
@@ -283,13 +285,15 @@ export default function DealerOverallDashboard() {
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
 
   useEffect(() => {
-    const unsubSchedule = subscribeToSchedule(
-      (data) => {
-        setAllOrders(data || []);
-        setLoading(false);
-      },
-      { includeNoChassis: true, includeNoCustomer: true, includeFinished: true }
-    );
+    const scheduleOptions = { includeNoChassis: true, includeNoCustomer: true, includeFinished: true };
+    const unsubSchedule = subscribeToSchedule((data) => {
+      setAllOrders(data || []);
+      setLoading(false);
+    }, scheduleOptions);
+
+    const unsubSchedule2024 = subscribeToSchedule2024((data) => {
+      setOrders2024(data || []);
+    }, scheduleOptions);
 
     const unsubCampervan = subscribeToCampervanSchedule((data) => {
       setCampervanSchedule(data || []);
@@ -297,9 +301,13 @@ export default function DealerOverallDashboard() {
 
     return () => {
       unsubSchedule?.();
+      unsubSchedule2024?.();
       unsubCampervan?.();
     };
   }, []);
+
+
+  const mergedScheduleOrders = useMemo(() => [...(allOrders || []), ...(orders2024 || [])], [allOrders, orders2024]);
 
   useEffect(() => {
     if (isGlobalView) {
@@ -456,14 +464,14 @@ export default function DealerOverallDashboard() {
 
   const dealerOrdersAll = useMemo(() => {
     if (!dealerSlug) {
-      if (!filteredStateSlugs) return allOrders || [];
-      return (allOrders || []).filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
+      if (!filteredStateSlugs) return mergedScheduleOrders;
+      return mergedScheduleOrders.filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
     }
     if (isGroupAggregate) {
-      return (allOrders || []).filter((order) => activeAggregateSlugs.includes(slugifyDealerName(order?.Dealer)));
+      return mergedScheduleOrders.filter((order) => activeAggregateSlugs.includes(slugifyDealerName(order?.Dealer)));
     }
-    return (allOrders || []).filter((order) => slugifyDealerName(order?.Dealer) === dealerSlug);
-  }, [activeAggregateSlugs, allOrders, dealerSlug, filteredStateSlugs, isGroupAggregate]);
+    return mergedScheduleOrders.filter((order) => slugifyDealerName(order?.Dealer) === dealerSlug);
+  }, [activeAggregateSlugs, dealerSlug, filteredStateSlugs, isGroupAggregate, mergedScheduleOrders]);
 
   const dealerCampervanSchedule = useMemo(() => {
     if (!dealerSlug) {
@@ -1297,13 +1305,7 @@ export default function DealerOverallDashboard() {
       }
     });
 
-    const matchesModelRange = (value?: string, chassis?: string) => {
-      if (selectedModelRangeFilter === "ALL") return true;
-      return getModelRange(value, chassis) === selectedModelRangeFilter;
-    };
-
-    (allOrders || []).forEach((order) => {
-      if (!matchesModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))) return;
+    mergedScheduleOrders.forEach((order) => {
       const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
       const state = dealerStateLookup.get(slug);
       if (!state || !result[state]) return;
@@ -1318,7 +1320,6 @@ export default function DealerOverallDashboard() {
     });
 
     (campervanSchedule || []).forEach((item) => {
-      if (!matchesModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))) return;
       const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
       const state = dealerStateLookup.get(slug);
       if (!state || !result[state]) return;
@@ -1333,17 +1334,119 @@ export default function DealerOverallDashboard() {
     });
 
     return result;
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, selectedModelRangeFilter, selectedYear]);
+  }, [campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, mergedScheduleOrders, selectedYear]);
+
+  const mapModelRangeMetrics = useMemo(() => {
+    const byRange = new Map<string, { orders: number; forecast: number }>();
+    const ensureRange = (range: string) => {
+      if (!byRange.has(range)) {
+        byRange.set(range, { orders: 0, forecast: 0 });
+      }
+      return byRange.get(range)!;
+    };
+
+    mergedScheduleOrders.forEach((order) => {
+      const range = getModelRange(toStr(order?.Model), toStr((order as any)?.Chassis));
+      if (!ALLOWED_MODEL_RANGES.has(range)) return;
+      const entry = ensureRange(range);
+      const forecastDate = parseDate(order["Forecast Production Date"]);
+      const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
+      if (forecastDate && forecastDate.getFullYear() === selectedYear) entry.forecast += 1;
+      if (receivedDate && receivedDate.getFullYear() === selectedYear) entry.orders += 1;
+    });
+
+    (campervanSchedule || []).forEach((item) => {
+      const range = getModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+      if (!ALLOWED_MODEL_RANGES.has(range)) return;
+      const entry = ensureRange(range);
+      const forecastDate = parseDate(item.forecastProductionDate);
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (forecastDate && forecastDate.getFullYear() === selectedYear) entry.forecast += 1;
+      if (receivedDate && receivedDate.getFullYear() === selectedYear) entry.orders += 1;
+    });
+
+    return Array.from(byRange.entries())
+      .map(([modelRange, row]) => ({ modelRange, ...row }))
+      .sort((a, b) => b.orders + b.forecast - (a.orders + a.forecast));
+  }, [campervanSchedule, mergedScheduleOrders, selectedYear]);
+
+  const mapTimelineFrames = useMemo(() => {
+    const start = new Date(2024, 0, 1);
+    const end = new Date(2026, 0, 1);
+    const totalMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+    const frames = Array.from({ length: totalMonths }, (_, index) => {
+      const cursor = new Date(start.getFullYear(), start.getMonth() + index, 1);
+      const label = cursor.toLocaleDateString("en-AU", { month: "short", year: "numeric" });
+      return {
+        label,
+        cursor,
+        orderTotalsByRange: {} as Record<string, Record<string, number>>,
+        forecastTotalsByRange: {} as Record<string, Record<string, number>>,
+      };
+    }).filter((item) => item.cursor >= start && item.cursor <= end);
+
+    const ensureRangeStateBucket = (bucket: Record<string, Record<string, number>>, range: string) => {
+      if (!bucket[range]) {
+        bucket[range] = MAP_STATE_ORDER.reduce<Record<string, number>>((acc, code) => {
+          acc[code] = 0;
+          return acc;
+        }, {});
+      }
+      return bucket[range];
+    };
+
+    frames.forEach((frame) => {
+      mergedScheduleOrders.forEach((order) => {
+        const range = getModelRange(toStr(order?.Model), toStr((order as any)?.Chassis));
+        if (!ALLOWED_MODEL_RANGES.has(range)) return;
+        const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
+        const state = dealerStateLookup.get(slug);
+        if (!state) return;
+        const orderBucket = ensureRangeStateBucket(frame.orderTotalsByRange, range);
+        const forecastBucket = ensureRangeStateBucket(frame.forecastTotalsByRange, range);
+
+        const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
+        if (receivedDate && receivedDate >= start && receivedDate <= frame.cursor) {
+          orderBucket[state] += 1;
+        }
+
+        const forecastDate = parseDate(order["Forecast Production Date"]);
+        if (forecastDate && forecastDate >= start && forecastDate <= frame.cursor) {
+          forecastBucket[state] += 1;
+        }
+      });
+
+      (campervanSchedule || []).forEach((item) => {
+        const range = getModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+        if (!ALLOWED_MODEL_RANGES.has(range)) return;
+        const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
+        const state = dealerStateLookup.get(slug);
+        if (!state) return;
+        const orderBucket = ensureRangeStateBucket(frame.orderTotalsByRange, range);
+        const forecastBucket = ensureRangeStateBucket(frame.forecastTotalsByRange, range);
+
+        const receivedDate = getCampervanOrderReceivedDate(item);
+        if (receivedDate && receivedDate >= start && receivedDate <= frame.cursor) {
+          orderBucket[state] += 1;
+        }
+
+        const forecastDate = parseDate(item.forecastProductionDate);
+        if (forecastDate && forecastDate >= start && forecastDate <= frame.cursor) {
+          forecastBucket[state] += 1;
+        }
+      });
+    });
+
+    return {
+      orders: frames.map((frame) => ({ label: frame.label, totalsByRange: frame.orderTotalsByRange })),
+      forecast: frames.map((frame) => ({ label: frame.label, totalsByRange: frame.forecastTotalsByRange })),
+    };
+  }, [campervanSchedule, dealerStateLookup, mergedScheduleOrders]);
 
   const mapDealers = useMemo(() => {
     const dealerOrderCount = new Map<string, number>();
-    const matchesModelRange = (value?: string, chassis?: string) => {
-      if (selectedModelRangeFilter === "ALL") return true;
-      return getModelRange(value, chassis) === selectedModelRangeFilter;
-    };
 
-    (allOrders || []).forEach((order) => {
-      if (!matchesModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))) return;
+    mergedScheduleOrders.forEach((order) => {
       const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
       if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
       const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
@@ -1351,7 +1454,6 @@ export default function DealerOverallDashboard() {
     });
 
     (campervanSchedule || []).forEach((item) => {
-      if (!matchesModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))) return;
       const receivedDate = getCampervanOrderReceivedDate(item);
       if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
       const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
@@ -1375,7 +1477,7 @@ export default function DealerOverallDashboard() {
         orders: dealerOrderCount.get(dealer.slug) || 0,
       }))
       .filter((dealer) => dealer.state !== "NZ");
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, selectedModelRangeFilter, selectedYear]);
+  }, [campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, mergedScheduleOrders, selectedYear]);
 
   const modelRangeFilterOptions = useMemo(
     () => ["ALL", ...modelRangeRows.map((row) => row.modelRange)],
@@ -1709,7 +1811,7 @@ export default function DealerOverallDashboard() {
               <p className="text-slate-600 mt-1">Schedule insights and target pacing for {selectedYear}.</p>
             </div>
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-              {[2025, 2026].map((year) => (
+              {[2024, 2025, 2026].map((year) => (
                 <button
                   key={year}
                   type="button"
@@ -1732,7 +1834,9 @@ export default function DealerOverallDashboard() {
                 dealers={mapDealers}
                 selectedState={selectedMapState}
                 onSelectState={setSelectedMapState}
-                modelRangeFilter={selectedModelRangeFilter}
+                stateMetrics={stateSummary}
+                timelineFrames={mapTimelineFrames}
+                modelRangeMetrics={mapModelRangeMetrics}
               />
             </>
           )}
