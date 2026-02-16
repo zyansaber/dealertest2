@@ -73,59 +73,44 @@ export type DeliveryToAssignment = {
   updatedAt: string;
 };
 
-const parseScheduleSnapshot = (
-  snapshot: DataSnapshot,
-  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => {
-  const { includeNoChassis = false, includeNoCustomer = false, includeFinished = false } = options;
-  const raw = snapshot.val();
-
-  const list: any[] = raw
-    ? Array.isArray(raw)
-      ? raw.filter(Boolean)
-      : Object.values(raw).filter(Boolean)
-    : [];
-
-  return list.filter((item: any) => {
-    if (!includeFinished) {
-      const rp = String(item?.["Regent Production"] ?? "").toLowerCase();
-      if (rp === "finished" || rp === "finish") return false;
-    }
-    if (!includeNoChassis) {
-      if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
-    }
-    if (!includeNoCustomer) {
-      if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
-    }
-    return true;
-  }) as ScheduleItem[];
-};
-
-const subscribeToSchedulePath = (
-  path: string,
+/** -------------------- schedule -------------------- */
+export const subscribeToSchedule = (
   callback: (data: ScheduleItem[]) => void,
   options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
 ) => {
-  const scheduleRef = ref(database, path);
+  const { includeNoChassis = false, includeNoCustomer = false, includeFinished = false } = options;
+
+  const scheduleRef = ref(database, "schedule");
 
   const handler = (snapshot: DataSnapshot) => {
-    callback(parseScheduleSnapshot(snapshot, options));
+    const raw = snapshot.val();
+
+    const list: any[] = raw
+      ? Array.isArray(raw)
+        ? raw.filter(Boolean)
+        : Object.values(raw).filter(Boolean)
+      : [];
+
+    const filtered: ScheduleItem[] = list.filter((item: any) => {
+      if (!includeFinished) {
+        const rp = String(item?.["Regent Production"] ?? "").toLowerCase();
+        if (rp === "finished" || rp === "finish") return false;
+      }
+      if (!includeNoChassis) {
+        if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
+      }
+      if (!includeNoCustomer) {
+        if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
+      }
+      return true;
+    });
+
+    callback(filtered);
   };
 
   onValue(scheduleRef, handler);
   return () => off(scheduleRef, "value", handler);
 };
-
-/** -------------------- schedule -------------------- */
-export const subscribeToSchedule = (
-  callback: (data: ScheduleItem[]) => void,
-  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => subscribeToSchedulePath("schedule", callback, options);
-
-export const subscribeToSchedule2024 = (
-  callback: (data: ScheduleItem[]) => void,
-  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => subscribeToSchedulePath("2024schedule", callback, options);
 
 /** -------------------- campervan schedule -------------------- */
 export const subscribeToCampervanSchedule = (
