@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
+import * as XLSX from "xlsx";
 
 import Sidebar from "@/components/Sidebar";
 import AustraliaDealerMap from "@/components/AustraliaDealerMap";
@@ -15,6 +16,7 @@ import {
   subscribeToHandover,
   subscribeToPGIRecords,
   subscribeToSchedule,
+  subscribeToSchedule2024,
   subscribeToYardStock,
 } from "@/lib/firebase";
 import { parseFlexibleDateToDate } from "@/lib/showDatabase";
@@ -257,6 +259,7 @@ export default function DealerOverallDashboard() {
     isFactoryDealerAggregate || isGreenRvAggregate || isNewZealandAggregate || isExternalAggregate || isJvAggregate;
 
   const [allOrders, setAllOrders] = useState<ScheduleItem[]>([]);
+  const [orders2024, setOrders2024] = useState<ScheduleItem[]>([]);
   const [campervanSchedule, setCampervanSchedule] = useState<CampervanScheduleItem[]>([]);
   const [dealerConfig, setDealerConfig] = useState<any>(null);
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
@@ -283,13 +286,15 @@ export default function DealerOverallDashboard() {
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
 
   useEffect(() => {
-    const unsubSchedule = subscribeToSchedule(
-      (data) => {
-        setAllOrders(data || []);
-        setLoading(false);
-      },
-      { includeNoChassis: true, includeNoCustomer: true, includeFinished: true }
-    );
+    const scheduleOptions = { includeNoChassis: true, includeNoCustomer: true, includeFinished: true };
+    const unsubSchedule = subscribeToSchedule((data) => {
+      setAllOrders(data || []);
+      setLoading(false);
+    }, scheduleOptions);
+
+    const unsubSchedule2024 = subscribeToSchedule2024((data) => {
+      setOrders2024(data || []);
+    }, scheduleOptions);
 
     const unsubCampervan = subscribeToCampervanSchedule((data) => {
       setCampervanSchedule(data || []);
@@ -297,9 +302,13 @@ export default function DealerOverallDashboard() {
 
     return () => {
       unsubSchedule?.();
+      unsubSchedule2024?.();
       unsubCampervan?.();
     };
   }, []);
+
+
+  const mergedScheduleOrders = useMemo(() => [...(allOrders || []), ...(orders2024 || [])], [allOrders, orders2024]);
 
   useEffect(() => {
     if (isGlobalView) {
@@ -456,14 +465,14 @@ export default function DealerOverallDashboard() {
 
   const dealerOrdersAll = useMemo(() => {
     if (!dealerSlug) {
-      if (!filteredStateSlugs) return allOrders || [];
-      return (allOrders || []).filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
+      if (!filteredStateSlugs) return mergedScheduleOrders;
+      return mergedScheduleOrders.filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
     }
     if (isGroupAggregate) {
-      return (allOrders || []).filter((order) => activeAggregateSlugs.includes(slugifyDealerName(order?.Dealer)));
+      return mergedScheduleOrders.filter((order) => activeAggregateSlugs.includes(slugifyDealerName(order?.Dealer)));
     }
-    return (allOrders || []).filter((order) => slugifyDealerName(order?.Dealer) === dealerSlug);
-  }, [activeAggregateSlugs, allOrders, dealerSlug, filteredStateSlugs, isGroupAggregate]);
+    return mergedScheduleOrders.filter((order) => slugifyDealerName(order?.Dealer) === dealerSlug);
+  }, [activeAggregateSlugs, dealerSlug, filteredStateSlugs, isGroupAggregate, mergedScheduleOrders]);
 
   const dealerCampervanSchedule = useMemo(() => {
     if (!dealerSlug) {
@@ -1297,13 +1306,7 @@ export default function DealerOverallDashboard() {
       }
     });
 
-    const matchesModelRange = (value?: string, chassis?: string) => {
-      if (selectedModelRangeFilter === "ALL") return true;
-      return getModelRange(value, chassis) === selectedModelRangeFilter;
-    };
-
-    (allOrders || []).forEach((order) => {
-      if (!matchesModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))) return;
+    mergedScheduleOrders.forEach((order) => {
       const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
       const state = dealerStateLookup.get(slug);
       if (!state || !result[state]) return;
@@ -1318,7 +1321,6 @@ export default function DealerOverallDashboard() {
     });
 
     (campervanSchedule || []).forEach((item) => {
-      if (!matchesModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))) return;
       const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
       const state = dealerStateLookup.get(slug);
       if (!state || !result[state]) return;
@@ -1333,17 +1335,119 @@ export default function DealerOverallDashboard() {
     });
 
     return result;
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, selectedModelRangeFilter, selectedYear]);
+  }, [campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, mergedScheduleOrders, selectedYear]);
+
+  const mapModelRangeMetrics = useMemo(() => {
+    const byRange = new Map<string, { orders: number; forecast: number }>();
+    const ensureRange = (range: string) => {
+      if (!byRange.has(range)) {
+        byRange.set(range, { orders: 0, forecast: 0 });
+      }
+      return byRange.get(range)!;
+    };
+
+    mergedScheduleOrders.forEach((order) => {
+      const range = getModelRange(toStr(order?.Model), toStr((order as any)?.Chassis));
+      if (!ALLOWED_MODEL_RANGES.has(range)) return;
+      const entry = ensureRange(range);
+      const forecastDate = parseDate(order["Forecast Production Date"]);
+      const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
+      if (forecastDate && forecastDate.getFullYear() === selectedYear) entry.forecast += 1;
+      if (receivedDate && receivedDate.getFullYear() === selectedYear) entry.orders += 1;
+    });
+
+    (campervanSchedule || []).forEach((item) => {
+      const range = getModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+      if (!ALLOWED_MODEL_RANGES.has(range)) return;
+      const entry = ensureRange(range);
+      const forecastDate = parseDate(item.forecastProductionDate);
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (forecastDate && forecastDate.getFullYear() === selectedYear) entry.forecast += 1;
+      if (receivedDate && receivedDate.getFullYear() === selectedYear) entry.orders += 1;
+    });
+
+    return Array.from(byRange.entries())
+      .map(([modelRange, row]) => ({ modelRange, ...row }))
+      .sort((a, b) => b.orders + b.forecast - (a.orders + a.forecast));
+  }, [campervanSchedule, mergedScheduleOrders, selectedYear]);
+
+  const mapTimelineFrames = useMemo(() => {
+    const start = new Date(2024, 0, 1);
+    const end = new Date(2026, 0, 1);
+    const totalMonths = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+    const frames = Array.from({ length: totalMonths }, (_, index) => {
+      const cursor = new Date(start.getFullYear(), start.getMonth() + index, 1);
+      const label = cursor.toLocaleDateString("en-AU", { month: "short", year: "numeric" });
+      return {
+        label,
+        cursor,
+        orderTotalsByRange: {} as Record<string, Record<string, number>>,
+        forecastTotalsByRange: {} as Record<string, Record<string, number>>,
+      };
+    }).filter((item) => item.cursor >= start && item.cursor <= end);
+
+    const ensureRangeStateBucket = (bucket: Record<string, Record<string, number>>, range: string) => {
+      if (!bucket[range]) {
+        bucket[range] = MAP_STATE_ORDER.reduce<Record<string, number>>((acc, code) => {
+          acc[code] = 0;
+          return acc;
+        }, {});
+      }
+      return bucket[range];
+    };
+
+    frames.forEach((frame) => {
+      mergedScheduleOrders.forEach((order) => {
+        const range = getModelRange(toStr(order?.Model), toStr((order as any)?.Chassis));
+        if (!ALLOWED_MODEL_RANGES.has(range)) return;
+        const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
+        const state = dealerStateLookup.get(slug);
+        if (!state) return;
+        const orderBucket = ensureRangeStateBucket(frame.orderTotalsByRange, range);
+        const forecastBucket = ensureRangeStateBucket(frame.forecastTotalsByRange, range);
+
+        const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
+        if (receivedDate && receivedDate >= start && receivedDate <= frame.cursor) {
+          orderBucket[state] += 1;
+        }
+
+        const forecastDate = parseDate(order["Forecast Production Date"]);
+        if (forecastDate && forecastDate >= start && forecastDate <= frame.cursor) {
+          forecastBucket[state] += 1;
+        }
+      });
+
+      (campervanSchedule || []).forEach((item) => {
+        const range = getModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+        if (!ALLOWED_MODEL_RANGES.has(range)) return;
+        const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
+        const state = dealerStateLookup.get(slug);
+        if (!state) return;
+        const orderBucket = ensureRangeStateBucket(frame.orderTotalsByRange, range);
+        const forecastBucket = ensureRangeStateBucket(frame.forecastTotalsByRange, range);
+
+        const receivedDate = getCampervanOrderReceivedDate(item);
+        if (receivedDate && receivedDate >= start && receivedDate <= frame.cursor) {
+          orderBucket[state] += 1;
+        }
+
+        const forecastDate = parseDate(item.forecastProductionDate);
+        if (forecastDate && forecastDate >= start && forecastDate <= frame.cursor) {
+          forecastBucket[state] += 1;
+        }
+      });
+    });
+
+    return {
+      orders: frames.map((frame) => ({ label: frame.label, totalsByRange: frame.orderTotalsByRange })),
+      forecast: frames.map((frame) => ({ label: frame.label, totalsByRange: frame.forecastTotalsByRange })),
+    };
+  }, [campervanSchedule, dealerStateLookup, mergedScheduleOrders]);
 
   const mapDealers = useMemo(() => {
     const dealerOrderCount = new Map<string, number>();
-    const matchesModelRange = (value?: string, chassis?: string) => {
-      if (selectedModelRangeFilter === "ALL") return true;
-      return getModelRange(value, chassis) === selectedModelRangeFilter;
-    };
 
-    (allOrders || []).forEach((order) => {
-      if (!matchesModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))) return;
+    mergedScheduleOrders.forEach((order) => {
       const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
       if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
       const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
@@ -1351,7 +1455,6 @@ export default function DealerOverallDashboard() {
     });
 
     (campervanSchedule || []).forEach((item) => {
-      if (!matchesModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))) return;
       const receivedDate = getCampervanOrderReceivedDate(item);
       if (!receivedDate || receivedDate.getFullYear() !== selectedYear) return;
       const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
@@ -1375,7 +1478,99 @@ export default function DealerOverallDashboard() {
         orders: dealerOrderCount.get(dealer.slug) || 0,
       }))
       .filter((dealer) => dealer.state !== "NZ");
-  }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, selectedModelRangeFilter, selectedYear]);
+  }, [campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, mergedScheduleOrders, selectedYear]);
+
+  const orderReceivedExportRows = useMemo(() => {
+    const rows: Array<{ year: number; state: string; modelRange: string }> = [];
+    const supportedYears = new Set([2024, 2025, 2026]);
+
+    mergedScheduleOrders.forEach((order) => {
+      const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
+      if (!receivedDate || !supportedYears.has(receivedDate.getFullYear())) return;
+      const year = receivedDate.getFullYear();
+      const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
+      const state = dealerStateLookup.get(slug) || normalizeDealerState(dealerConfigs?.[slug]?.state);
+      const modelRange = getModelRange(toStr(order?.Model), toStr((order as any)?.Chassis));
+      rows.push({
+        year,
+        state: state === "UNASSIGNED" ? "UNASSIGNED" : state,
+        modelRange: ALLOWED_MODEL_RANGES.has(modelRange) ? modelRange : "OTHER",
+      });
+    });
+
+    (campervanSchedule || []).forEach((item) => {
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (!receivedDate || !supportedYears.has(receivedDate.getFullYear())) return;
+      const year = receivedDate.getFullYear();
+      const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
+      const state = dealerStateLookup.get(slug) || normalizeDealerState(dealerConfigs?.[slug]?.state);
+      const modelRange = getModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+      rows.push({
+        year,
+        state: state === "UNASSIGNED" ? "UNASSIGNED" : state,
+        modelRange: ALLOWED_MODEL_RANGES.has(modelRange) ? modelRange : "OTHER",
+      });
+    });
+
+    return rows;
+  }, [campervanSchedule, dealerConfigs, dealerStateLookup, mergedScheduleOrders]);
+
+  const downloadOrderReceivedExcel = () => {
+    const workbook = XLSX.utils.book_new();
+    const years = [2024, 2025, 2026];
+
+    const yearTotals = years.map((year) => ({
+      Year: year,
+      "Order Received": orderReceivedExportRows.filter((row) => row.year === year).length,
+    }));
+
+    const yearModelRange = Array.from(
+      orderReceivedExportRows.reduce((acc, row) => {
+        const key = `${row.year}__${row.modelRange}`;
+        acc.set(key, (acc.get(key) || 0) + 1);
+        return acc;
+      }, new Map<string, number>()).entries()
+    )
+      .map(([key, count]) => {
+        const [year, modelRange] = key.split("__");
+        return { Year: Number(year), "Model Range": modelRange, "Order Received": count };
+      })
+      .sort((a, b) => a.Year - b.Year || a["Model Range"].localeCompare(b["Model Range"]));
+
+    const yearState = Array.from(
+      orderReceivedExportRows.reduce((acc, row) => {
+        const key = `${row.year}__${row.state}`;
+        acc.set(key, (acc.get(key) || 0) + 1);
+        return acc;
+      }, new Map<string, number>()).entries()
+    )
+      .map(([key, count]) => {
+        const [year, state] = key.split("__");
+        return { Year: Number(year), State: state, "Order Received": count };
+      })
+      .sort((a, b) => a.Year - b.Year || a.State.localeCompare(b.State));
+
+    const yearStateModelRange = Array.from(
+      orderReceivedExportRows.reduce((acc, row) => {
+        const key = `${row.year}__${row.state}__${row.modelRange}`;
+        acc.set(key, (acc.get(key) || 0) + 1);
+        return acc;
+      }, new Map<string, number>()).entries()
+    )
+      .map(([key, count]) => {
+        const [year, state, modelRange] = key.split("__");
+        return { Year: Number(year), State: state, "Model Range": modelRange, "Order Received": count };
+      })
+      .sort((a, b) => a.Year - b.Year || a.State.localeCompare(b.State) || a["Model Range"].localeCompare(b["Model Range"]));
+
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(yearTotals), "Year Totals");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(yearModelRange), "Year Model Range");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(yearState), "Year State");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(yearStateModelRange), "Year State Model");
+
+    const todayLabel = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `${dealerDisplayName.replace(/\s+/g, "_")}_Order_Received_2024_2026_${todayLabel}.xlsx`);
+  };
 
   const modelRangeFilterOptions = useMemo(
     () => ["ALL", ...modelRangeRows.map((row) => row.modelRange)],
@@ -1709,7 +1904,7 @@ export default function DealerOverallDashboard() {
               <p className="text-slate-600 mt-1">Schedule insights and target pacing for {selectedYear}.</p>
             </div>
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-              {[2025, 2026].map((year) => (
+              {[2024, 2025, 2026].map((year) => (
                 <button
                   key={year}
                   type="button"
@@ -1723,6 +1918,14 @@ export default function DealerOverallDashboard() {
                   {year}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={downloadOrderReceivedExcel}
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-emerald-700 transition hover:border-emerald-400 hover:bg-emerald-100"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Excel
+              </button>
             </div>
           </div>
 
@@ -1731,14 +1934,17 @@ export default function DealerOverallDashboard() {
               <AustraliaDealerMap
                 dealers={mapDealers}
                 selectedState={selectedMapState}
+                selectedYear={selectedYear}
                 onSelectState={setSelectedMapState}
-                modelRangeFilter={selectedModelRangeFilter}
+                stateMetrics={stateSummary}
+                timelineFrames={mapTimelineFrames}
+                modelRangeMetrics={mapModelRangeMetrics}
               />
             </>
           )}
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {selectedYear !== 2025 && (
+            {selectedYear !== 2024 && (
               <Card className="overflow-hidden border-slate-200">
                 <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-lime-500 to-teal-500" />
                 <CardHeader className="pb-2">
@@ -1768,7 +1974,7 @@ export default function DealerOverallDashboard() {
               </CardContent>
             </Card>
 
-            {selectedYear !== 2025 && (
+            {selectedYear !== 2024 && (
               <Card className="overflow-hidden border-slate-200">
                 <div className="h-1 w-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500" />
                 <CardHeader className="pb-2">
@@ -1799,45 +2005,51 @@ export default function DealerOverallDashboard() {
                 <p className="text-xs text-slate-500">
                   Target per week: {formatDecimal(targetPerWeek)}
                 </p>
-                <div className="text-xs text-rose-600">Red slots: {formatNumber(redSlotsCount)}</div>
+                {selectedYear !== 2024 ? <div className="text-xs text-rose-600">Red slots: {formatNumber(redSlotsCount)}</div> : null}
               </CardContent>
             </Card>
 
-            <Card className="border-slate-200">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-600 flex items-center gap-2">
-                  <FileX className="h-4 w-4 text-indigo-500" />
-                  Unsigned Orders
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="text-2xl font-semibold text-slate-900">{formatNumber(unsignedCount)}</div>
-                <p className="text-xs text-slate-500 mt-1">Have chassis but no signed plans.</p>
-              </CardContent>
-            </Card>
+            {selectedYear !== 2024 ? (
+              <Card className="border-slate-200">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-slate-600 flex items-center gap-2">
+                    <FileX className="h-4 w-4 text-indigo-500" />
+                    Unsigned Orders
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="text-2xl font-semibold text-slate-900">{formatNumber(unsignedCount)}</div>
+                  <p className="text-xs text-slate-500 mt-1">Have chassis but no signed plans.</p>
+                </CardContent>
+              </Card>
+            ) : null}
 
-            <Card className="border-slate-200">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-600">Red Slots</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="text-2xl font-semibold text-rose-600">{formatNumber(redSlotsCount)}</div>
-                <p className="text-xs text-slate-500 mt-1">Empty slots with FPD &lt; 22 weeks.</p>
-              </CardContent>
-            </Card>
+            {selectedYear !== 2024 ? (
+              <Card className="border-slate-200">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-slate-600">Red Slots</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="text-2xl font-semibold text-rose-600">{formatNumber(redSlotsCount)}</div>
+                  <p className="text-xs text-slate-500 mt-1">Empty slots with FPD &lt; 22 weeks.</p>
+                </CardContent>
+              </Card>
+            ) : null}
 
-            <Card className="border-slate-200">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-slate-600 flex items-center gap-2">
-                  <Boxes className="h-4 w-4 text-slate-500" />
-                  Stock Level
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="text-2xl font-semibold text-slate-900">{formatNumber(stockLevel)}</div>
-                <p className="text-xs text-slate-500 mt-1">Current yard stock count.</p>
-              </CardContent>
-            </Card>
+            {selectedYear !== 2024 ? (
+              <Card className="border-slate-200">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-slate-600 flex items-center gap-2">
+                    <Boxes className="h-4 w-4 text-slate-500" />
+                    Stock Level
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="text-2xl font-semibold text-slate-900">{formatNumber(stockLevel)}</div>
+                  <p className="text-xs text-slate-500 mt-1">Current yard stock count.</p>
+                </CardContent>
+              </Card>
+            ) : null}
           </div>
         </header>
 
