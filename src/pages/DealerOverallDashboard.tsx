@@ -1335,73 +1335,6 @@ export default function DealerOverallDashboard() {
     return result;
   }, [allOrders, campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, selectedModelRangeFilter, selectedYear]);
 
-  const mapTimelineFrames = useMemo(() => {
-    const start = new Date(2025, 0, 1);
-    const end = new Date(2026, 0, 1);
-    const frames = Array.from({ length: 13 }, (_, index) => {
-      const cursor = new Date(2025, index, 1);
-      const label = cursor.toLocaleDateString("en-AU", { month: "short", year: "numeric" });
-      return {
-        label,
-        cursor,
-        orderTotals: MAP_STATE_ORDER.reduce<Record<string, number>>((acc, code) => {
-          acc[code] = 0;
-          return acc;
-        }, {}),
-        forecastTotals: MAP_STATE_ORDER.reduce<Record<string, number>>((acc, code) => {
-          acc[code] = 0;
-          return acc;
-        }, {}),
-      };
-    }).filter((item) => item.cursor >= start && item.cursor <= end);
-
-    const matchesModelRange = (value?: string, chassis?: string) => {
-      if (selectedModelRangeFilter === "ALL") return true;
-      return getModelRange(value, chassis) === selectedModelRangeFilter;
-    };
-
-    frames.forEach((frame) => {
-      (allOrders || []).forEach((order) => {
-        if (!matchesModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))) return;
-        const slug = normalizeDealerSlug(slugifyDealerName(order?.Dealer));
-        const state = dealerStateLookup.get(slug);
-        if (!state || !(state in frame.orderTotals)) return;
-
-        const receivedDate = parseFlexibleDateToDate(order["Order Received Date"] ?? undefined);
-        if (receivedDate && receivedDate >= start && receivedDate <= frame.cursor) {
-          frame.orderTotals[state] += 1;
-        }
-
-        const forecastDate = parseDate(order["Forecast Production Date"]);
-        if (forecastDate && forecastDate >= start && forecastDate <= frame.cursor) {
-          frame.forecastTotals[state] += 1;
-        }
-      });
-
-      (campervanSchedule || []).forEach((item) => {
-        if (!matchesModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))) return;
-        const slug = normalizeDealerSlug(slugifyDealerName((item as any)?.dealer));
-        const state = dealerStateLookup.get(slug);
-        if (!state || !(state in frame.orderTotals)) return;
-
-        const receivedDate = getCampervanOrderReceivedDate(item);
-        if (receivedDate && receivedDate >= start && receivedDate <= frame.cursor) {
-          frame.orderTotals[state] += 1;
-        }
-
-        const forecastDate = parseDate(item.forecastProductionDate);
-        if (forecastDate && forecastDate >= start && forecastDate <= frame.cursor) {
-          frame.forecastTotals[state] += 1;
-        }
-      });
-    });
-
-    return {
-      orders: frames.map((frame) => ({ label: frame.label, totals: frame.orderTotals })),
-      forecast: frames.map((frame) => ({ label: frame.label, totals: frame.forecastTotals })),
-    };
-  }, [allOrders, campervanSchedule, dealerStateLookup, selectedModelRangeFilter]);
-
   const mapDealers = useMemo(() => {
     const dealerOrderCount = new Map<string, number>();
     const matchesModelRange = (value?: string, chassis?: string) => {
@@ -1800,8 +1733,6 @@ export default function DealerOverallDashboard() {
                 selectedState={selectedMapState}
                 onSelectState={setSelectedMapState}
                 modelRangeFilter={selectedModelRangeFilter}
-                stateMetrics={stateSummary}
-                timelineFrames={mapTimelineFrames}
               />
             </>
           )}
