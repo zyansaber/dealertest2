@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { setDealerConfig, subscribeAllDealerConfigs } from "@/lib/firebase";
+import { setDealerConfig, subscribeAllDealerConfigs, subscribeToCampervanSchedule, subscribeToSchedule, subscribeToSchedule2024 } from "@/lib/firebase";
+import type { CampervanScheduleItem, ScheduleItem } from "@/types";
 
 const STATE_OPTIONS = ["WA", "NT", "SA", "QLD", "NSW", "ACT", "VIC", "TAS", "NZ", "UNASSIGNED"];
 
@@ -45,27 +46,77 @@ const normalizeState = (value: unknown) => {
   return STATE_OPTIONS.includes(upper) ? upper : "UNASSIGNED";
 };
 
+const slugifyDealerName = (name?: string) =>
+  String(name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const prettifyDealerName = (slug: string) =>
+  slug
+    .replace(/-/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+
 export default function DealerStateAdmin() {
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
   const [savingSlug, setSavingSlug] = useState<string | null>(null);
+  const [scheduleOrders, setScheduleOrders] = useState<ScheduleItem[]>([]);
+  const [scheduleOrders2024, setScheduleOrders2024] = useState<ScheduleItem[]>([]);
+  const [campervans, setCampervans] = useState<CampervanScheduleItem[]>([]);
 
   useEffect(() => {
+    const scheduleOptions = { includeNoChassis: true, includeNoCustomer: true, includeFinished: true };
     const unsubscribe = subscribeAllDealerConfigs((data) => setDealerConfigs(data || {}));
-    return unsubscribe;
+    const unsubSchedule = subscribeToSchedule((data) => setScheduleOrders(data || []), scheduleOptions);
+    const unsubSchedule2024 = subscribeToSchedule2024((data) => setScheduleOrders2024(data || []), scheduleOptions);
+    const unsubCamper = subscribeToCampervanSchedule((data) => setCampervans(data || []));
+
+    return () => {
+      unsubscribe?.();
+      unsubSchedule?.();
+      unsubSchedule2024?.();
+      unsubCamper?.();
+    };
   }, []);
 
   const dealerRows = useMemo(() => {
-    const rows = MANAGED_STATE_SLUGS.map((slug) => {
+    const slugMap = new Map<string, { slug: string; name: string; config: any }>();
+
+    MANAGED_STATE_SLUGS.forEach((slug) => {
       const config = dealerConfigs?.[slug] || null;
-      return {
-        slug,
-        name: config?.name || slug,
-        config,
-      };
+      slugMap.set(slug, { slug, name: config?.name || prettifyDealerName(slug), config });
     });
 
-    return rows.sort((a, b) => a.name.localeCompare(b.name));
-  }, [dealerConfigs]);
+    Object.entries(dealerConfigs || {}).forEach(([slug, config]) => {
+      const normalized = slugifyDealerName(slug);
+      if (!normalized) return;
+      slugMap.set(normalized, {
+        slug: normalized,
+        name: config?.name || prettifyDealerName(normalized),
+        config,
+      });
+    });
+
+    [...scheduleOrders, ...scheduleOrders2024].forEach((order) => {
+      const slug = slugifyDealerName((order as any)?.Dealer);
+      if (!slug) return;
+      if (!slugMap.has(slug)) {
+        slugMap.set(slug, { slug, name: prettifyDealerName(slug), config: dealerConfigs?.[slug] || null });
+      }
+    });
+
+    campervans.forEach((item) => {
+      const slug = slugifyDealerName((item as any)?.dealer);
+      if (!slug) return;
+      if (!slugMap.has(slug)) {
+        slugMap.set(slug, { slug, name: prettifyDealerName(slug), config: dealerConfigs?.[slug] || null });
+      }
+    });
+
+    return Array.from(slugMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [campervans, dealerConfigs, scheduleOrders, scheduleOrders2024]);
 
   const updateState = async (slug: string, state: string) => {
     const existing = dealerConfigs?.[slug] || {};
@@ -109,6 +160,7 @@ export default function DealerStateAdmin() {
         <Card>
           <CardHeader>
             <CardTitle>Dealer State Configuration</CardTitle>
+            <p className="text-sm text-slate-500">All dealers found in configs + schedule + 2024schedule + campervan schedule are listed here.</p>
           </CardHeader>
           <CardContent>
             <Table>
