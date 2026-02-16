@@ -73,112 +73,43 @@ export type DeliveryToAssignment = {
   updatedAt: string;
 };
 
-const extractUploadRows = (uploadNode: unknown) => {
-  if (!uploadNode || typeof uploadNode !== "object") return [] as any[];
-  const node = uploadNode as Record<string, any>;
-
-  if (Array.isArray(node?.data)) {
-    return node.data.filter((row) => row && typeof row === "object");
-  }
-
-  const skip = new Set(["uploaded_at", "row_count", "data"]);
-  return Object.entries(node)
-    .filter(([key, value]) => !skip.has(key) && value && typeof value === "object")
-    .map(([, value]) => value);
-};
-
-const looksLikeTimestampUploadKey = (key: string) => /^\d{8}_\d{6}$/.test(key);
-
-const extractScheduleRows = (raw: unknown) => {
-  if (!raw) return [] as any[];
-
-  if (Array.isArray(raw)) {
-    return raw.filter((item) => item && typeof item === "object");
-  }
-
-  if (typeof raw !== "object") return [] as any[];
-  const record = raw as Record<string, any>;
-
-  if (Array.isArray(record?.data)) {
-    return record.data.filter((item) => item && typeof item === "object");
-  }
-
-  const keys = Object.keys(record);
-  const timestampKeys = keys.filter(looksLikeTimestampUploadKey).sort();
-  if (timestampKeys.length > 0) {
-    const latestKey = timestampKeys[timestampKeys.length - 1];
-    return extractUploadRows(record[latestKey]);
-  }
-
-  return Object.values(record).filter((item) => item && typeof item === "object");
-};
-
-const parseScheduleSnapshot = (
-  snapshot: DataSnapshot,
-  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => {
-  const { includeNoChassis = false, includeNoCustomer = false, includeFinished = false } = options;
-  const raw = snapshot.val();
-
-  const list = extractScheduleRows(raw);
-
-  return list.filter((item: any) => {
-    if (!includeFinished) {
-      const rp = String(item?.["Regent Production"] ?? "").toLowerCase();
-      if (rp === "finished" || rp === "finish") return false;
-    }
-    if (!includeNoChassis) {
-      if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
-    }
-    if (!includeNoCustomer) {
-      if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
-    }
-    return true;
-  }) as ScheduleItem[];
-};
-
-const subscribeToSchedulePath = (
-  path: string,
-  callback: (data: ScheduleItem[]) => void,
-  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => {
-  const scheduleRef = ref(database, path);
-
-  const handler = (snapshot: DataSnapshot) => {
-    callback(parseScheduleSnapshot(snapshot, options));
-  };
-
-  onValue(scheduleRef, handler);
-  return () => off(scheduleRef, "value", handler);
-};
-
 /** -------------------- schedule -------------------- */
 export const subscribeToSchedule = (
   callback: (data: ScheduleItem[]) => void,
   options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => subscribeToSchedulePath("schedule", callback, options);
-
-export const subscribeToSchedule2024 = (
-  callback: (data: ScheduleItem[]) => void,
-  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
-) => subscribeToSchedulePath("2024schedule", callback, options);
-
-export const subscribeToDealerStateMapping = (
-  callback: (data: Record<string, any> | any[]) => void
 ) => {
-  const stateRef = ref(database, "state");
+  const { includeNoChassis = false, includeNoCustomer = false, includeFinished = false } = options;
+
+  const scheduleRef = ref(database, "schedule");
 
   const handler = (snapshot: DataSnapshot) => {
     const raw = snapshot.val();
-    if (!raw) {
-      callback({});
-      return;
-    }
-    callback(raw);
+
+    const list: any[] = raw
+      ? Array.isArray(raw)
+        ? raw.filter(Boolean)
+        : Object.values(raw).filter(Boolean)
+      : [];
+
+    const filtered: ScheduleItem[] = list.filter((item: any) => {
+      if (!includeFinished) {
+        const rp = String(item?.["Regent Production"] ?? "").toLowerCase();
+        if (rp === "finished" || rp === "finish") return false;
+      }
+      if (!includeNoChassis) {
+        if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
+      }
+      if (!includeNoCustomer) {
+        if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
+      }
+      return true;
+    });
+
+    callback(filtered);
   };
 
-  onValue(stateRef, handler);
-  return () => off(stateRef, "value", handler);
+  onValue(scheduleRef, handler);
+  return () => off(scheduleRef, "value", handler);
 };
 
 /** -------------------- campervan schedule -------------------- */
