@@ -254,7 +254,7 @@ export default function AustraliaDealerMap({
         }
         return prev + 1;
       });
-    }, 850);
+    }, 450);
     return () => window.clearInterval(timer);
   }, [activeFrames.length, animating]);
 
