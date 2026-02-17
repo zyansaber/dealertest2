@@ -554,22 +554,16 @@ export default function DealerOverallDashboard() {
     };
   }, [activeAggregateSlugs, dealerSlug, isGroupAggregate]);
 
-  const dealerOrdersAll = useMemo(() => {
-    if (!dealerSlug) {
-      if (!filteredStateSlugs) return mergedScheduleOrders;
-      return mergedScheduleOrders.filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
-    }
+  const allScopeOrders = useMemo(() => {
+    if (!dealerSlug) return mergedScheduleOrders;
     if (isGroupAggregate) {
       return mergedScheduleOrders.filter((order) => activeAggregateSlugs.includes(slugifyDealerName(order?.Dealer)));
     }
     return mergedScheduleOrders.filter((order) => slugifyDealerName(order?.Dealer) === dealerSlug);
-  }, [activeAggregateSlugs, dealerSlug, filteredStateSlugs, isGroupAggregate, mergedScheduleOrders]);
+  }, [activeAggregateSlugs, dealerSlug, isGroupAggregate, mergedScheduleOrders]);
 
-  const dealerCampervanSchedule = useMemo(() => {
-    if (!dealerSlug) {
-      if (!filteredStateSlugs) return campervanSchedule || [];
-      return (campervanSchedule || []).filter((item) => filteredStateSlugs.has(slugifyDealerName((item as any)?.dealer)));
-    }
+  const allScopeCampervanSchedule = useMemo(() => {
+    if (!dealerSlug) return campervanSchedule || [];
     if (isGroupAggregate) {
       return (campervanSchedule || []).filter((item) =>
         activeAggregateSlugs.includes(slugifyDealerName((item as any)?.dealer))
@@ -578,7 +572,21 @@ export default function DealerOverallDashboard() {
     return (campervanSchedule || []).filter(
       (item) => slugifyDealerName((item as any)?.dealer) === dealerSlug
     );
-  }, [activeAggregateSlugs, campervanSchedule, dealerSlug, filteredStateSlugs, isGroupAggregate]);
+  }, [activeAggregateSlugs, campervanSchedule, dealerSlug, isGroupAggregate]);
+
+  const dealerOrdersAll = useMemo(() => {
+    if (!dealerSlug && filteredStateSlugs) {
+      return allScopeOrders.filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
+    }
+    return allScopeOrders;
+  }, [allScopeOrders, dealerSlug, filteredStateSlugs]);
+
+  const dealerCampervanSchedule = useMemo(() => {
+    if (!dealerSlug && filteredStateSlugs) {
+      return allScopeCampervanSchedule.filter((item) => filteredStateSlugs.has(slugifyDealerName((item as any)?.dealer)));
+    }
+    return allScopeCampervanSchedule;
+  }, [allScopeCampervanSchedule, dealerSlug, filteredStateSlugs]);
 
   const dealerOrders = useMemo(
     () => dealerOrdersAll.filter((order) => hasChassis(order) && toStr(order.Customer).trim() !== ""),
@@ -683,6 +691,15 @@ export default function DealerOverallDashboard() {
 
   const forecastYearCount = forecastYearOrders.length;
   const forecastYearWithChassis = forecastYearOrders.filter((order) => hasChassis(order)).length;
+
+  const modifiedYearlyTargetCount = useMemo(() => {
+    const scheduleCount = allScopeOrders.filter((order) => getYear(order["Forecast Production Date"]) === selectedYear).length;
+    const campervanCount = allScopeCampervanSchedule.filter((item) => {
+      const forecastDate = parseDate(item.forecastProductionDate);
+      return !!forecastDate && forecastDate.getFullYear() === selectedYear;
+    }).length;
+    return scheduleCount + campervanCount;
+  }, [allScopeCampervanSchedule, allScopeOrders, selectedYear]);
 
   const orderReceivedYearOrders = useMemo(() => {
     const scheduleOrders = dealerOrdersAll.filter((order) => {
@@ -2052,11 +2069,11 @@ export default function DealerOverallDashboard() {
                   <CardTitle className="text-sm text-slate-600">Modified Yearly Target in {selectedYear}</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0 space-y-2">
-                  <div className={`text-3xl font-bold tracking-tight ${deltaColor(forecastYearCount, initialTarget)}`}>
-                    {formatNumber(forecastYearCount)}
+                  <div className={`text-3xl font-bold tracking-tight ${deltaColor(modifiedYearlyTargetCount, initialTarget)}`}>
+                    {formatNumber(modifiedYearlyTargetCount)}
                   </div>
                   <p className="text-xs text-slate-500">Initial Target: {formatNumber(initialTarget)}</p>
-                  <DeltaIndicator actual={forecastYearCount} target={initialTarget} />
+                  <DeltaIndicator actual={modifiedYearlyTargetCount} target={initialTarget} />
                 </CardContent>
               </Card>
             )}
