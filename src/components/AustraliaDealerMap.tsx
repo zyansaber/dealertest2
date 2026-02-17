@@ -110,21 +110,6 @@ const RING_RADIUS = 28;
 
 const formatInt = (n: number) => new Intl.NumberFormat("en-AU").format(n);
 
-const parseFrameLabelToDate = (label?: string) => {
-  if (!label) return null;
-  const parsed = new Date(`${label} 01`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-};
-
-const formatMonthYearWatermark = (label?: string) => {
-  const parsed = parseFrameLabelToDate(label);
-  if (!parsed) return "--/----";
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const year = String(parsed.getFullYear());
-  return `${month}/${year}`;
-};
-
 export default function AustraliaDealerMap({
   dealers,
   selectedState,
@@ -212,13 +197,6 @@ export default function AustraliaDealerMap({
     return timelineFrames?.[metricFilter] || [];
   }, [metricFilter, timelineFrames]);
 
-  const orderFrames = useMemo(() => timelineFrames?.orders || [], [timelineFrames]);
-
-  const playbackStartIndex = useMemo(() => {
-    const idx = activeFrames.findIndex((frame) => frame.label.includes("2024"));
-    return idx >= 0 ? idx : 0;
-  }, [activeFrames]);
-
   const frameRangeForYear = useMemo(() => {
     const frameIndexes = activeFrames
       .map((frame, index) => ({ frame, index }))
@@ -254,7 +232,7 @@ export default function AustraliaDealerMap({
         }
         return prev + 1;
       });
-    }, 850);
+    }, 450);
     return () => window.clearInterval(timer);
   }, [activeFrames.length, animating]);
 
@@ -342,48 +320,6 @@ export default function AustraliaDealerMap({
   const latestFrameLabel = activeFrames[frameRangeForYear.endIndex]?.label;
   const frameLabel = activeFrames[Math.min(frameIndex, Math.max(0, activeFrames.length - 1))]?.label;
   const shownFrameLabel = !animating && !hasPlayed ? latestFrameLabel : frameLabel;
-  const watermarkText = formatMonthYearWatermark(shownFrameLabel);
-  const shownFrameDate = parseFrameLabelToDate(shownFrameLabel);
-  const shownYear = shownFrameDate?.getFullYear() ?? selectedYear;
-
-  const yearlyAverageSeries = useMemo(() => {
-    const yearMap = new Map<number, { sum: number; count: number }>();
-
-    const getFrameTotal = (frame: TimelineFrame) =>
-      Object.entries(frame.totalsByRange || {}).reduce((acc, [range, totals]) => {
-        if (!modelRangeSet.has(range)) return acc;
-        return acc + Object.values(totals || {}).reduce((sum, value) => sum + (value || 0), 0);
-      }, 0);
-
-    orderFrames.forEach((frame, index) => {
-      const frameDate = parseFrameLabelToDate(frame.label);
-      if (!frameDate) return;
-      const year = frameDate.getFullYear();
-
-      const currentCumulative = getFrameTotal(frame);
-      const previousCumulative = index > 0 ? getFrameTotal(orderFrames[index - 1]) : 0;
-      const monthValue = Math.max(0, currentCumulative - previousCumulative);
-
-      const stat = yearMap.get(year) || { sum: 0, count: 0 };
-      stat.sum += monthValue;
-      stat.count += 1;
-      yearMap.set(year, stat);
-    });
-
-    return Array.from(yearMap.entries())
-      .map(([year, stat]) => ({
-        year,
-        average: stat.count > 0 ? stat.sum / stat.count : 0,
-      }))
-      .sort((a, b) => a.year - b.year);
-  }, [modelRangeSet, orderFrames]);
-
-  const shownYearAverage = yearlyAverageSeries.find((row) => row.year === shownYear);
-  const previousYearAverage = yearlyAverageSeries.find((row) => row.year === shownYear - 1);
-  const yearlyAverageDelta = useMemo(() => {
-    if (!shownYearAverage || !previousYearAverage || previousYearAverage.average <= 0) return null;
-    return ((shownYearAverage.average - previousYearAverage.average) / previousYearAverage.average) * 100;
-  }, [previousYearAverage, shownYearAverage]);
   const modelRangeMetricTotal = useMemo(() => {
     if (metricFilter === "target") return 0;
     return modelRangeMetrics.reduce((sum, row) => sum + (metricFilter === "orders" ? row.orders : row.forecast), 0);
@@ -410,7 +346,7 @@ export default function AustraliaDealerMap({
             <button
               onClick={() => {
                 if (activeFrames.length <= 1 || metricFilter === "target") return;
-                setFrameIndex(playbackStartIndex);
+                setFrameIndex(frameRangeForYear.startIndex);
                 setHasPlayed(true);
                 setAnimating(true);
               }}
@@ -439,43 +375,6 @@ export default function AustraliaDealerMap({
       <CardContent className="p-4">
         <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_250px]">
           <div className="relative h-[680px] overflow-hidden rounded-2xl border border-slate-300 bg-gradient-to-br from-slate-100 via-sky-100 to-indigo-100 shadow-sm pl-6">
-            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-lg border border-slate-300 bg-white/95 p-2 shadow-sm">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Color Legend</p>
-              <div
-                className="mt-1 h-2.5 w-40 rounded-full border border-slate-200"
-                style={{
-                  background: `linear-gradient(90deg, ${colorScale(0, Math.max(maxOrders, 1))} 0%, ${colorScale(Math.max(maxOrders, 1) / 2, Math.max(maxOrders, 1))} 50%, ${colorScale(Math.max(maxOrders, 1), Math.max(maxOrders, 1))} 100%)`,
-                }}
-              />
-              <div className="mt-1 flex justify-between text-[10px] font-semibold text-slate-600">
-                <span>0</span>
-                <span>{formatInt(Math.round(maxOrders / 2))}</span>
-                <span>{formatInt(maxOrders)}</span>
-              </div>
-            </div>
-
-            <div className="pointer-events-none absolute right-4 top-4 z-10 min-w-[132px] rounded-xl border border-slate-300 bg-white/95 px-3 py-2 text-right shadow-sm">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Time</p>
-              <p className="text-lg font-bold tracking-wide text-slate-900">{watermarkText}</p>
-              <div className="mt-1 border-t border-slate-200 pt-1 text-[11px]">
-                <p className="font-semibold text-slate-700">
-                  Avg Month Order/{shownYear}: {formatInt(Math.round(shownYearAverage?.average || 0))}
-                </p>
-                <p className={[
-                  "font-semibold",
-                  yearlyAverageDelta === null
-                    ? "text-slate-500"
-                    : yearlyAverageDelta >= 0
-                      ? "text-emerald-700"
-                      : "text-rose-700",
-                ].join(" ")}>
-                  {yearlyAverageDelta === null
-                    ? "YoY: N/A"
-                    : `YoY: ${yearlyAverageDelta >= 0 ? "+" : ""}${yearlyAverageDelta.toFixed(1)}%`}
-                </p>
-              </div>
-            </div>
-
             <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="relative z-0 h-full w-full">
               <defs>
                 <linearGradient id="ringStroke" x1="0" y1="0" x2="1" y2="1">
