@@ -18,7 +18,6 @@ import {
   dispatchFromYard,
   subscribeToHandover,
   uploadDeliveryDocument,
-  reportInvalidStock,
   subscribeDealerConfig,
   subscribeToSpecPlan,
   subscribeDeliveryToAssignments,
@@ -209,9 +208,6 @@ const currencyFormatter = new Intl.NumberFormat("en-AU", {
 
 const HANDOVER_CHART_START = new Date(2026, 0, 1);
 
-const REPORT_EMAIL_SERVICE = "service_d39k2lv";
-const REPORT_EMAIL_TEMPLATE = "template_jp0j1s4";
-const REPORT_EMAIL_PUBLIC_KEY = "Ox1_IwykSClDMOhqz";
 
 const extractVin = (source: any): string | null => {
   if (source == null) return null;
@@ -1207,29 +1203,7 @@ export default function DealerYard() {
     openAddDialog(ch);
   };
 
-  const handleReportIssue = async (row: { chassis: string; model?: string | null }) => {
-    try {
-      await reportInvalidStock(dealerSlug, row.chassis);
-      if (!REPORT_EMAIL_SERVICE || !REPORT_EMAIL_PUBLIC_KEY || !REPORT_EMAIL_TEMPLATE) {
-        toast.success("Report logged. Email configuration is missing, so no email was sent.");
-        return;
-      }
-      await emailjs.send(
-        REPORT_EMAIL_SERVICE,
-        REPORT_EMAIL_TEMPLATE,
-        {
-          dealer_slug: dealerSlug,
-          chassis: row.chassis,
-          model: toStr(row.model) || "-",
-        },
-        REPORT_EMAIL_PUBLIC_KEY
-      );
-      toast.success("Report sent successfully.");
-    } catch (error) {
-      console.error("Failed to send report", error);
-      toast.error("Failed to send report. Please try again.");
-    }
-  };
+
 
   const handleViewSpec = (chassis: string) => {
     const specUrl = specByChassis[chassis];
@@ -2169,14 +2143,13 @@ export default function DealerYard() {
                           </TableHead>
                           <TableHead className="font-semibold">Spec</TableHead>
                           <TableHead className="font-semibold">Plan</TableHead>
-                          <TableHead className="font-semibold">Report invalid stock</TableHead>
                           <TableHead className="font-semibold">Handover</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pendingYardList.length > 0 && (
                           <TableRow className="bg-amber-50/60">
-                            <TableCell colSpan={showPriceColumn ? 11 : 10} className="text-sm font-semibold text-amber-700">
+                            <TableCell colSpan={showPriceColumn ? 10 : 9} className="text-sm font-semibold text-amber-700">
                               Pending Into Yard
                             </TableCell>
                           </TableRow>
@@ -2192,9 +2165,6 @@ export default function DealerYard() {
                               <span className="text-amber-700 font-medium">Pending</span>
                             </TableCell>
                             <TableCell>{row.daysInYard}</TableCell>
-                            <TableCell>
-                              <span className="text-xs uppercase tracking-wide text-slate-400">Pending</span>
-                            </TableCell>
                             <TableCell>
                               <span className="text-xs uppercase tracking-wide text-slate-400">Pending</span>
                             </TableCell>
@@ -2237,16 +2207,6 @@ export default function DealerYard() {
                                 onClick={() => handleViewPlan(row.chassis)}
                               >
                                 Plan
-                              </Button>
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-amber-500 text-amber-700 hover:bg-amber-50"
-                                onClick={() => handleReportIssue(row)}
-                              >
-                                Report
                               </Button>
                             </TableCell>
                             <TableCell>

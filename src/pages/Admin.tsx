@@ -21,9 +21,7 @@ import {
   setPowerbiUrl,
   generateRandomCode,
   dealerNameToSlug,
-  subscribeToStockRectificationAll,
   subscribeToYardPendingAll,
-  clearDealerRectificationData
 } from "@/lib/firebase";
 import { isDealerGroup } from "@/types/dealer";
 import { ALL_DEALERSHIP_OPTIONS } from "@/constants/productRegistrationOptions";
@@ -36,22 +34,16 @@ export default function Admin() {
   const [powerbiUrl, setPowerbiUrlInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [pgiRecords, setPgiRecords] = useState<Record<string, any>>({});
-  const [stockRectification, setStockRectification] = useState<Record<string, any>>({});
-  const [yardPendingAll, setYardPendingAll] = useState<Record<string, any>>({});
   const [bulkDealerSlug, setBulkDealerSlug] = useState("");
   const [bulkChassisInput, setBulkChassisInput] = useState("");
   const [bulkReceiving, setBulkReceiving] = useState(false);
   const [historyDealerSlug, setHistoryDealerSlug] = useState("");
   const [historyUpdating, setHistoryUpdating] = useState(false);
-  const [rectificationClearingDealer, setRectificationClearingDealer] = useState<string | null>(null);
 
   // Dealer Group states
   const [newGroupName, setNewGroupName] = useState("");
   const [selectedDealersForGroup, setSelectedDealersForGroup] = useState<string[]>([]);
 
-  const rectificationDealers = Array.from(
-    new Set([...Object.keys(stockRectification || {}), ...Object.keys(yardPendingAll || {})])
-  ).sort();
 
   // 订阅经销商配置数据
   useEffect(() => {
@@ -71,19 +63,9 @@ export default function Admin() {
     return unsubscribe;
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToStockRectificationAll((data) => {
-      setStockRectification(data || {});
-    });
-    return unsubscribe;
-  }, []);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToYardPendingAll((data) => {
-      setYardPendingAll(data || {});
-    });
-    return unsubscribe;
-  }, []);
+
+
 
   const addDealer = async () => {
     if (!newDealer.trim()) {
@@ -271,19 +253,7 @@ export default function Admin() {
     }
   };
 
-  const clearRectificationForDealer = async (dealerSlug: string) => {
-    const dealerName = dealerConfigs?.[dealerSlug]?.name || dealerSlug;
-    try {
-      setRectificationClearingDealer(dealerSlug);
-      await clearDealerRectificationData(dealerSlug);
-      toast.success(`Cleared stock rectification data for ${dealerName}`);
-    } catch (error) {
-      console.error("Failed to clear stock rectification data:", error);
-      toast.error("Failed to clear stock rectification data. Please try again.");
-    } finally {
-      setRectificationClearingDealer(null);
-    }
-  };
+
 
   const updateInitialTarget2026 = async (dealerSlug: string, value: string) => {
     const config = dealerConfigs[dealerSlug];
@@ -514,7 +484,6 @@ export default function Admin() {
             <TabsTrigger value="groups">Dealer Groups</TabsTrigger>
             <TabsTrigger value="powerbi">PowerBI Configuration</TabsTrigger>
             <TabsTrigger value="bulk-receive">Bulk Receive</TabsTrigger>
-            <TabsTrigger value="stock-rectification">Stock Rectification</TabsTrigger>
           </TabsList>
 
           {/* Dealer Management Tab */}
@@ -1209,61 +1178,7 @@ export default function Admin() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="stock-rectification" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Stock Rectification</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {rectificationDealers.length === 0 ? (
-                  <p className="text-slate-500 text-center py-8">No stock rectification requests yet.</p>
-                ) : (
-                  <div className="rounded-lg border overflow-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="font-semibold">Dealer</TableHead>
-                          <TableHead className="font-semibold">Chassis</TableHead>
-                          <TableHead className="font-semibold text-right">Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rectificationDealers.map((dealerSlug) => {
-                          const reportEntries = Object.keys(stockRectification?.[dealerSlug] || {});
-                          const pendingEntries = Object.keys(yardPendingAll?.[dealerSlug] || {});
-                          return (
-                            <TableRow key={dealerSlug}>
-                              <TableCell className="font-medium">{dealerConfigs?.[dealerSlug]?.name || dealerSlug}</TableCell>
-                              <TableCell className="space-y-1">
-                                <div>
-                                  <span className="text-xs uppercase tracking-wide text-slate-500">Report invalid stock:</span>{" "}
-                                  {reportEntries.length > 0 ? reportEntries.join(", ") : "—"}
-                                </div>
-                                <div>
-                                  <span className="text-xs uppercase tracking-wide text-slate-500">Add to yard:</span>{" "}
-                                  {pendingEntries.length > 0 ? pendingEntries.join(", ") : "—"}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => clearRectificationForDealer(dealerSlug)}
-                                  disabled={rectificationClearingDealer === dealerSlug}
-                                >
-                                  {rectificationClearingDealer === dealerSlug ? "Clearing..." : "Clear reported fields"}
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+
         </Tabs>
       </div>
     </div>

@@ -101,17 +101,4 @@
 }
 
 @layer utilities {
-  @keyframes stock-rectification-glow {
-    0%,
-    100% {
-      box-shadow: 0 0 0 rgba(251, 191, 36, 0.25);
-    }
-    50% {
-      box-shadow: 0 0 18px rgba(251, 191, 36, 0.75);
-    }
-  }
-
-  .stock-rectification-glow {
-    animation: stock-rectification-glow 1.5s ease-in-out infinite;
-  }
 }
