@@ -37,6 +37,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isDealerGroup } from "@/types/dealer";
 import { PRICE_ENABLED_DEALERS } from "@/constants/dealerSettings";
 
@@ -58,6 +59,7 @@ type HandoverRec = {
   createdAt?: string | null;
   dealerSlug?: string | null;
   dealerName?: string | null;
+  materialCode?: string | null;
 };
 
 const toStr = (v: unknown) => String(v ?? "");
@@ -132,10 +134,20 @@ function fmtMonthLabel(d: Date): string {
 function fmtWeekLabel(d: Date): string {
   return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
 }
-function isSecondhandChassis(chassis?: string | null): boolean {
-  if (!chassis) return false;
-  const c = String(chassis).toUpperCase();
-  return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function isSecondhandByMaterialCode(materialCode?: string | null): boolean {
+  if (!materialCode) return false;
+  return String(materialCode).trim().toUpperCase().startsWith("Z19");
+}
+function isStockCustomer(customer?: string | null): boolean {
+  return /stock$/i.test(toStr(customer).trim());
+}
+function toTimestamp(dateString?: string | null): number {
+  if (!dateString) return 0;
+  const parsed = new Date(dateString).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 const currencyFormatter = new Intl.NumberFormat("en-AU", {
@@ -346,15 +358,7 @@ export default function DealerGroupYard() {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [deliveryToAssignments, setDeliveryToAssignments] = useState<Record<string, any>>({});
 
-  // On The Road date range (PGI list controls)
-  const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
-  const [customStart, setCustomStart] = useState<string>("");
-  const [customEnd, setCustomEnd] = useState<string>("");
-
-  // KPI date range (independent)
-  const [kpiRangeType, setKpiRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
-  const [kpiCustomStart, setKpiCustomStart] = useState<string>("");
-  const [kpiCustomEnd, setKpiCustomEnd] = useState<string>("");
+  const [kpiTrendMode, setKpiTrendMode] = useState<"weekly" | "monthly">("monthly");
 
   // Modal
   const [handoverOpen, setHandoverOpen] = useState(false);
@@ -374,6 +378,8 @@ export default function DealerGroupYard() {
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
   const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
   const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
+  const [kpiMonthKey, setKpiMonthKey] = useState<string>(() => fmtMonthKey(new Date()));
+  const [selectedTrendLabel, setSelectedTrendLabel] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubPGI = subscribeToPGIRecords((data) => setPgi(data || {}));
@@ -464,51 +470,10 @@ export default function DealerGroupYard() {
     return entries.map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
-  // PGI list date range
-  const [startDate, endDate] = useMemo(() => {
-    if (rangeType === "custom" && customStart && customEnd) {
-      const s = new Date(customStart);
-      const e = new Date(customEnd);
-      e.setHours(23, 59, 59, 999);
-      return [s, e] as [Date, Date];
-    }
-    const mapDays: Record<typeof rangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
-    const days = mapDays[rangeType];
-    const e = new Date();
-    e.setHours(23, 59, 59, 999);
-    const s = new Date();
-    s.setDate(e.getDate() - (days - 1));
-    s.setHours(0, 0, 0, 0);
-    return [s, e] as [Date, Date];
-  }, [rangeType, customStart, customEnd]);
-
   const onTheRoadInRange = useMemo(
-    () =>
-      onTheRoadAll.filter(
-        (row) =>
-          resolveEffectiveDealerSlug(row) === dealerSlug &&
-          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), startDate, endDate)
-      ),
-    [onTheRoadAll, dealerSlug, startDate, endDate, resolveEffectiveDealerSlug]
+    () => onTheRoadAll.filter((row) => resolveEffectiveDealerSlug(row) === dealerSlug),
+    [onTheRoadAll, dealerSlug, resolveEffectiveDealerSlug]
   );
-
-  // KPI date range separate
-  const [kpiStartDate, kpiEndDate] = useMemo(() => {
-    if (kpiRangeType === "custom" && kpiCustomStart && kpiCustomEnd) {
-      const s = new Date(kpiCustomStart);
-      const e = new Date(kpiCustomEnd);
-      e.setHours(23, 59, 59, 999);
-      return [s, e] as [Date, Date];
-    }
-    const mapDays: Record<typeof kpiRangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
-    const days = mapDays[kpiRangeType];
-    const e = new Date();
-    e.setHours(23, 59, 59, 999);
-    const s = new Date();
-    s.setDate(e.getDate() - (days - 1));
-    s.setHours(0, 0, 0, 0);
-    return [s, e] as [Date, Date];
-  }, [kpiRangeType, kpiCustomStart, kpiCustomEnd]);
 
   const modelMetaMap = useMemo(() => {
     const map: Record<
@@ -595,23 +560,44 @@ export default function DealerGroupYard() {
     });
   }, [yard, scheduleByChassis, modelMetaMap]);
 
+  const kpiMonthRange = useMemo(() => {
+    const [yearStr, monthStr] = kpiMonthKey.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr) - 1;
+    const base = Number.isFinite(year) && Number.isFinite(month) ? new Date(year, month, 1) : new Date();
+    const start = startOfMonth(base);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    end.setHours(23, 59, 59, 999);
+    return [start, end] as [Date, Date];
+  }, [kpiMonthKey]);
+
+  const [currentMonthStart, currentMonthEnd] = kpiMonthRange;
+  const kpiMonthOptions = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      return { key: fmtMonthKey(d), label: fmtMonthLabel(d) };
+    });
+  }, []);
+
   // KPI
   const kpiPgiCount = useMemo(
     () =>
       onTheRoadAll.filter(
         (row) =>
           resolveEffectiveDealerSlug(row) === dealerSlug &&
-          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), kpiStartDate, kpiEndDate)
+          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), currentMonthStart, currentMonthEnd)
       ).length,
-    [onTheRoadAll, dealerSlug, kpiStartDate, kpiEndDate, resolveEffectiveDealerSlug]
+    [onTheRoadAll, dealerSlug, currentMonthStart, currentMonthEnd, resolveEffectiveDealerSlug]
   );
 
   const kpiReceivedCount = useMemo(
     () =>
       yardList.filter((x) =>
-        isDateWithinRange(x.receivedAt ? new Date(x.receivedAt) : null, kpiStartDate, kpiEndDate)
+        isDateWithinRange(x.receivedAt ? new Date(x.receivedAt) : null, currentMonthStart, currentMonthEnd)
       ).length,
-    [yardList, kpiStartDate, kpiEndDate]
+    [yardList, currentMonthStart, currentMonthEnd]
   );
 
   const handoverList = useMemo(() => {
@@ -620,18 +606,24 @@ export default function DealerGroupYard() {
       const hand: HandoverRec = rec || {};
       const handoverAt = hand?.handoverAt ?? hand?.createdAt ?? null;
       const dealerSlugFromRec = slugifyDealerName(hand?.dealerSlug || hand?.dealerName || "");
-      return { chassis, handoverAt, dealerSlugFromRec };
+      return {
+        chassis,
+        handoverAt,
+        dealerSlugFromRec,
+        materialCode: hand?.materialCode ?? null,
+        type: isStockCustomer(toStr(scheduleByChassis[chassis]?.Customer)) ? "Stock" : "Customer",
+      };
     });
-  }, [handover]);
+  }, [handover, scheduleByChassis]);
 
   const kpiHandoverCount = useMemo(
     () =>
       handoverList.filter(
         (x) =>
           dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate)
+          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, currentMonthStart, currentMonthEnd)
       ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
   );
 
   const kpiSecondhandCount = useMemo(
@@ -639,10 +631,32 @@ export default function DealerGroupYard() {
       handoverList.filter(
         (x) =>
           dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, kpiStartDate, kpiEndDate) &&
-          isSecondhandChassis(x.chassis)
+          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, currentMonthStart, currentMonthEnd) &&
+          isSecondhandByMaterialCode(x.materialCode)
       ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
+  );
+
+  const kpiHandoverStockCount = useMemo(
+    () =>
+      handoverList.filter(
+        (x) =>
+          dealerSlug === x.dealerSlugFromRec &&
+          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, currentMonthStart, currentMonthEnd) &&
+          x.type === "Stock"
+      ).length,
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
+  );
+
+  const kpiHandoverCustomerCount = useMemo(
+    () =>
+      handoverList.filter(
+        (x) =>
+          dealerSlug === x.dealerSlugFromRec &&
+          isDateWithinRange(x.handoverAt ? new Date(x.handoverAt) : null, currentMonthStart, currentMonthEnd) &&
+          x.type === "Customer"
+      ).length,
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
   );
 
   const kpiYardStockCurrent = useMemo(() => {
@@ -673,33 +687,108 @@ export default function DealerGroupYard() {
     return list;
   }, [yardList, selectedRangeBucket, selectedModelRange, selectedType]);
 
-  // Monthly charts within KPI range
-  const receivedMonthlyData = useMemo(() => {
-    const map: Record<string, { key: string; label: string; count: number }> = {};
-    yardList.forEach((x) => {
-      const d = x.receivedAt ? new Date(x.receivedAt) : null;
-      if (!d || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
-      const key = fmtMonthKey(d);
-      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
-      if (!map[key]) map[key] = { key, label, count: 0 };
-      map[key].count += 1;
-    });
-    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [yardList, kpiStartDate, kpiEndDate]);
+  const kpiTrendData = useMemo(() => {
+    const now = new Date();
+    if (kpiTrendMode === "monthly") {
+      const months = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+        return {
+          key: fmtMonthKey(d),
+          label: fmtMonthLabel(d),
+          start: new Date(d.getFullYear(), d.getMonth(), 1),
+          end: new Date(d.getFullYear(), d.getMonth() + 1, 1),
+        };
+      });
 
-  const handoversMonthlyData = useMemo(() => {
-    const map: Record<string, { key: string; label: string; count: number }> = {};
-    handoverList.forEach((x) => {
-      const d = x.handoverAt ? new Date(x.handoverAt) : null;
-      if (!d) return;
-      if (dealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
-      const key = fmtMonthKey(d);
-      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
-      if (!map[key]) map[key] = { key, label, count: 0 };
-      map[key].count += 1;
+      return months.map((month) => ({
+        label: month.label,
+        received: yardList.filter((x) => {
+          const d = x.receivedAt ? new Date(x.receivedAt) : null;
+          return d && d >= month.start && d < month.end;
+        }).length,
+        handoversStock: handoverList.filter((x) => {
+          const d = x.handoverAt ? new Date(x.handoverAt) : null;
+          return d && d >= month.start && d < month.end && x.dealerSlugFromRec === dealerSlug && x.type === "Stock";
+        }).length,
+        handoversCustomer: handoverList.filter((x) => {
+          const d = x.handoverAt ? new Date(x.handoverAt) : null;
+          return d && d >= month.start && d < month.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && !isSecondhandByMaterialCode(x.materialCode);
+        }).length,
+        handoversCustomerSecondhand: handoverList.filter((x) => {
+          const d = x.handoverAt ? new Date(x.handoverAt) : null;
+          return d && d >= month.start && d < month.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && isSecondhandByMaterialCode(x.materialCode);
+        }).length,
+      }));
+    }
+
+    const latestStart = startOfWeekMonday(now);
+    const weeks = Array.from({ length: 6 }, (_, i) => {
+      const start = addDays(latestStart, -7 * (5 - i));
+      const end = addDays(start, 7);
+      return {
+        label: fmtWeekLabel(start),
+        start,
+        end,
+      };
     });
-    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [handoverList, dealerSlug, kpiStartDate, kpiEndDate]);
+
+    return weeks.map((week) => ({
+      label: week.label,
+      received: yardList.filter((x) => {
+        const d = x.receivedAt ? new Date(x.receivedAt) : null;
+        return d && d >= week.start && d < week.end;
+      }).length,
+      handoversStock: handoverList.filter((x) => {
+        const d = x.handoverAt ? new Date(x.handoverAt) : null;
+        return d && d >= week.start && d < week.end && x.dealerSlugFromRec === dealerSlug && x.type === "Stock";
+      }).length,
+      handoversCustomer: handoverList.filter((x) => {
+        const d = x.handoverAt ? new Date(x.handoverAt) : null;
+        return d && d >= week.start && d < week.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && !isSecondhandByMaterialCode(x.materialCode);
+      }).length,
+      handoversCustomerSecondhand: handoverList.filter((x) => {
+        const d = x.handoverAt ? new Date(x.handoverAt) : null;
+        return d && d >= week.start && d < week.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && isSecondhandByMaterialCode(x.materialCode);
+      }).length,
+    }));
+  }, [kpiTrendMode, yardList, handoverList, dealerSlug]);
+
+  const handoverDisplayList = useMemo(() => {
+    return handoverList
+      .filter((x) => x.dealerSlugFromRec === dealerSlug)
+      .sort((a, b) => {
+        const aTime = toTimestamp(a.handoverAt);
+        const bTime = toTimestamp(b.handoverAt);
+        return bTime - aTime;
+      });
+  }, [handoverList, dealerSlug]);
+
+  const selectedTrendHandoverRows = useMemo(() => {
+    if (!selectedTrendLabel) return [] as typeof handoverDisplayList;
+    const now = new Date();
+    if (kpiTrendMode === "monthly") {
+      const target = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+        return { label: fmtMonthLabel(d), start: new Date(d.getFullYear(), d.getMonth(), 1), end: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+      }).find((x) => x.label === selectedTrendLabel);
+      if (!target) return [];
+      return handoverDisplayList.filter((row) => {
+        const d = row.handoverAt ? new Date(row.handoverAt) : null;
+        return d && d >= target.start && d < target.end;
+      });
+    }
+    const latestStart = startOfWeekMonday(now);
+    const target = Array.from({ length: 6 }, (_, i) => {
+      const start = addDays(latestStart, -7 * (5 - i));
+      const end = addDays(start, 7);
+      return { label: fmtWeekLabel(start), start, end };
+    }).find((x) => x.label === selectedTrendLabel);
+    if (!target) return [];
+    return handoverDisplayList.filter((row) => {
+      const d = row.handoverAt ? new Date(row.handoverAt) : null;
+      return d && d >= target.start && d < target.end;
+    });
+  }, [selectedTrendLabel, kpiTrendMode, handoverDisplayList]);
 
   const stockLevel10Weeks = useMemo(() => {
     const now = new Date();
@@ -877,35 +966,15 @@ export default function DealerGroupYard() {
           <p className="text-muted-foreground mt-1">Manage PGI arrivals and yard inventory for this dealer</p>
         </header>
 
-        {/* On The Road with range controls */}
+        {/* On The Road without date filter */}
         <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle>On The Road (PGI)</CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                className="h-9 rounded-md border px-2 text-sm"
-                value={rangeType}
-                onChange={(e) => setRangeType(e.target.value as typeof rangeType)}
-              >
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="90d">Last 90 days</option>
-                <option value="custom">Custom</option>
-              </select>
-              {rangeType === "custom" && (
-                <>
-                  <Input type="date" className="h-9 w-[160px]" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-                  <Input type="date" className="h-9 w-[160px]" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
-                </>
-              )}
-              <div className="text-xs text-slate-500">
-                Range: {startDate.toLocaleDateString()} ~ {endDate.toLocaleDateString()}
-              </div>
-            </div>
+            <CardTitle>Waiting for Receiving (PGI)</CardTitle>
+            <div className="text-xs text-slate-500">Showing all pending PGI records</div>
           </CardHeader>
           <CardContent>
             {onTheRoadInRange.length === 0 ? (
-              <div className="text-sm text-slate-500">No PGI records in the selected range.</div>
+              <div className="text-sm text-slate-500">No waiting PGI records.</div>
             ) : (
               <div className="rounded-lg border overflow-auto">
                 <Table>
@@ -948,30 +1017,17 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* KPI Cards with independent range */}
+        {/* KPI Overview (cards fixed to current month) */}
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">KPI Overview</CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                className="h-9 rounded-md border px-2 text-sm"
-                value={kpiRangeType}
-                onChange={(e) => setKpiRangeType(e.target.value as typeof kpiRangeType)}
-              >
-                <option value="7d">Last 7 days</option>
-                <option value="30d">Last 30 days</option>
-                <option value="90d">Last 90 days</option>
-                <option value="custom">Custom</option>
+            <CardTitle className="text-sm">Yard KPI Overview</CardTitle>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">KPI Month</span>
+              <select className="h-8 rounded-md border px-2 text-sm" value={kpiMonthKey} onChange={(e) => setKpiMonthKey(e.target.value)}>
+                {kpiMonthOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key}>{opt.label}</option>
+                ))}
               </select>
-              {kpiRangeType === "custom" && (
-                <>
-                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomStart} onChange={(e) => setKpiCustomStart(e.target.value)} />
-                  <Input type="date" className="h-9 w-[160px]" value={kpiCustomEnd} onChange={(e) => setKpiCustomEnd(e.target.value)} />
-                </>
-              )}
-              <div className="text-xs text-slate-500">
-                Range: {kpiStartDate.toLocaleDateString()} ~ {kpiEndDate.toLocaleDateString()}
-              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -1006,6 +1062,7 @@ export default function DealerGroupYard() {
                     <div className="text-xs uppercase tracking-wide text-slate-500">Handovers</div>
                     <div className="text-2xl font-semibold">{kpiHandoverCount}</div>
                     <div className="text-xs text-slate-500 mt-1">Secondhand: <span className="font-medium">{kpiSecondhandCount}</span></div>
+                    <div className="text-xs text-slate-500 mt-1">Stock: <span className="font-medium">{kpiHandoverStockCount}</span> · Customer: <span className="font-medium">{kpiHandoverCustomerCount}</span></div>
                   </div>
                   <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
                     <Handshake className="w-5 h-5 text-purple-600" />
@@ -1032,35 +1089,29 @@ export default function DealerGroupYard() {
           </CardContent>
         </Card>
 
-        {/* Monthly Received / Monthly Handovers / 10-Week Stock Level */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Received Vans (Monthly)</CardTitle>
+          <Card className="border-slate-200 shadow-sm hover:shadow-md transition lg:col-span-2">
+            <CardHeader className="flex items-center justify-between gap-3">
+              <CardTitle className="text-sm">Received Vans vs Handovers (Last 6 {kpiTrendMode === "monthly" ? "Months" : "Weeks"})</CardTitle>
+              <div className="flex items-center gap-2">
+                <Button variant={kpiTrendMode === "weekly" ? "default" : "outline"} onClick={() => setKpiTrendMode("weekly")}>Weekly</Button>
+                <Button variant={kpiTrendMode === "monthly" ? "default" : "outline"} onClick={() => setKpiTrendMode("monthly")}>Monthly</Button>
+              </div>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={receivedMonthlyData}>
+                <BarChart data={kpiTrendData} onClick={(state: any) => {
+                  const label = state?.activeLabel;
+                  if (label) setSelectedTrendLabel(String(label));
+                }}>
                   <XAxis dataKey="label" />
                   <YAxis allowDecimals={false} />
                   <ReTooltip />
-                  <Bar dataKey="count" fill="#10b981" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-            <CardHeader className="flex items-center justify-between">
-              <CardTitle className="text-sm">Handovers (Monthly)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={handoversMonthlyData}>
-                  <XAxis dataKey="label" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
-                  <Bar dataKey="count" fill="#8b5cf6" />
+                  <Legend />
+                  <Bar dataKey="received" name="Received Vans" fill="#10b981" label={{ position: "top", fontSize: 10 }} />
+                  <Bar dataKey="handoversCustomer" name="Handovers (Customer)" stackId="handovers" fill="#8b5cf6" />
+                  <Bar dataKey="handoversCustomerSecondhand" name="Handovers (Customer Secondhand)" stackId="handovers" fill="#ec4899" />
+                  <Bar dataKey="handoversStock" name="Handovers (Stock)" stackId="handovers" fill="#f59e0b" label={{ position: "top", fontSize: 10 }} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -1082,6 +1133,41 @@ export default function DealerGroupYard() {
             </CardContent>
           </Card>
         </div>
+
+        <Dialog open={Boolean(selectedTrendLabel)} onOpenChange={(open) => !open && setSelectedTrendLabel(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Handover Details — {selectedTrendLabel}</DialogTitle>
+              <DialogDescription>Records for the clicked chart bar.</DialogDescription>
+            </DialogHeader>
+            {selectedTrendHandoverRows.length === 0 ? (
+              <div className="text-sm text-slate-500">No handovers for this period.</div>
+            ) : (
+              <div className="max-h-[420px] overflow-auto rounded border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Handover Date</TableHead>
+                      <TableHead>Chassis</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Secondhand</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedTrendHandoverRows.map((item) => (
+                      <TableRow key={`trend-${item.chassis}-${item.handoverAt || "na"}`}>
+                        <TableCell>{item.handoverAt ? new Date(item.handoverAt).toLocaleDateString() : "-"}</TableCell>
+                        <TableCell>{item.chassis}</TableCell>
+                        <TableCell>{item.type}</TableCell>
+                        <TableCell>{isSecondhandByMaterialCode(item.materialCode) ? "Yes" : "No"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Side-by-side: Days In Yard + Stock Analysis */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
