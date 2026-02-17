@@ -94,6 +94,7 @@ type HandoverRec = {
   model?: string | null;
   vinnumber?: string | null;
   customer?: { firstName?: string | null; lastName?: string | null } | string | null;
+  materialCode?: string | null;
 };
 
 const DEFAULT_ADD_FORM = {
@@ -194,11 +195,15 @@ function fmtWeekLabelFull(d: Date): string {
 function fmtWeekKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-function isSecondhandChassis(chassis?: string | null): boolean {
-  if (!chassis) return false;
-  const c = String(chassis).toUpperCase();
-  // Three letters, first is L/N/S, followed by 23/24/25, then digits
-  return /^[LNS][A-Z]{2}(?:23|24|25)\d+$/.test(c);
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function isSecondhandByMaterialCode(materialCode?: string | null): boolean {
+  if (!materialCode) return false;
+  return String(materialCode).trim().toUpperCase().startsWith("Z19");
+}
+function isStockCustomer(customer?: string | null): boolean {
+  return /stock$/i.test(toStr(customer).trim());
 }
 
 const currencyFormatter = new Intl.NumberFormat("en-AU", {
@@ -443,16 +448,9 @@ export default function DealerYard() {
   const [uploadingPod, setUploadingPod] = useState(false);
   const [activeTab, setActiveTab] = useState<"kpi" | "waiting" | "yard" | "handover">("waiting");
   const [handoverChartRange, setHandoverChartRange] = useState<"monthly" | "weekly">("monthly");
-
-  // On The Road date range (PGI list controls)
-  const [rangeType, setRangeType] = useState<"7d" | "30d" | "90d" | "custom">("7d");
-  const [customStart, setCustomStart] = useState<string>("");
-  const [customEnd, setCustomEnd] = useState<string>("");
-
-  // KPI date range (independent from PGI list)
-  const [kpiRangeType, setKpiRangeType] = useState<"7d" | "30d" | "90d" | "custom">("90d");
-  const [kpiCustomStart, setKpiCustomStart] = useState<string>("");
-  const [kpiCustomEnd, setKpiCustomEnd] = useState<string>("");
+  const [kpiTrendMode, setKpiTrendMode] = useState<"weekly" | "monthly">("monthly");
+  const [kpiMonthKey, setKpiMonthKey] = useState<string>(() => fmtMonthKey(new Date()));
+  const [selectedTrendLabel, setSelectedTrendLabel] = useState<string | null>(null);
 
   // Modal: Product Registration
   const [handoverOpen, setHandoverOpen] = useState(false);
@@ -621,51 +619,10 @@ export default function DealerYard() {
       .map(([chassis, rec]) => ({ chassis, ...rec }));
   }, [pgi]);
 
-  // PGI list date range
-  const [startDate, endDate] = useMemo(() => {
-    if (rangeType === "custom" && kpiCustomStart && kpiCustomEnd) {
-      const s = new Date(customStart);
-      const e = new Date(customEnd);
-      e.setHours(23, 59, 59, 999);
-      return [s, e] as [Date, Date];
-    }
-    const mapDays: Record<typeof rangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
-    const days = mapDays[rangeType];
-    const e = new Date();
-    e.setHours(23, 59, 59, 999);
-    const s = new Date();
-    s.setDate(e.getDate() - (days - 1));
-    s.setHours(0, 0, 0, 0);
-    return [s, e] as [Date, Date];
-  }, [rangeType, customStart, customEnd]);
-
   const onTheRoadInRange = useMemo(
-    () =>
-      onTheRoadAll.filter(
-        (row) =>
-          resolveEffectiveDealerSlug(row) === dealerSlug &&
-          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), startDate, endDate)
-      ),
-    [onTheRoadAll, dealerSlug, startDate, endDate, resolveEffectiveDealerSlug]
+    () => onTheRoadAll.filter((row) => resolveEffectiveDealerSlug(row) === dealerSlug),
+    [onTheRoadAll, dealerSlug, resolveEffectiveDealerSlug]
   );
-
-  // KPI date range separate
-  const [kpiStartDate, kpiEndDate] = useMemo(() => {
-    if (kpiRangeType === "custom" && kpiCustomStart && kpiCustomEnd) {
-      const s = new Date(kpiCustomStart);
-      const e = new Date(kpiCustomEnd);
-      e.setHours(23, 59, 59, 999);
-      return [s, e] as [Date, Date];
-    }
-    const mapDays: Record<typeof kpiRangeType, number> = { "7d": 7, "30d": 30, "90d": 90, custom: 7 };
-    const days = mapDays[kpiRangeType];
-    const e = new Date();
-    e.setHours(23, 59, 59, 999);
-    const s = new Date();
-    s.setDate(e.getDate() - (days - 1));
-    s.setHours(0, 0, 0, 0);
-    return [s, e] as [Date, Date];
-  }, [kpiRangeType, kpiCustomStart, kpiCustomEnd]);
 
   // Yard list
   const modelMetaMap = useMemo(() => {
@@ -778,23 +735,45 @@ export default function DealerYard() {
     });
   }, [yardPending]);
 
-  // KPI calculations using KPI date range
+  const kpiMonthRange = useMemo(() => {
+    const [yearStr, monthStr] = kpiMonthKey.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr) - 1;
+    const base = Number.isFinite(year) && Number.isFinite(month) ? new Date(year, month, 1) : new Date();
+    const start = startOfMonth(base);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    end.setHours(23, 59, 59, 999);
+    return [start, end] as [Date, Date];
+  }, [kpiMonthKey]);
+
+  const [currentMonthStart, currentMonthEnd] = kpiMonthRange;
+
+  const kpiMonthOptions = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      return { key: fmtMonthKey(d), label: fmtMonthLabel(d) };
+    });
+  }, []);
+
+  // KPI calculations using current month range
   const kpiPgiCount = useMemo(
     () =>
       onTheRoadAll.filter(
         (row) =>
           resolveEffectiveDealerSlug(row) === dealerSlug &&
-          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), kpiStartDate, kpiEndDate)
+          isDateWithinRange(parseDDMMYYYY(row.pgidate || null), currentMonthStart, currentMonthEnd)
       ).length,
-    [onTheRoadAll, dealerSlug, kpiStartDate, kpiEndDate, resolveEffectiveDealerSlug]
+    [onTheRoadAll, dealerSlug, currentMonthStart, currentMonthEnd, resolveEffectiveDealerSlug]
   );
 
   const kpiReceivedCount = useMemo(
     () =>
       yardList.filter((x) =>
-        isDateWithinRange(x.receivedAt ? new Date(x.receivedAt) : null, kpiStartDate, kpiEndDate)
+        isDateWithinRange(x.receivedAt ? new Date(x.receivedAt) : null, currentMonthStart, currentMonthEnd)
       ).length,
-    [yardList, kpiStartDate, kpiEndDate]
+    [yardList, currentMonthStart, currentMonthEnd]
   );
 
   const handoverList = useMemo(() => {
@@ -811,18 +790,20 @@ export default function DealerYard() {
         model: hand?.model ?? null,
         vinnumber: hand?.vinnumber ?? null,
         customerName,
+        materialCode: hand?.materialCode ?? null,
+        type: isStockCustomer(toStr(scheduleByChassis[chassis]?.Customer)) ? "Stock" : "Customer",
       };
     });
-  }, [handover]);
+  }, [handover, scheduleByChassis]);
 
   const kpiHandoverCount = useMemo(
     () =>
       handoverList.filter(
         (x) =>
           dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(parseHandoverDate(x.handoverAt), kpiStartDate, kpiEndDate)
+          isDateWithinRange(parseHandoverDate(x.handoverAt), currentMonthStart, currentMonthEnd)
       ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
   );
 
   const kpiSecondhandCount = useMemo(
@@ -830,10 +811,32 @@ export default function DealerYard() {
       handoverList.filter(
         (x) =>
           dealerSlug === x.dealerSlugFromRec &&
-          isDateWithinRange(parseHandoverDate(x.handoverAt), kpiStartDate, kpiEndDate) &&
-          isSecondhandChassis(x.chassis)
+          isDateWithinRange(parseHandoverDate(x.handoverAt), currentMonthStart, currentMonthEnd) &&
+          isSecondhandByMaterialCode(x.materialCode)
       ).length,
-    [handoverList, dealerSlug, kpiStartDate, kpiEndDate]
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
+  );
+
+  const kpiHandoverStockCount = useMemo(
+    () =>
+      handoverList.filter(
+        (x) =>
+          dealerSlug === x.dealerSlugFromRec &&
+          isDateWithinRange(parseHandoverDate(x.handoverAt), currentMonthStart, currentMonthEnd) &&
+          x.type === "Stock"
+      ).length,
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
+  );
+
+  const kpiHandoverCustomerCount = useMemo(
+    () =>
+      handoverList.filter(
+        (x) =>
+          dealerSlug === x.dealerSlugFromRec &&
+          isDateWithinRange(parseHandoverDate(x.handoverAt), currentMonthStart, currentMonthEnd) &&
+          x.type === "Customer"
+      ).length,
+    [handoverList, dealerSlug, currentMonthStart, currentMonthEnd]
   );
 
   const handoverHistory = useMemo(() => {
@@ -963,33 +966,92 @@ export default function DealerYard() {
     return yardList.filter((row) => row.chassis.toUpperCase().includes(term)).slice(0, 5);
   }, [searchTerm, yardList]);
 
-  // Monthly charts data within KPI range
-  const receivedMonthlyData = useMemo(() => {
-    const map: Record<string, { key: string; label: string; count: number }> = {};
-    yardList.forEach((x) => {
-      const d = x.receivedAt ? new Date(x.receivedAt) : null;
-      if (!d || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
-      const key = fmtMonthKey(d);
-      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
-      if (!map[key]) map[key] = { key, label, count: 0 };
-      map[key].count += 1;
-    });
-    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [yardList, kpiStartDate, kpiEndDate]);
+  const kpiTrendData = useMemo(() => {
+    const now = new Date();
+    if (kpiTrendMode === "monthly") {
+      const months = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+        return {
+          label: fmtMonthLabel(d),
+          start: new Date(d.getFullYear(), d.getMonth(), 1),
+          end: new Date(d.getFullYear(), d.getMonth() + 1, 1),
+        };
+      });
+      return months.map((month) => ({
+        label: month.label,
+        received: yardList.filter((x) => {
+          const d = x.receivedAt ? new Date(x.receivedAt) : null;
+          return d && d >= month.start && d < month.end;
+        }).length,
+        handoversStock: handoverList.filter((x) => {
+          const d = parseHandoverDate(x.handoverAt);
+          return d && d >= month.start && d < month.end && x.dealerSlugFromRec === dealerSlug && x.type === "Stock";
+        }).length,
+        handoversCustomer: handoverList.filter((x) => {
+          const d = parseHandoverDate(x.handoverAt);
+          return d && d >= month.start && d < month.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && !isSecondhandByMaterialCode(x.materialCode);
+        }).length,
+        handoversCustomerSecondhand: handoverList.filter((x) => {
+          const d = parseHandoverDate(x.handoverAt);
+          return d && d >= month.start && d < month.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && isSecondhandByMaterialCode(x.materialCode);
+        }).length,
+      }));
+    }
 
-  const handoversMonthlyData = useMemo(() => {
-    const map: Record<string, { key: string; label: string; count: number }> = {};
-    handoverList.forEach((x) => {
-      const d = parseHandoverDate(x.handoverAt);
-      if (!d) return;
-      if (dealerSlug !== x.dealerSlugFromRec || !isDateWithinRange(d, kpiStartDate, kpiEndDate)) return;
-      const key = fmtMonthKey(d);
-      const label = fmtMonthLabel(new Date(d.getFullYear(), d.getMonth(), 1));
-      if (!map[key]) map[key] = { key, label, count: 0 };
-      map[key].count += 1;
+    const latestStart = startOfWeekMonday(now);
+    const weeks = Array.from({ length: 6 }, (_, i) => {
+      const start = addDays(latestStart, -7 * (5 - i));
+      const end = addDays(start, 7);
+      return { label: fmtWeekLabel(start), start, end };
     });
-    return Object.values(map).sort((a, b) => a.key.localeCompare(b.key));
-  }, [handoverList, dealerSlug, kpiStartDate, kpiEndDate]);
+
+    return weeks.map((week) => ({
+      label: week.label,
+      received: yardList.filter((x) => {
+        const d = x.receivedAt ? new Date(x.receivedAt) : null;
+        return d && d >= week.start && d < week.end;
+      }).length,
+      handoversStock: handoverList.filter((x) => {
+        const d = parseHandoverDate(x.handoverAt);
+        return d && d >= week.start && d < week.end && x.dealerSlugFromRec === dealerSlug && x.type === "Stock";
+      }).length,
+      handoversCustomer: handoverList.filter((x) => {
+        const d = parseHandoverDate(x.handoverAt);
+        return d && d >= week.start && d < week.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && !isSecondhandByMaterialCode(x.materialCode);
+      }).length,
+      handoversCustomerSecondhand: handoverList.filter((x) => {
+        const d = parseHandoverDate(x.handoverAt);
+        return d && d >= week.start && d < week.end && x.dealerSlugFromRec === dealerSlug && x.type === "Customer" && isSecondhandByMaterialCode(x.materialCode);
+      }).length,
+    }));
+  }, [kpiTrendMode, yardList, handoverList, dealerSlug]);
+
+  const selectedTrendHandoverRows = useMemo(() => {
+    if (!selectedTrendLabel) return [] as typeof handoverHistory;
+    const now = new Date();
+    if (kpiTrendMode === "monthly") {
+      const target = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+        return { label: fmtMonthLabel(d), start: new Date(d.getFullYear(), d.getMonth(), 1), end: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+      }).find((x) => x.label === selectedTrendLabel);
+      if (!target) return [];
+      return handoverHistory.filter((row) => {
+        const d = parseHandoverDate(row.handoverAt);
+        return d && d >= target.start && d < target.end;
+      });
+    }
+    const latestStart = startOfWeekMonday(now);
+    const target = Array.from({ length: 6 }, (_, i) => {
+      const start = addDays(latestStart, -7 * (5 - i));
+      const end = addDays(start, 7);
+      return { label: fmtWeekLabel(start), start, end };
+    }).find((x) => x.label === selectedTrendLabel);
+    if (!target) return [];
+    return handoverHistory.filter((row) => {
+      const d = parseHandoverDate(row.handoverAt);
+      return d && d >= target.start && d < target.end;
+    });
+  }, [selectedTrendLabel, kpiTrendMode, handoverHistory]);
 
   // 10-week stock level reverse projection (received=in, handover=out)
   const stockLevel10Weeks = useMemo(() => {
@@ -1686,27 +1748,14 @@ export default function DealerYard() {
           <>
             <Card className="border-slate-200 shadow-sm">
               <CardHeader className="flex items-center justify-between">
-                <CardTitle className="text-sm">KPI Overview</CardTitle>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className="h-9 rounded-md border px-2 text-sm"
-                    value={kpiRangeType}
-                    onChange={(e) => setKpiRangeType(e.target.value as typeof kpiRangeType)}
-                  >
-                    <option value="7d">Last 7 days</option>
-                    <option value="30d">Last 30 days</option>
-                    <option value="90d">Last 90 days</option>
-                    <option value="custom">Custom</option>
+                <CardTitle className="text-sm">Yard KPI Overview</CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">KPI Month</span>
+                  <select className="h-8 rounded-md border px-2 text-sm" value={kpiMonthKey} onChange={(e) => setKpiMonthKey(e.target.value)}>
+                    {kpiMonthOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>{opt.label}</option>
+                    ))}
                   </select>
-                  {kpiRangeType === "custom" && (
-                    <>
-                      <Input type="date" className="h-9 w-[160px]" value={kpiCustomStart} onChange={(e) => setKpiCustomStart(e.target.value)} />
-                      <Input type="date" className="h-9 w-[160px]" value={kpiCustomEnd} onChange={(e) => setKpiCustomEnd(e.target.value)} />
-                    </>
-                  )}
-                  <div className="text-xs text-slate-500">
-                    Range: {kpiStartDate.toLocaleDateString()} ~ {kpiEndDate.toLocaleDateString()}
-                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1741,6 +1790,7 @@ export default function DealerYard() {
                         <div className="text-xs uppercase tracking-wide text-slate-500">Handovers</div>
                         <div className="text-2xl font-semibold">{kpiHandoverCount}</div>
                         <div className="text-xs text-slate-500 mt-1">Secondhand: <span className="font-medium">{kpiSecondhandCount}</span></div>
+                        <div className="text-xs text-slate-500 mt-1">Stock: <span className="font-medium">{kpiHandoverStockCount}</span> · Customer: <span className="font-medium">{kpiHandoverCustomerCount}</span></div>
                       </div>
                       <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
                         <Handshake className="w-5 h-5 text-purple-600" />
@@ -1768,33 +1818,28 @@ export default function DealerYard() {
             </Card>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-                <CardHeader className="flex items-center justify-between">
-                  <CardTitle className="text-sm">Received Vans (Monthly)</CardTitle>
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition lg:col-span-2">
+                <CardHeader className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-sm">Received Vans vs Handovers (Last 6 {kpiTrendMode === "monthly" ? "Months" : "Weeks"})</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Button variant={kpiTrendMode === "weekly" ? "default" : "outline"} onClick={() => setKpiTrendMode("weekly")}>Weekly</Button>
+                    <Button variant={kpiTrendMode === "monthly" ? "default" : "outline"} onClick={() => setKpiTrendMode("monthly")}>Monthly</Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={receivedMonthlyData}>
+                    <BarChart data={kpiTrendData} onClick={(state: any) => {
+                      const label = state?.activeLabel;
+                      if (label) setSelectedTrendLabel(String(label));
+                    }}>
                       <XAxis dataKey="label" />
                       <YAxis allowDecimals={false} />
                       <ReTooltip />
-                      <Bar dataKey="count" fill="#10b981" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-                <CardHeader className="flex items-center justify-between">
-                  <CardTitle className="text-sm">Handovers (Monthly)</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={handoversMonthlyData}>
-                      <XAxis dataKey="label" />
-                      <YAxis allowDecimals={false} />
-                      <ReTooltip />
-                      <Bar dataKey="count" fill="#8b5cf6" />
+                      <Legend />
+                      <Bar dataKey="received" name="Received Vans" fill="#10b981" label={{ position: "top", fontSize: 10 }} />
+                      <Bar dataKey="handoversCustomer" name="Handovers (Customer)" stackId="handovers" fill="#8b5cf6" />
+                      <Bar dataKey="handoversCustomerSecondhand" name="Handovers (Customer Secondhand)" stackId="handovers" fill="#ec4899" />
+                      <Bar dataKey="handoversStock" name="Handovers (Stock)" stackId="handovers" fill="#f59e0b" label={{ position: "top", fontSize: 10 }} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -1816,38 +1861,54 @@ export default function DealerYard() {
                 </CardContent>
               </Card>
             </div>
+
           </>
         )}
+
+        <Dialog open={Boolean(selectedTrendLabel)} onOpenChange={(open) => !open && setSelectedTrendLabel(null)}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Handover Details — {selectedTrendLabel}</DialogTitle>
+              <DialogDescription>Records for the clicked chart bar.</DialogDescription>
+            </DialogHeader>
+            {selectedTrendHandoverRows.length === 0 ? (
+              <div className="text-sm text-slate-500">No handovers for this period.</div>
+            ) : (
+              <div className="max-h-[420px] overflow-auto rounded border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Handover Date</TableHead>
+                      <TableHead>Chassis</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Secondhand</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedTrendHandoverRows.map((row) => (
+                      <TableRow key={`trend-${row.chassis}-${row.handoverAt || "unknown"}`}>
+                        <TableCell>{formatDateTime(row.handoverAt)}</TableCell>
+                        <TableCell>{row.chassis}</TableCell>
+                        <TableCell>{row.type}</TableCell>
+                        <TableCell>{isSecondhandByMaterialCode(row.materialCode) ? "Yes" : "No"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {activeTab === "waiting" && (
           <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
             <CardHeader className="flex items-center justify-between">
               <CardTitle>Waiting for Receiving</CardTitle>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  className="h-9 rounded-md border px-2 text-sm"
-                  value={rangeType}
-                  onChange={(e) => setRangeType(e.target.value as typeof rangeType)}
-                >
-                  <option value="7d">Last 7 days</option>
-                  <option value="30d">Last 30 days</option>
-                  <option value="90d">Last 90 days</option>
-                  <option value="custom">Custom</option>
-                </select>
-                {rangeType === "custom" && (
-                  <>
-                    <Input type="date" className="h-9 w-[160px]" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-                    <Input type="date" className="h-9 w-[160px]" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
-                  </>
-                )}
-                <div className="text-xs text-slate-500">
-                  Range: {startDate.toLocaleDateString()} ~ {endDate.toLocaleDateString()}
-                </div>
-              </div>
+              <div className="text-xs text-slate-500">Showing all pending PGI records</div>
             </CardHeader>
             <CardContent>
               {waitingForReceiving.length === 0 ? (
-                <div className="text-sm text-slate-500">No PGI records awaiting receipt in the selected range.</div>
+                <div className="text-sm text-slate-500">No PGI records awaiting receipt.</div>
               ) : (
                 <div className="rounded-lg border overflow-auto">
                   <Table>
