@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
@@ -307,6 +307,15 @@ export default function DealerOverallDashboard() {
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [trendMode, setTrendMode] = useState<"week" | "month">("week");
+  const [overviewMode, setOverviewMode] = useState<"customer" | "group">("customer");
+  const groupRatioEntries = [
+    { key: "overall", label: "Overall" },
+    { key: "factory", label: "FACTORY DEALER" },
+    { key: "greenRv", label: "GREEN RV" },
+    { key: "newZealand", label: "NEW ZEALAND" },
+    { key: "jv", label: "JV" },
+    { key: "external", label: "EXTERNAL DEALERS" },
+  ] as const;
   const [dealerSearch, setDealerSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedMapState, setSelectedMapState] = useState<string>("ALL");
@@ -461,6 +470,27 @@ export default function DealerOverallDashboard() {
   }, [dealerOptions]);
 
   const externalSlugs = useMemo(() => externalOptions.map((dealer) => dealer.slug), [externalOptions]);
+
+  const groupSlugSets = useMemo(
+    () => ({
+      factory: new Set(factoryDealerSlugs),
+      greenRv: new Set(greenRvSlugs),
+      newZealand: new Set(newZealandSlugs),
+      jv: new Set(jvSlugs),
+      external: new Set(externalSlugs),
+    }),
+    [externalSlugs, factoryDealerSlugs, greenRvSlugs, jvSlugs, newZealandSlugs]
+  );
+
+  const resolveGroupKey = useCallback((dealerRaw?: string) => {
+    const slug = slugifyDealerName(dealerRaw);
+    if (!slug) return "external" as const;
+    if (groupSlugSets.factory.has(slug)) return "factory" as const;
+    if (groupSlugSets.newZealand.has(slug)) return "newZealand" as const;
+    if (groupSlugSets.jv.has(slug)) return "jv" as const;
+    if (groupSlugSets.greenRv.has(slug)) return "greenRv" as const;
+    return "external" as const;
+  }, [groupSlugSets]);
 
   const dealersByState = useMemo(() => {
     const bucket: Record<string, { slug: string; name: string }[]> = {};
@@ -975,6 +1005,186 @@ export default function DealerOverallDashboard() {
       return { ...bucket, customerPct };
     });
   }, [orderReceivedYearOrders, selectedYear]);
+
+  const groupRatios = useMemo(() => {
+    const init = { overall: 0, factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0 };
+    const buildRatio = (counts: typeof init) => {
+      const total = counts.overall;
+      if (!total) return { overall: 100, factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0 };
+      return {
+        overall: 100,
+        factory: (counts.factory / total) * 100,
+        greenRv: (counts.greenRv / total) * 100,
+        newZealand: (counts.newZealand / total) * 100,
+        jv: (counts.jv / total) * 100,
+        external: (counts.external / total) * 100,
+      };
+    };
+
+    const orderCounts = { ...init };
+    orderReceivedYearOrders.scheduleOrders.forEach((order) => {
+      orderCounts.overall += 1;
+      orderCounts[resolveGroupKey(order?.Dealer)] += 1;
+    });
+    orderReceivedYearOrders.campervanOrders.forEach((item) => {
+      orderCounts.overall += 1;
+      orderCounts[resolveGroupKey(toStr(item.dealer))] += 1;
+    });
+
+    const productionCounts = { ...init };
+    forecastYearOrders.forEach((order) => {
+      if (!hasChassis(order)) return;
+      productionCounts.overall += 1;
+      productionCounts[resolveGroupKey(order?.Dealer)] += 1;
+    });
+    dealerCampervanSchedule.forEach((item) => {
+      const forecastDate = parseDate(item.forecastProductionDate);
+      if (!forecastDate || forecastDate.getFullYear() !== selectedYear || !hasCampervanChassis(item)) return;
+      productionCounts.overall += 1;
+      productionCounts[resolveGroupKey(toStr(item.dealer))] += 1;
+    });
+
+    const avgCounts = { ...init };
+    ordersLastTenWeeks.schedule.forEach((order) => {
+      avgCounts.overall += 1;
+      avgCounts[resolveGroupKey(order?.Dealer)] += 1;
+    });
+    ordersLastTenWeeks.campervan.forEach((item) => {
+      avgCounts.overall += 1;
+      avgCounts[resolveGroupKey(toStr(item.dealer))] += 1;
+    });
+
+    return {
+      orderReceived: buildRatio(orderCounts),
+      productionConfirmed: buildRatio(productionCounts),
+      avgOrders: buildRatio(avgCounts),
+    };
+  }, [dealerCampervanSchedule, forecastYearOrders, orderReceivedYearOrders, ordersLastTenWeeks, resolveGroupKey, selectedYear]);
+
+  const customerRatios = useMemo(() => {
+    const orderCustomer =
+      orderReceivedYearCount > 0
+        ? ((orderReceivedYearOrders.scheduleOrders.filter((order) => !isStockOrder(order)).length +
+            orderReceivedYearOrders.campervanOrders.filter((item) => !isCampervanStock(item)).length) /
+            orderReceivedYearCount) *
+          100
+        : 0;
+
+    const productionTotal =
+      forecastYearOrders.filter((order) => hasChassis(order)).length +
+      dealerCampervanSchedule.filter((item) => {
+        const forecastDate = parseDate(item.forecastProductionDate);
+        return !!forecastDate && forecastDate.getFullYear() === selectedYear && hasCampervanChassis(item);
+      }).length;
+    const productionCustomer =
+      forecastYearOrders.filter((order) => hasChassis(order) && !isStockOrder(order)).length +
+      dealerCampervanSchedule.filter((item) => {
+        const forecastDate = parseDate(item.forecastProductionDate);
+        return !!forecastDate && forecastDate.getFullYear() === selectedYear && hasCampervanChassis(item) && !isCampervanStock(item);
+      }).length;
+
+    const avgTotal = ordersLastTenWeeks.schedule.length + ordersLastTenWeeks.campervan.length;
+    const avgCustomer =
+      ordersLastTenWeeks.schedule.filter((order) => !isStockOrder(order)).length +
+      ordersLastTenWeeks.campervan.filter((item) => !isCampervanStock(item)).length;
+
+    return {
+      orderReceived: orderCustomer,
+      productionConfirmed: productionTotal ? (productionCustomer / productionTotal) * 100 : 0,
+      avgOrders: avgTotal ? (avgCustomer / avgTotal) * 100 : 0,
+    };
+  }, [dealerCampervanSchedule, forecastYearOrders, orderReceivedYearCount, orderReceivedYearOrders, ordersLastTenWeeks, selectedYear]);
+
+  const orderVolumeByMonthGroup = useMemo(() => {
+    const buckets = planningBuckets.map((bucket) => ({
+      label: bucket.label,
+      start: bucket.start,
+      end: bucket.end,
+      factory: 0,
+      greenRv: 0,
+      newZealand: 0,
+      jv: 0,
+      external: 0,
+      total: 0,
+    }));
+
+    const addToBucket = (date: Date | null, dealerRaw?: string) => {
+      if (!date) return;
+      const shifted = addDays(date, 30);
+      const bucket = buckets.find((entry) => shifted >= entry.start && shifted < entry.end);
+      if (!bucket) return;
+      bucket[resolveGroupKey(dealerRaw)] += 1;
+      bucket.total += 1;
+    };
+
+    dealerOrders.forEach((order) => addToBucket(parseDate(order["Forecast Production Date"]), order?.Dealer));
+    dealerCampervanSchedule.forEach((item) => {
+      if (!hasCampervanChassis(item)) return;
+      addToBucket(parseDate(item.forecastProductionDate), toStr(item.dealer));
+    });
+
+    return buckets;
+  }, [dealerCampervanSchedule, dealerOrders, planningBuckets, resolveGroupKey]);
+
+  const weeklyOrderTrendGroup = useMemo(() => {
+    const trendBaseDate = today;
+    const startOfWeek = (date: Date) => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = (day + 6) % 7;
+      d.setDate(d.getDate() - diff);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    };
+
+    const buckets = Array.from({ length: 10 }).map((_, index) => {
+      const weekStart = addDays(startOfWeek(trendBaseDate), -7 * (9 - index));
+      return { weekStart, label: weekStart.toLocaleDateString("en-AU", { month: "short", day: "numeric" }), factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0, total: 0 };
+    });
+
+    dealerOrdersAll.forEach((order) => {
+      const receivedDate = parseScheduleDate(order["Order Received Date"] ?? undefined);
+      if (!receivedDate || receivedDate < addDays(trendBaseDate, -70) || receivedDate > trendBaseDate) return;
+      const weekStart = startOfWeek(receivedDate);
+      const bucket = buckets.find((item) => item.weekStart.getTime() === weekStart.getTime());
+      if (!bucket) return;
+      bucket[resolveGroupKey(order?.Dealer)] += 1;
+      bucket.total += 1;
+    });
+
+    dealerCampervanSchedule.forEach((item) => {
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (!receivedDate || receivedDate < addDays(trendBaseDate, -70) || receivedDate > trendBaseDate) return;
+      const weekStart = startOfWeek(receivedDate);
+      const bucket = buckets.find((entry) => entry.weekStart.getTime() === weekStart.getTime());
+      if (!bucket) return;
+      bucket[resolveGroupKey(toStr(item.dealer))] += 1;
+      bucket.total += 1;
+    });
+
+    return buckets;
+  }, [dealerCampervanSchedule, dealerOrdersAll, resolveGroupKey, today]);
+
+  const monthlyOrderTrendGroup = useMemo(() => {
+    const base = startOfMonth(new Date(selectedYear, 0, 1));
+    const buckets = Array.from({ length: 12 }).map((_, index) => {
+      const start = startOfMonth(addMonths(base, index));
+      return { label: monthFormatter.format(start), start, end: startOfMonth(addMonths(start, 1)), factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0, total: 0 };
+    });
+
+    const addToBucket = (date: Date | null, dealerRaw?: string) => {
+      if (!date || date.getFullYear() !== selectedYear) return;
+      const bucket = buckets.find((entry) => date >= entry.start && date < entry.end);
+      if (!bucket) return;
+      bucket[resolveGroupKey(dealerRaw)] += 1;
+      bucket.total += 1;
+    };
+
+    orderReceivedYearOrders.scheduleOrders.forEach((order) => addToBucket(parseScheduleDate(order["Order Received Date"] ?? undefined), order?.Dealer));
+    orderReceivedYearOrders.campervanOrders.forEach((item) => addToBucket(getCampervanOrderReceivedDate(item), toStr(item.dealer)));
+
+    return buckets;
+  }, [orderReceivedYearOrders, resolveGroupKey, selectedYear]);
 
 
   const scheduleByChassis = useMemo(() => {
@@ -2042,6 +2252,30 @@ export default function DealerOverallDashboard() {
                 timelineFrames={mapTimelineFrames}
                 modelRangeMetrics={mapModelRangeMetrics}
               />
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setOverviewMode("customer")}
+                  className={`rounded-full border px-3 py-1 transition ${
+                    overviewMode === "customer"
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  by customer ratio
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverviewMode("group")}
+                  className={`rounded-full border px-3 py-1 transition ${
+                    overviewMode === "group"
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  by group
+                </button>
+              </div>
             </>
           )}
 
@@ -2073,6 +2307,15 @@ export default function DealerOverallDashboard() {
                 </div>
                 <p className="text-xs text-slate-500">Initial target YTD: {formatNumber(Math.round(ytdTarget))}</p>
                 <DeltaIndicator actual={orderReceivedYearCount} target={ytdTarget} />
+                {overviewMode === "customer" ? (
+                  <p className="text-xs text-slate-600">Customer ratio: {customerRatios.orderReceived.toFixed(1)}%</p>
+                ) : (
+                  <div className="space-y-1 text-xs text-slate-600">
+                    {groupRatioEntries.map((entry) => (
+                      <p key={`order-${entry.key}`}>{entry.label}: {groupRatios.orderReceived[entry.key].toFixed(1)}%</p>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -2089,6 +2332,15 @@ export default function DealerOverallDashboard() {
                   <p className="text-xs text-slate-500">
                     Initial target YTD: {formatNumber(Math.round(ytdTarget))}
                   </p>
+                  {overviewMode === "customer" ? (
+                    <p className="text-xs text-slate-600">Customer ratio: {customerRatios.productionConfirmed.toFixed(1)}%</p>
+                  ) : (
+                    <div className="space-y-1 text-xs text-slate-600">
+                      {groupRatioEntries.map((entry) => (
+                        <p key={`production-${entry.key}`}>{entry.label}: {groupRatios.productionConfirmed[entry.key].toFixed(1)}%</p>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -2107,6 +2359,15 @@ export default function DealerOverallDashboard() {
                 <p className="text-xs text-slate-500">
                   Target per week: {formatDecimal(targetPerWeek)}
                 </p>
+                {overviewMode === "customer" ? (
+                  <p className="text-xs text-slate-600">Customer ratio: {customerRatios.avgOrders.toFixed(1)}%</p>
+                ) : (
+                  <div className="space-y-1 text-xs text-slate-600">
+                    {groupRatioEntries.map((entry) => (
+                      <p key={`avg-${entry.key}`}>{entry.label}: {groupRatios.avgOrders[entry.key].toFixed(1)}%</p>
+                    ))}
+                  </div>
+                )}
                 {selectedYear !== 2024 ? <div className="text-xs text-rose-600">Red slots: {formatNumber(redSlotsCount)}</div> : null}
               </CardContent>
             </Card>
@@ -2161,21 +2422,31 @@ export default function DealerOverallDashboard() {
             <CardHeader>
               <CardTitle>Forecast Delivery Volume (+30 days)</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Next {PLANNING_MONTHS} months, stacked by customer vs stock (schedule + campervan).
+                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : "stacked by customer vs stock (schedule + campervan)."}
               </p>
               </CardHeader>
               <CardContent>
                 <ChartContainer
-                  config={{
-                    stock: { label: "Stock", color: "#3b82f6" },
-                    customer: { label: "Customer", color: "#10b981" },
-                    dispatched: { label: "Dispatched", color: "#94a3b8" },
-                    customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
-                  }}
+                  config={
+                    overviewMode === "group"
+                      ? {
+                          factory: { label: "Factory Dealer", color: "#0ea5e9" },
+                          greenRv: { label: "Green RV", color: "#22c55e" },
+                          newZealand: { label: "New Zealand", color: "#a855f7" },
+                          jv: { label: "JV", color: "#f59e0b" },
+                          external: { label: "External Dealers", color: "#64748b" },
+                        }
+                      : {
+                          stock: { label: "Stock", color: "#3b82f6" },
+                          customer: { label: "Customer", color: "#10b981" },
+                          dispatched: { label: "Dispatched", color: "#94a3b8" },
+                          customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
+                        }
+                  }
                   className="h-80"
                 >
                   <ComposedChart
-                    data={orderVolumeByMonth}
+                    data={overviewMode === "group" ? orderVolumeByMonthGroup : orderVolumeByMonth}
                     margin={{ top: 20, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
                     barGap={4}
@@ -2183,38 +2454,54 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    <YAxis
-                      yAxisId="pct"
-                      orientation="right"
-                      tickFormatter={(value) => `${value}%`}
-                      domain={[0, 100]}
-                      tickLine={false}
-                      axisLine={false}
-                      width={40}
-                      tickMargin={8}
-                    />
+                    {overviewMode === "customer" && (
+                      <YAxis
+                        yAxisId="pct"
+                        orientation="right"
+                        tickFormatter={(value) => `${value}%`}
+                        domain={[0, 100]}
+                        tickLine={false}
+                        axisLine={false}
+                        width={40}
+                        tickMargin={8}
+                      />
+                    )}
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <ChartLegend content={<ChartLegendContent />} />
-                    <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="production" />
-                    <Bar dataKey="customer" fill="var(--color-customer)" radius={[0, 0, 0, 0]} stackId="production" />
-                    <Bar dataKey="dispatched" fill="var(--color-dispatched)" radius={[6, 6, 0, 0]} stackId="production">
-                      <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
-                    </Bar>
-                    <Line
-                      type="monotone"
-                      dataKey="customerPct"
-                      stroke="var(--color-customerPct)"
-                      yAxisId="pct"
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 4 }}
-                    >
-                      <LabelList
-                        dataKey="customerPct"
-                        position="top"
-                        formatter={(value: number) => `${value.toFixed(1)}%`}
-                      />
-                    </Line>
+                    {overviewMode === "group" ? (
+                      <>
+                        <Bar dataKey="factory" fill="var(--color-factory)" radius={[0, 0, 0, 0]} stackId="production" />
+                        <Bar dataKey="greenRv" fill="var(--color-greenRv)" radius={[0, 0, 0, 0]} stackId="production" />
+                        <Bar dataKey="newZealand" fill="var(--color-newZealand)" radius={[0, 0, 0, 0]} stackId="production" />
+                        <Bar dataKey="jv" fill="var(--color-jv)" radius={[0, 0, 0, 0]} stackId="production" />
+                        <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="production">
+                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+                        </Bar>
+                      </>
+                    ) : (
+                      <>
+                        <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="production" />
+                        <Bar dataKey="customer" fill="var(--color-customer)" radius={[0, 0, 0, 0]} stackId="production" />
+                        <Bar dataKey="dispatched" fill="var(--color-dispatched)" radius={[6, 6, 0, 0]} stackId="production">
+                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+                        </Bar>
+                        <Line
+                          type="monotone"
+                          dataKey="customerPct"
+                          stroke="var(--color-customerPct)"
+                          yAxisId="pct"
+                          strokeWidth={2}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 4 }}
+                        >
+                          <LabelList
+                            dataKey="customerPct"
+                            position="top"
+                            formatter={(value: number) => `${value.toFixed(1)}%`}
+                          />
+                        </Line>
+                      </>
+                    )}
                   </ComposedChart>
                 </ChartContainer>
               </CardContent>
@@ -2252,19 +2539,41 @@ export default function DealerOverallDashboard() {
                     </button>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground">Weekly or monthly order volume split by customer vs stock.</p>
+                <p className="text-sm text-muted-foreground">
+                  {overviewMode === "group"
+                    ? "Weekly or monthly order volume stacked by dealer group."
+                    : "Weekly or monthly order volume split by customer vs stock."}
+                </p>
               </CardHeader>
               <CardContent>
                 <ChartContainer
-                  config={{
-                    stock: { label: "Stock", color: "#3b82f6" },
-                    customer: { label: "Customer", color: "#10b981" },
-                    customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
-                  }}
+                  config={
+                    overviewMode === "group"
+                      ? {
+                          factory: { label: "Factory Dealer", color: "#0ea5e9" },
+                          greenRv: { label: "Green RV", color: "#22c55e" },
+                          newZealand: { label: "New Zealand", color: "#a855f7" },
+                          jv: { label: "JV", color: "#f59e0b" },
+                          external: { label: "External Dealers", color: "#64748b" },
+                        }
+                      : {
+                          stock: { label: "Stock", color: "#3b82f6" },
+                          customer: { label: "Customer", color: "#10b981" },
+                          customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
+                        }
+                  }
                   className="h-80"
                 >
                   <ComposedChart
-                    data={trendMode === "week" ? weeklyOrderTrend : monthlyOrderTrend}
+                    data={
+                      overviewMode === "group"
+                        ? trendMode === "week"
+                          ? weeklyOrderTrendGroup
+                          : monthlyOrderTrendGroup
+                        : trendMode === "week"
+                          ? weeklyOrderTrend
+                          : monthlyOrderTrend
+                    }
                     margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
                     barGap={4}
@@ -2272,37 +2581,53 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    <YAxis
-                      yAxisId="pct"
-                      orientation="right"
-                      tickFormatter={(value) => `${value}%`}
-                      domain={[0, 100]}
-                      tickLine={false}
-                      axisLine={false}
-                      width={40}
-                      tickMargin={8}
-                    />
+                    {overviewMode === "customer" && (
+                      <YAxis
+                        yAxisId="pct"
+                        orientation="right"
+                        tickFormatter={(value) => `${value}%`}
+                        domain={[0, 100]}
+                        tickLine={false}
+                        axisLine={false}
+                        width={40}
+                        tickMargin={8}
+                      />
+                    )}
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <ChartLegend content={<ChartLegendContent />} />
-                    <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="trend" />
-                    <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="trend">
-                      <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
-                    </Bar>
-                    <Line
-                      type="monotone"
-                      dataKey="customerPct"
-                      stroke="var(--color-customerPct)"
-                      yAxisId="pct"
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 4 }}
-                    >
-                      <LabelList
-                        dataKey="customerPct"
-                        position="top"
-                        formatter={(value: number) => `${value.toFixed(1)}%`}
-                      />
-                    </Line>
+                    {overviewMode === "group" ? (
+                      <>
+                        <Bar dataKey="factory" fill="var(--color-factory)" radius={[0, 0, 0, 0]} stackId="trend" />
+                        <Bar dataKey="greenRv" fill="var(--color-greenRv)" radius={[0, 0, 0, 0]} stackId="trend" />
+                        <Bar dataKey="newZealand" fill="var(--color-newZealand)" radius={[0, 0, 0, 0]} stackId="trend" />
+                        <Bar dataKey="jv" fill="var(--color-jv)" radius={[0, 0, 0, 0]} stackId="trend" />
+                        <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="trend">
+                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+                        </Bar>
+                      </>
+                    ) : (
+                      <>
+                        <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="trend" />
+                        <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="trend">
+                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+                        </Bar>
+                        <Line
+                          type="monotone"
+                          dataKey="customerPct"
+                          stroke="var(--color-customerPct)"
+                          yAxisId="pct"
+                          strokeWidth={2}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 4 }}
+                        >
+                          <LabelList
+                            dataKey="customerPct"
+                            position="top"
+                            formatter={(value: number) => `${value.toFixed(1)}%`}
+                          />
+                        </Line>
+                      </>
+                    )}
                   </ComposedChart>
                 </ChartContainer>
               </CardContent>
