@@ -36,6 +36,19 @@ const JV_NAMES = ["Heatherbrae", "Gympie", "Toowoomba", "Bundaberg", "Townsville
 const JV_TOTAL_SLUG = "jv-total";
 const EXTERNAL_TOTAL_SLUG = "external-total";
 const ALLOWED_MODEL_RANGES = new Set(["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB"]);
+const MODEL_RANGE_KEYS = ["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB", "OTHER"] as const;
+const MODEL_RANGE_CHART_COLORS: Record<(typeof MODEL_RANGE_KEYS)[number], string> = {
+  SRC: "#0ea5e9",
+  SRH: "#22c55e",
+  SRL: "#a855f7",
+  SRP: "#f59e0b",
+  SRS: "#e11d48",
+  SRT: "#14b8a6",
+  SRV: "#6366f1",
+  NGC: "#f97316",
+  NGB: "#8b5cf6",
+  OTHER: "#64748b",
+};
 const MAP_STATE_ORDER = ["WA", "NT", "SA", "QLD", "NSW", "ACT", "VIC", "TAS", "NZ"] as const;
 const MANAGED_STATE_SLUGS = new Set([
   "abco",
@@ -307,7 +320,7 @@ export default function DealerOverallDashboard() {
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [trendMode, setTrendMode] = useState<"week" | "month">("week");
-  const [overviewMode, setOverviewMode] = useState<"customer" | "group">("customer");
+  const [overviewMode, setOverviewMode] = useState<"customer" | "group" | "modelRange">("customer");
   const groupRatioEntries = [
     { key: "overall", label: "Overall" },
     { key: "factory", label: "FACTORY DEALER" },
@@ -316,6 +329,7 @@ export default function DealerOverallDashboard() {
     { key: "jv", label: "JV" },
     { key: "external", label: "EXTERNAL DEALERS" },
   ] as const;
+  const modelRatioEntries = [{ key: "overall", label: "Overall" }, ...MODEL_RANGE_KEYS.map((key) => ({ key, label: key }))] as const;
   const [dealerSearch, setDealerSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedMapState, setSelectedMapState] = useState<string>("ALL");
@@ -1006,6 +1020,173 @@ export default function DealerOverallDashboard() {
     });
   }, [orderReceivedYearOrders, selectedYear]);
 
+  const resolveModelRangeKey = (model?: string, chassis?: string) => {
+    const range = getModelRange(model, chassis);
+    return ALLOWED_MODEL_RANGES.has(range) ? (range as (typeof MODEL_RANGE_KEYS)[number]) : "OTHER";
+  };
+
+  const orderVolumeByMonthModelRange = useMemo(() => {
+    const buckets = planningBuckets.map((bucket) => {
+      const row: Record<string, number | string | Date> = {
+        label: bucket.label,
+        start: bucket.start,
+        end: bucket.end,
+        total: 0,
+        srcPct: 0,
+        srhPct: 0,
+      };
+      MODEL_RANGE_KEYS.forEach((key) => {
+        row[key] = 0;
+      });
+      return row;
+    });
+
+    const addToBucket = (date: Date | null, model?: string, chassis?: string) => {
+      if (!date) return;
+      const shifted = addDays(date, 30);
+      const bucket = buckets.find((entry) => shifted >= (entry.start as Date) && shifted < (entry.end as Date));
+      if (!bucket) return;
+      const key = resolveModelRangeKey(model, chassis);
+      bucket[key] = (Number(bucket[key]) || 0) + 1;
+      bucket.total = (Number(bucket.total) || 0) + 1;
+    };
+
+    dealerOrders.forEach((order) => {
+      addToBucket(parseDate(order["Forecast Production Date"]), toStr(order?.Model), toStr(order?.Chassis));
+    });
+
+    dealerCampervanSchedule.forEach((item) => {
+      if (!hasCampervanChassis(item)) return;
+      addToBucket(parseDate(item.forecastProductionDate), toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+    });
+
+    let runningTotal = 0;
+    let runningSrc = 0;
+    let runningSrh = 0;
+
+    return buckets.map((bucket) => {
+      const bucketTotal = Number(bucket.total) || 0;
+      runningTotal += bucketTotal;
+      runningSrc += Number(bucket.SRC) || 0;
+      runningSrh += Number(bucket.SRH) || 0;
+      return {
+        ...bucket,
+        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+      };
+    });
+  }, [dealerCampervanSchedule, dealerOrders, planningBuckets]);
+
+  const weeklyOrderTrendModelRange = useMemo(() => {
+    const trendBaseDate = today;
+    const startOfWeek = (date: Date) => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = (day + 6) % 7;
+      d.setDate(d.getDate() - diff);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    };
+
+    const buckets = Array.from({ length: 10 }).map((_, index) => {
+      const weekStart = addDays(startOfWeek(trendBaseDate), -7 * (9 - index));
+      const row: Record<string, number | string | Date> = {
+        weekStart,
+        label: weekStart.toLocaleDateString("en-AU", { month: "short", day: "numeric" }),
+        total: 0,
+        srcPct: 0,
+        srhPct: 0,
+      };
+      MODEL_RANGE_KEYS.forEach((key) => {
+        row[key] = 0;
+      });
+      return row;
+    });
+
+    const addToBucket = (date: Date | null, model?: string, chassis?: string) => {
+      if (!date || date < addDays(trendBaseDate, -70) || date > trendBaseDate) return;
+      const weekStart = startOfWeek(date);
+      const bucket = buckets.find((entry) => (entry.weekStart as Date).getTime() === weekStart.getTime());
+      if (!bucket) return;
+      const key = resolveModelRangeKey(model, chassis);
+      bucket[key] = (Number(bucket[key]) || 0) + 1;
+      bucket.total = (Number(bucket.total) || 0) + 1;
+    };
+
+    dealerOrdersAll.forEach((order) => {
+      addToBucket(parseScheduleDate(order["Order Received Date"] ?? undefined), toStr(order?.Model), toStr(order?.Chassis));
+    });
+    dealerCampervanSchedule.forEach((item) => {
+      addToBucket(getCampervanOrderReceivedDate(item), toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+    });
+
+    let runningTotal = 0;
+    let runningSrc = 0;
+    let runningSrh = 0;
+    return buckets.map((bucket) => {
+      const bucketTotal = Number(bucket.total) || 0;
+      runningTotal += bucketTotal;
+      runningSrc += Number(bucket.SRC) || 0;
+      runningSrh += Number(bucket.SRH) || 0;
+      return {
+        ...bucket,
+        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+      };
+    });
+  }, [dealerCampervanSchedule, dealerOrdersAll, today]);
+
+  const monthlyOrderTrendModelRange = useMemo(() => {
+    const base = startOfMonth(new Date(selectedYear, 0, 1));
+    const buckets = Array.from({ length: 12 }).map((_, index) => {
+      const start = startOfMonth(addMonths(base, index));
+      const row: Record<string, number | string | Date> = {
+        label: monthFormatter.format(start),
+        start,
+        end: startOfMonth(addMonths(start, 1)),
+        total: 0,
+        srcPct: 0,
+        srhPct: 0,
+      };
+      MODEL_RANGE_KEYS.forEach((key) => {
+        row[key] = 0;
+      });
+      return row;
+    });
+
+    const addToBucket = (date: Date | null, model?: string, chassis?: string) => {
+      if (!date || date.getFullYear() !== selectedYear) return;
+      const bucket = buckets.find((entry) => date >= (entry.start as Date) && date < (entry.end as Date));
+      if (!bucket) return;
+      const key = resolveModelRangeKey(model, chassis);
+      bucket[key] = (Number(bucket[key]) || 0) + 1;
+      bucket.total = (Number(bucket.total) || 0) + 1;
+    };
+
+    orderReceivedYearOrders.scheduleOrders.forEach((order) => {
+      addToBucket(parseScheduleDate(order["Order Received Date"] ?? undefined), toStr(order?.Model), toStr(order?.Chassis));
+    });
+
+    orderReceivedYearOrders.campervanOrders.forEach((item) => {
+      addToBucket(getCampervanOrderReceivedDate(item), toStr((item as any)?.model), toStr((item as any)?.chassisNumber));
+    });
+
+    let runningTotal = 0;
+    let runningSrc = 0;
+    let runningSrh = 0;
+    return buckets.map((bucket) => {
+      const bucketTotal = Number(bucket.total) || 0;
+      runningTotal += bucketTotal;
+      runningSrc += Number(bucket.SRC) || 0;
+      runningSrh += Number(bucket.SRH) || 0;
+      return {
+        ...bucket,
+        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+      };
+    });
+  }, [orderReceivedYearOrders, selectedYear]);
+
   const groupRatios = useMemo(() => {
     const init = { overall: 0, factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0 };
     const buildRatio = (counts: typeof init) => {
@@ -1094,6 +1275,60 @@ export default function DealerOverallDashboard() {
       avgOrders: avgTotal ? (avgCustomer / avgTotal) * 100 : 0,
     };
   }, [dealerCampervanSchedule, forecastYearOrders, orderReceivedYearCount, orderReceivedYearOrders, ordersLastTenWeeks, selectedYear]);
+
+  const modelRangeRatios = useMemo(() => {
+    const init: Record<string, number> = { overall: 0 };
+    MODEL_RANGE_KEYS.forEach((key) => {
+      init[key] = 0;
+    });
+    const buildRatio = (counts: Record<string, number>) => {
+      const total = counts.overall;
+      const result: Record<string, number> = { overall: total ? 100 : 0 };
+      MODEL_RANGE_KEYS.forEach((key) => {
+        result[key] = total ? (counts[key] / total) * 100 : 0;
+      });
+      return result;
+    };
+
+    const orderCounts = { ...init };
+    orderReceivedYearOrders.scheduleOrders.forEach((order) => {
+      orderCounts.overall += 1;
+      orderCounts[resolveModelRangeKey(toStr(order?.Model), toStr(order?.Chassis))] += 1;
+    });
+    orderReceivedYearOrders.campervanOrders.forEach((item) => {
+      orderCounts.overall += 1;
+      orderCounts[resolveModelRangeKey(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))] += 1;
+    });
+
+    const productionCounts = { ...init };
+    forecastYearOrders.forEach((order) => {
+      if (!hasChassis(order)) return;
+      productionCounts.overall += 1;
+      productionCounts[resolveModelRangeKey(toStr(order?.Model), toStr(order?.Chassis))] += 1;
+    });
+    dealerCampervanSchedule.forEach((item) => {
+      const forecastDate = parseDate(item.forecastProductionDate);
+      if (!forecastDate || forecastDate.getFullYear() !== selectedYear || !hasCampervanChassis(item)) return;
+      productionCounts.overall += 1;
+      productionCounts[resolveModelRangeKey(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))] += 1;
+    });
+
+    const avgCounts = { ...init };
+    ordersLastTenWeeks.schedule.forEach((order) => {
+      avgCounts.overall += 1;
+      avgCounts[resolveModelRangeKey(toStr(order?.Model), toStr(order?.Chassis))] += 1;
+    });
+    ordersLastTenWeeks.campervan.forEach((item) => {
+      avgCounts.overall += 1;
+      avgCounts[resolveModelRangeKey(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))] += 1;
+    });
+
+    return {
+      orderReceived: buildRatio(orderCounts),
+      productionConfirmed: buildRatio(productionCounts),
+      avgOrders: buildRatio(avgCounts),
+    };
+  }, [dealerCampervanSchedule, forecastYearOrders, orderReceivedYearOrders, ordersLastTenWeeks, selectedYear]);
 
   const orderVolumeByMonthGroup = useMemo(() => {
     const buckets = planningBuckets.map((bucket) => ({
@@ -2275,6 +2510,17 @@ export default function DealerOverallDashboard() {
                 >
                   by group
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setOverviewMode("modelRange")}
+                  className={`rounded-full border px-3 py-1 transition ${
+                    overviewMode === "modelRange"
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  by model range
+                </button>
               </div>
             </>
           )}
@@ -2309,10 +2555,16 @@ export default function DealerOverallDashboard() {
                 <DeltaIndicator actual={orderReceivedYearCount} target={ytdTarget} />
                 {overviewMode === "customer" ? (
                   <p className="text-xs text-slate-600">Customer ratio: {customerRatios.orderReceived.toFixed(1)}%</p>
-                ) : (
+                ) : overviewMode === "group" ? (
                   <div className="space-y-1 text-xs text-slate-600">
                     {groupRatioEntries.map((entry) => (
                       <p key={`order-${entry.key}`}>{entry.label}: {groupRatios.orderReceived[entry.key].toFixed(1)}%</p>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-1 text-xs text-slate-600">
+                    {modelRatioEntries.map((entry) => (
+                      <p key={`order-model-${entry.key}`}>{entry.label}: {modelRangeRatios.orderReceived[entry.key].toFixed(1)}%</p>
                     ))}
                   </div>
                 )}
@@ -2334,10 +2586,16 @@ export default function DealerOverallDashboard() {
                   </p>
                   {overviewMode === "customer" ? (
                     <p className="text-xs text-slate-600">Customer ratio: {customerRatios.productionConfirmed.toFixed(1)}%</p>
-                  ) : (
+                  ) : overviewMode === "group" ? (
                     <div className="space-y-1 text-xs text-slate-600">
                       {groupRatioEntries.map((entry) => (
                         <p key={`production-${entry.key}`}>{entry.label}: {groupRatios.productionConfirmed[entry.key].toFixed(1)}%</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-1 text-xs text-slate-600">
+                      {modelRatioEntries.map((entry) => (
+                        <p key={`production-model-${entry.key}`}>{entry.label}: {modelRangeRatios.productionConfirmed[entry.key].toFixed(1)}%</p>
                       ))}
                     </div>
                   )}
@@ -2361,10 +2619,16 @@ export default function DealerOverallDashboard() {
                 </p>
                 {overviewMode === "customer" ? (
                   <p className="text-xs text-slate-600">Customer ratio: {customerRatios.avgOrders.toFixed(1)}%</p>
-                ) : (
+                ) : overviewMode === "group" ? (
                   <div className="space-y-1 text-xs text-slate-600">
                     {groupRatioEntries.map((entry) => (
                       <p key={`avg-${entry.key}`}>{entry.label}: {groupRatios.avgOrders[entry.key].toFixed(1)}%</p>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-1 text-xs text-slate-600">
+                    {modelRatioEntries.map((entry) => (
+                      <p key={`avg-model-${entry.key}`}>{entry.label}: {modelRangeRatios.avgOrders[entry.key].toFixed(1)}%</p>
                     ))}
                   </div>
                 )}
@@ -2422,7 +2686,7 @@ export default function DealerOverallDashboard() {
             <CardHeader>
               <CardTitle>Forecast Delivery Volume (+30 days)</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : "stacked by customer vs stock (schedule + campervan)."}
+                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
               </p>
               </CardHeader>
               <CardContent>
@@ -2436,7 +2700,15 @@ export default function DealerOverallDashboard() {
                           jv: { label: "JV", color: "#f59e0b" },
                           external: { label: "External Dealers", color: "#64748b" },
                         }
-                      : {
+                      : overviewMode === "modelRange"
+                        ? {
+                            ...Object.fromEntries(
+                              MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
+                            ),
+                            srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
+                            srhPct: { label: "SRH % (Acc)", color: "#15803d" },
+                          }
+                        : {
                           stock: { label: "Stock", color: "#3b82f6" },
                           customer: { label: "Customer", color: "#10b981" },
                           dispatched: { label: "Dispatched", color: "#94a3b8" },
@@ -2446,7 +2718,7 @@ export default function DealerOverallDashboard() {
                   className="h-80"
                 >
                   <ComposedChart
-                    data={overviewMode === "group" ? orderVolumeByMonthGroup : orderVolumeByMonth}
+                    data={overviewMode === "group" ? orderVolumeByMonthGroup : overviewMode === "modelRange" ? orderVolumeByMonthModelRange : orderVolumeByMonth}
                     margin={{ top: 20, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
                     barGap={4}
@@ -2454,7 +2726,7 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    {overviewMode === "customer" && (
+                    {overviewMode !== "group" && (
                       <YAxis
                         yAxisId="pct"
                         orientation="right"
@@ -2477,6 +2749,22 @@ export default function DealerOverallDashboard() {
                         <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="production">
                           <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
                         </Bar>
+                      </>
+                    ) : overviewMode === "modelRange" ? (
+                      <>
+                        {MODEL_RANGE_KEYS.map((key, idx) => (
+                          <Bar
+                            key={`forecast-model-${key}`}
+                            dataKey={key}
+                            fill={`var(--color-${key})`}
+                            radius={idx === MODEL_RANGE_KEYS.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                            stackId="production"
+                          >
+                            {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
+                          </Bar>
+                        ))}
+                        <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+                        <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
                       </>
                     ) : (
                       <>
@@ -2542,7 +2830,9 @@ export default function DealerOverallDashboard() {
                 <p className="text-sm text-muted-foreground">
                   {overviewMode === "group"
                     ? "Weekly or monthly order volume stacked by dealer group."
-                    : "Weekly or monthly order volume split by customer vs stock."}
+                    : overviewMode === "modelRange"
+                      ? "Weekly or monthly order volume stacked by model range with SRC/SRH cumulative ratio trend."
+                      : "Weekly or monthly order volume split by customer vs stock."}
                 </p>
               </CardHeader>
               <CardContent>
@@ -2556,7 +2846,15 @@ export default function DealerOverallDashboard() {
                           jv: { label: "JV", color: "#f59e0b" },
                           external: { label: "External Dealers", color: "#64748b" },
                         }
-                      : {
+                      : overviewMode === "modelRange"
+                        ? {
+                            ...Object.fromEntries(
+                              MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
+                            ),
+                            srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
+                            srhPct: { label: "SRH % (Acc)", color: "#15803d" },
+                          }
+                        : {
                           stock: { label: "Stock", color: "#3b82f6" },
                           customer: { label: "Customer", color: "#10b981" },
                           customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
@@ -2570,9 +2868,13 @@ export default function DealerOverallDashboard() {
                         ? trendMode === "week"
                           ? weeklyOrderTrendGroup
                           : monthlyOrderTrendGroup
-                        : trendMode === "week"
-                          ? weeklyOrderTrend
-                          : monthlyOrderTrend
+                        : overviewMode === "modelRange"
+                          ? trendMode === "week"
+                            ? weeklyOrderTrendModelRange
+                            : monthlyOrderTrendModelRange
+                          : trendMode === "week"
+                            ? weeklyOrderTrend
+                            : monthlyOrderTrend
                     }
                     margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
@@ -2581,7 +2883,7 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    {overviewMode === "customer" && (
+                    {overviewMode !== "group" && (
                       <YAxis
                         yAxisId="pct"
                         orientation="right"
@@ -2604,6 +2906,22 @@ export default function DealerOverallDashboard() {
                         <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="trend">
                           <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
                         </Bar>
+                      </>
+                    ) : overviewMode === "modelRange" ? (
+                      <>
+                        {MODEL_RANGE_KEYS.map((key, idx) => (
+                          <Bar
+                            key={`trend-model-${key}`}
+                            dataKey={key}
+                            fill={`var(--color-${key})`}
+                            radius={idx === MODEL_RANGE_KEYS.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                            stackId="trend"
+                          >
+                            {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
+                          </Bar>
+                        ))}
+                        <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+                        <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
                       </>
                     ) : (
                       <>
