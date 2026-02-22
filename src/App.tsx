@@ -124,6 +124,14 @@ const AppShell = () => {
           }
         />
         <Route
+          path="/dealer/:dealerSlug/dashboard/:dashboardPage"
+          element={
+            <ProtectedDealerRoute>
+              <DealerDashboard />
+            </ProtectedDealerRoute>
+          }
+        />
+        <Route
           path="/dealer/:dealerSlug/overall-dashboard"
           element={
             <ProtectedDealerRoute>
