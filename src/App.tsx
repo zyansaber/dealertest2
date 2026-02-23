@@ -37,7 +37,6 @@ import SalesforceTest from "./pages/SalesforceTest";
 import OcrPage from "./pages/OcrPage";
 import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 import YardReceive from "./pages/YardReceive";
-import CustomerBpPayPage from "./pages/CustomerBpPayPage";
 
 const queryClient = new QueryClient();
 
@@ -187,15 +186,6 @@ const AppShell = () => {
           element={
             <ProtectedDealerRoute>
               <FinanceReport />
-            </ProtectedDealerRoute>
-          }
-        />
-
-        <Route
-          path="/dealer/:dealerSlug/customer-bp-pay"
-          element={
-            <ProtectedDealerRoute>
-              <CustomerBpPayPage />
             </ProtectedDealerRoute>
           }
         />
