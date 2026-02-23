@@ -20,7 +20,6 @@ import type {
   YardNewVanInvoice,
   NewSaleRecord,
   StockToCustomerRecord,
-  CustomerBpRecord,
   CampervanScheduleItem,
 } from "@/types";
 import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig } from "@/types/tierConfig";
@@ -745,92 +744,6 @@ export const subscribeToStockToCustomer = (
 
   onValue(sapStockRef, handler);
   return () => off(sapStockRef, "value", handler);
-};
-
-/** -------------------- customer BP -------------------- */
-const SALES_OFFICE_MAP: Record<string, string> = {
-  "3121": "st-james",
-  "3123": "traralgon",
-  "3126": "launceston",
-  "3128": "geelong",
-  "3141": "frankston",
-};
-
-const toSafeNumber = (value: unknown): number => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value === "string") {
-    const parsed = Number(value.replace(/,/g, "").trim());
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-};
-
-const pickString = (source: Record<string, any>, keys: string[]): string => {
-  for (const key of keys) {
-    const value = source[key];
-    if (value === null || typeof value === "undefined") continue;
-    const text = String(value).trim();
-    if (text) return text;
-  }
-  return "";
-};
-
-export const subscribeToCustomerBp = (
-  dealerSlug: string,
-  callback: (data: CustomerBpRecord[]) => void
-) => {
-  if (!dealerSlug) {
-    callback([]);
-    return () => {};
-  }
-
-  const customerBpRef = ref(database, "customer_bp");
-
-  const handler = (snapshot: DataSnapshot) => {
-    const value = snapshot.val();
-    if (!value || typeof value !== "object") {
-      callback([]);
-      return;
-    }
-
-    const records: CustomerBpRecord[] = Object.entries(value).map(([key, payload]: [string, any]) => {
-      const source = payload ?? {};
-
-      return {
-        id: key,
-        bpAmountSigned: toSafeNumber(
-          source["BP Amount (Signed AMT Sum)"] ?? source.bp_amount_signed ?? source.amount_signed
-        ),
-        businessPartner: pickString(source, ["Business Partner (BP)", "Business Partner", "business_partner"]),
-        businessPartnerName: pickString(source, [
-          "Business Partner Name",
-          "Payer Name (RG)",
-          "business_partner_name",
-        ]),
-        salesOffice: pickString(source, ["Sales Office", "sales_office"]),
-        salesOrder: pickString(source, ["Sales Order", "sales_order"]),
-        chassisNumber: pickString(source, ["Chassis Number", "chassis_number"]),
-        orderCreatedDate: pickString(source, ["Order Created Date", "order_created_date"]),
-        orderCurrency: pickString(source, ["Order Currency", "order_currency"]),
-        orderNetValue: toSafeNumber(source["Order Net Value"] ?? source.order_net_value),
-        orderNetValueInclGst: toSafeNumber(
-          source["Order Net Value (Incl_ GST)"] ?? source.order_net_value_incl_gst
-        ),
-        orderType: pickString(source, ["Order Type", "order_type"]),
-        raw: source,
-      };
-    });
-
-    const filtered = records.filter((record) => {
-      const officeSlug = SALES_OFFICE_MAP[record.salesOffice];
-      return officeSlug === dealerSlug;
-    });
-
-    callback(filtered);
-  };
-
-  onValue(customerBpRef, handler);
-  return () => off(customerBpRef, "value", handler);
 };
 
 /** -------------------- new sales -------------------- */
