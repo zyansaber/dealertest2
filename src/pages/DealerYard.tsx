@@ -40,13 +40,11 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  LabelList,
 } from "recharts";
 import emailjs from "emailjs-com";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PRICE_ENABLED_DEALERS } from "@/constants/dealerSettings";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type PGIRec = {
   pgidate?: string | null;
@@ -206,21 +204,6 @@ function isSecondhandByMaterialCode(materialCode?: string | null): boolean {
 }
 function isStockCustomer(customer?: string | null): boolean {
   return /stock$/i.test(toStr(customer).trim());
-}
-function parseBooleanFlag(value: unknown): boolean {
-  if (typeof value === "boolean") return value;
-  const normalized = toStr(value).trim().toLowerCase();
-  return normalized === "true" || normalized === "1" || normalized === "yes";
-}
-function formatNonZeroLabel(value?: string | number): string {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num) || num <= 0) return "";
-  return String(num);
-}
-function formatPieCountLabel({ name, value }: { name?: string; value?: number }): string {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num) || num <= 0) return "";
-  return `${name}: ${num}`;
 }
 
 const currencyFormatter = new Intl.NumberFormat("en-AU", {
@@ -501,7 +484,6 @@ export default function DealerYard() {
   const [selectedRangeBucket, setSelectedRangeBucket] = useState<string | null>(null);
   const [selectedModelRange, setSelectedModelRange] = useState<string | "All">("All");
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
-  const [selectedVanCondition, setSelectedVanCondition] = useState<"All" | "new" | "second">("All");
   const [daysInYardSort, setDaysInYardSort] = useState<"asc" | "desc" | null>(null);
   const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
   const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
@@ -709,16 +691,6 @@ export default function DealerYard() {
         parseWholesale(
           rec?.wholesalepo ?? rec?.wholesalePo ?? rec?.wholesalePO ?? rec?.price ?? rec?.amount
         );
-      const wholesaleObject = [rec?.wholesalepo, rec?.wholesalePo, rec?.wholesalePO].find(
-        (value) => value && typeof value === "object"
-      ) as Record<string, unknown> | undefined;
-      const isSecondHand =
-        parseBooleanFlag(rec?.secondVans) ||
-        parseBooleanFlag(wholesaleObject?.secondVans) ||
-        /^z19/i.test(model.trim());
-      const isNewVan =
-        !isSecondHand &&
-        (parseBooleanFlag(rec?.newVans) || parseBooleanFlag(wholesaleObject?.newVans) || !/^z19/i.test(model.trim()));
       const wholesaleDisplay =
         wholesalePoValue == null ? "-" : currencyFormatter.format(wholesalePoValue);
       const vinRaw = extractVin(rec);
@@ -738,9 +710,6 @@ export default function DealerYard() {
         height,
         wholesalePo: wholesalePoValue,
         wholesaleDisplay,
-        vanCondition: isSecondHand ? "second" : isNewVan ? "new" : "new",
-        vanConditionLabel: isSecondHand ? "Second Hand" : "New Vans",
-        isSecondHand,
       };
     });
   }, [yard, scheduleByChassis, modelMetaMap]);
@@ -762,7 +731,6 @@ export default function DealerYard() {
         type: "Pending",
         daysInYard,
         wholesaleDisplay: "-",
-        vanCondition: parseBooleanFlag(record?.secondVans) ? "second" : "new",
       };
     });
   }, [yardPending]);
@@ -964,15 +932,7 @@ export default function DealerYard() {
     return yardRangeDefs.map(({ label, min, max }) => ({
       label,
       count: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max).length,
-      newVans: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max && x.vanCondition === "new").length,
-      secondHand: yardList.filter((x) => x.daysInYard >= min && x.daysInYard <= max && x.vanCondition === "second").length,
     }));
-  }, [yardList]);
-
-  const vanConditionCounts = useMemo(() => {
-    const secondHand = yardList.filter((x) => x.vanCondition === "second").length;
-    const newVans = yardList.filter((x) => x.vanCondition === "new").length;
-    return { secondHand, newVans };
   }, [yardList]);
 
   // Yard Inventory display with filters driven by charts only
@@ -988,9 +948,6 @@ export default function DealerYard() {
     if (selectedType !== "All") {
       list = list.filter((x) => x.type === selectedType);
     }
-    if (selectedVanCondition !== "All") {
-      list = list.filter((x) => x.vanCondition === selectedVanCondition);
-    }
     if (searchTerm.trim()) {
       const term = searchTerm.trim().toUpperCase();
       list = list.filter((x) => x.chassis.toUpperCase().includes(term));
@@ -1001,7 +958,7 @@ export default function DealerYard() {
       );
     }
     return list;
-  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType, selectedVanCondition, searchTerm, daysInYardSort]);
+  }, [yardList, selectedRangeBucket, selectedModelRange, selectedType, searchTerm, daysInYardSort]);
 
   const chassisSuggestions = useMemo(() => {
     const term = searchTerm.trim().toUpperCase();
@@ -1363,51 +1320,46 @@ export default function DealerYard() {
   // Stock Analysis data by category (Stock-only units)
   type AnalysisRow = { name: string; value: number };
   const stockUnits = useMemo(() => yardList.filter((row) => row.type === "Stock"), [yardList]);
-  const resolveAnalysisLabel = useCallback((row: (typeof stockUnits)[number], source: unknown) => {
-    const label = cleanLabel(source);
-    if (label === "Unknown" && row.isSecondHand) return "Second Hand";
-    return label;
-  }, []);
   const rangeCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = resolveAnalysisLabel(row, row.modelRange);
+      const key = cleanLabel(row.modelRange);
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [stockUnits, resolveAnalysisLabel]);
+  }, [stockUnits]);
   const functionCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = resolveAnalysisLabel(row, row.functionName);
+      const key = cleanLabel(row.functionName);
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [stockUnits, resolveAnalysisLabel]);
+  }, [stockUnits]);
   const layoutCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = resolveAnalysisLabel(row, row.layout);
+      const key = cleanLabel(row.layout);
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [stockUnits, resolveAnalysisLabel]);
+  }, [stockUnits]);
   const axleCounts = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
-      const key = resolveAnalysisLabel(row, row.axle);
+      const key = cleanLabel(row.axle);
       map[key] = (map[key] || 0) + 1;
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [stockUnits, resolveAnalysisLabel]);
+  }, [stockUnits]);
   const heightCategories = useMemo(() => {
     const map: Record<string, number> = {};
     stockUnits.forEach((row) => {
@@ -2011,28 +1963,8 @@ export default function DealerYard() {
 
         {activeTab === "yard" && (
           <>
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
-              <div className="xl:col-span-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
-                <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Second Hand</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-5xl font-extrabold tracking-tight text-amber-600">{vanConditionCounts.secondHand}</div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">New Vans</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-5xl font-extrabold tracking-tight text-sky-600">{vanConditionCounts.newVans}</div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card className="border-slate-200 shadow-sm hover:shadow-md transition xl:col-span-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
                 <CardHeader className="flex items-center justify-between">
                   <CardTitle className="text-sm">Days In Yard</CardTitle>
                   <div className="flex items-center gap-2">
@@ -2062,28 +1994,20 @@ export default function DealerYard() {
                       <XAxis dataKey="label" />
                       <YAxis allowDecimals={false} />
                       <ReTooltip />
-                      <Legend />
                       <Bar
-                        dataKey="newVans"
-                        name="New Vans"
-                        stackId="yardType"
-                        fill="#0ea5e9"
+                        dataKey="count"
+                        fill="#6366f1"
                         onClick={(_, idx: number) => {
                           const label = yardRangeBuckets[idx]?.label;
                           if (label) setSelectedRangeBucket(label);
                         }}
-                      >
-                        <LabelList dataKey="newVans" position="insideTop" fill="#ffffff" formatter={formatNonZeroLabel} fontSize={12} fontWeight={600} />
-                      </Bar>
-                      <Bar dataKey="secondHand" name="Second Hand" stackId="yardType" fill="#f59e0b">
-                        <LabelList dataKey="secondHand" position="insideTop" fill="#111827" formatter={formatNonZeroLabel} fontSize={12} fontWeight={600} />
-                      </Bar>
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
 
-              <Card className="border-slate-200 shadow-sm hover:shadow-md transition xl:col-span-4">
+              <Card className="border-slate-200 shadow-sm hover:shadow-md transition">
                 <CardHeader className="flex items-center justify-between">
                   <CardTitle className="text-sm">Stock Analysis</CardTitle>
                   <div className="flex flex-wrap gap-2 items-center">
@@ -2104,9 +2028,7 @@ export default function DealerYard() {
                         <XAxis dataKey="label" />
                         <YAxis allowDecimals={false} />
                         <ReTooltip />
-                        <Bar dataKey="count" fill="#0ea5e9">
-                          <LabelList dataKey="count" position="insideTop" fill="#ffffff" formatter={formatNonZeroLabel} fontSize={12} fontWeight={600} />
-                        </Bar>
+                        <Bar dataKey="count" fill="#0ea5e9" />
                       </BarChart>
                     ) : (
                       <PieChart>
@@ -2118,8 +2040,6 @@ export default function DealerYard() {
                           cy="50%"
                           outerRadius={90}
                           innerRadius={50}
-                          label={formatPieCountLabel}
-                          labelLine={false}
                           onClick={(data: any) => {
                             if (activeCategory === "range" && data?.name) {
                               setSelectedModelRange(String(data.name));
@@ -2233,18 +2153,7 @@ export default function DealerYard() {
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium text-slate-600">Type:</span>
-                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto md:justify-end">
-                    <Tabs
-                      value={selectedVanCondition}
-                      onValueChange={(value) => setSelectedVanCondition(value as "All" | "new" | "second")}
-                      className="mr-2"
-                    >
-                      <TabsList>
-                        <TabsTrigger value="All">All Vans</TabsTrigger>
-                        <TabsTrigger value="new">New Vans</TabsTrigger>
-                        <TabsTrigger value="second">Second Hand</TabsTrigger>
-                      </TabsList>
-                    </Tabs>
+                  <div className="flex flex-wrap items-center gap-2">
                     {(["All", "Stock", "Customer"] as const).map((option) => (
                       <Button
                         key={option}
@@ -2280,7 +2189,6 @@ export default function DealerYard() {
                           {showPriceColumn && <TableHead className="font-semibold">AUD Price (excl. GST)</TableHead>}
                           <TableHead className="font-semibold">Customer</TableHead>
                           <TableHead className="font-semibold">Type</TableHead>
-                          <TableHead className="font-semibold">Vans Category</TableHead>
                           <TableHead className="font-semibold">
                             <button
                               type="button"
@@ -2302,7 +2210,7 @@ export default function DealerYard() {
                       <TableBody>
                         {pendingYardList.length > 0 && (
                           <TableRow className="bg-amber-50/60">
-                            <TableCell colSpan={showPriceColumn ? 11 : 10} className="text-sm font-semibold text-amber-700">
+                            <TableCell colSpan={showPriceColumn ? 10 : 9} className="text-sm font-semibold text-amber-700">
                               Pending Into Yard
                             </TableCell>
                           </TableRow>
@@ -2317,7 +2225,6 @@ export default function DealerYard() {
                             <TableCell>
                               <span className="text-amber-700 font-medium">Pending</span>
                             </TableCell>
-                            <TableCell>{row.vanCondition === "second" ? "Second Hand" : "New Vans"}</TableCell>
                             <TableCell>{row.daysInYard}</TableCell>
                             <TableCell>
                               <span className="text-xs uppercase tracking-wide text-slate-400">Pending</span>
@@ -2340,11 +2247,6 @@ export default function DealerYard() {
                             <TableCell>
                               <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
                                 {row.type}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <span className={row.vanCondition === "second" ? "text-amber-700 font-medium" : "text-sky-700 font-medium"}>
-                                {row.vanConditionLabel}
                               </span>
                             </TableCell>
                             <TableCell>{row.daysInYard}</TableCell>
