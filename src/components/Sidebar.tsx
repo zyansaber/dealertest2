@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Package,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -198,6 +199,7 @@ export default function Sidebar({
     const path = location.pathname;
     if (path.includes('/inventory-management')) return 'inventory-management';
     if (path.includes('/finance-report')) return 'finance-report';
+    if (path.includes('/customer-bp-pay')) return 'customer-bp-pay';
     if (path.includes('/inventorystock')) return 'inventorystock';
     if (path.includes('/unsigned')) return 'unsigned';
     if (path.includes('/dealerorders')) return 'dealerorders';
@@ -269,6 +271,15 @@ export default function Sidebar({
         },
       ],
     });
+
+    if (isFinanceReportEnabled(normalizedDealerSlug)) {
+      navigationItems.splice(6, 0, {
+        path: `${basePath}/customer-bp-pay`,
+        label: "Customer BP & Pay",
+        icon: DollarSign,
+        end: true,
+      });
+    }
   }
 
   const isItemActive = useCallback(
