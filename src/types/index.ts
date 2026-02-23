@@ -161,5 +161,21 @@ export interface StockToCustomerRecord {
   raw?: Record<string, any>;
 }
 
+export interface CustomerBpRecord {
+  id: string;
+  bpAmountSigned: number;
+  businessPartner: string;
+  businessPartnerName: string;
+  salesOffice: string;
+  salesOrder: string;
+  chassisNumber: string;
+  orderCreatedDate: string;
+  orderCurrency: string;
+  orderNetValue: number;
+  orderNetValueInclGst: number;
+  orderType: string;
+  raw?: Record<string, any>;
+}
+
 // Export dealer types
 export * from './dealer';
