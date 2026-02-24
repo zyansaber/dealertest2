@@ -107,6 +107,13 @@ type ModelRangeRow = {
   last5WeeksOrders: number;
 };
 
+type TopModelOrderRow = {
+  model: string;
+  stock: number;
+  customer: number;
+  total: number;
+};
+
 const toStr = (value: unknown) => String(value ?? "");
 
 const toNumber = (value: unknown) => {
@@ -1754,7 +1761,7 @@ export default function DealerOverallDashboard() {
     return { maxCurrent, maxTotal, maxLast5 };
   }, [modelRangeDetails, modelRangeRows]);
 
-  const topModelOrders = useMemo(() => {
+  const topModelOrders = useMemo<TopModelOrderRow[]>(() => {
     const start = new Date(selectedYear, 0, 1);
     const end = new Date(selectedYear + 1, 0, 1);
     const bucket = new Map<string, { model: string; stock: number; customer: number; total: number }>();
@@ -1783,11 +1790,11 @@ export default function DealerOverallDashboard() {
     });
 
     return Array.from(bucket.values())
-      .sort((a, b) => b.total - a.total)
+      .sort((a, b) => b.customer - a.customer || b.total - a.total || b.stock - a.stock || a.model.localeCompare(b.model))
       .slice(0, 10);
   }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
 
-  const forecastTopModelOrders = useMemo(() => {
+  const forecastTopModelOrders = useMemo<TopModelOrderRow[]>(() => {
     const start = new Date(selectedYear, 0, 1);
     const end = new Date(selectedYear + 1, 0, 1);
     const bucket = new Map<string, { model: string; stock: number; customer: number; total: number }>();
@@ -1818,7 +1825,7 @@ export default function DealerOverallDashboard() {
     });
 
     return Array.from(bucket.values())
-      .sort((a, b) => b.total - a.total)
+      .sort((a, b) => b.customer - a.customer || b.total - a.total || b.stock - a.stock || a.model.localeCompare(b.model))
       .slice(0, 10);
   }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
 
@@ -1873,6 +1880,58 @@ export default function DealerOverallDashboard() {
 
     return result;
   }, [campervanSchedule, dealerConfigs, dealerOptions, dealerStateLookup, mergedScheduleOrders, selectedYear]);
+
+  const renderMirroredTopModelChart = (
+    rows: TopModelOrderRow[],
+    emptyText: string
+  ) => {
+    if (rows.length === 0) {
+      return <p className="text-muted-foreground">{emptyText}</p>;
+    }
+
+    const maxValue = Math.max(
+      1,
+      ...rows.flatMap((row) => [row.customer, row.stock])
+    );
+
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-[92px_1fr_160px_1fr_92px] items-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <span className="text-right">Customer</span>
+          <span />
+          <span className="text-center">Model</span>
+          <span />
+          <span className="text-left">Stock</span>
+        </div>
+
+        <div className="space-y-2">
+          {rows.map((row) => {
+            const customerWidth = `${(row.customer / maxValue) * 100}%`;
+            const stockWidth = `${(row.stock / maxValue) * 100}%`;
+
+            return (
+              <div
+                key={row.model}
+                className="grid grid-cols-[92px_1fr_160px_1fr_92px] items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-3 py-2"
+              >
+                <span className="text-right text-sm font-semibold tabular-nums text-emerald-600">{row.customer}</span>
+                <div className="flex justify-end">
+                  <div className="h-6 rounded-l-md bg-emerald-500/90" style={{ width: customerWidth, minWidth: row.customer > 0 ? 6 : 0 }} />
+                </div>
+                <div className="truncate text-center text-sm font-semibold text-slate-700" title={`${row.model} · Total ${row.total}`}>
+                  {row.model}
+                </div>
+                <div className="flex justify-start">
+                  <div className="h-6 rounded-r-md bg-blue-500/90" style={{ width: stockWidth, minWidth: row.stock > 0 ? 6 : 0 }} />
+                </div>
+                <span className="text-left text-sm font-semibold tabular-nums text-blue-600">{row.stock}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const mapModelRangeMetrics = useMemo(() => {
     const byRange = new Map<string, { orders: number; forecast: number }>();
@@ -3081,32 +3140,7 @@ export default function DealerOverallDashboard() {
                 <CardTitle>Top 10 Models (Order Received {selectedYear})</CardTitle>
                 <p className="text-sm text-muted-foreground">Order received volume split by customer vs stock.</p>
               </CardHeader>
-              <CardContent>
-                {topModelOrders.length === 0 ? (
-                  <p className="text-muted-foreground">No order received data for {selectedYear}.</p>
-                ) : (
-                  <ChartContainer
-                    config={{
-                      stock: { label: "Stock", color: "#3b82f6" },
-                      customer: { label: "Customer", color: "#10b981" },
-                      total: { label: "Total", color: "#0f172a" },
-                    }}
-                    className="h-[420px]"
-                  >
-                    <BarChart data={topModelOrders} margin={{ top: 16, left: 16, right: 16, bottom: 12 }} layout="vertical">
-                      <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                      <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
-                      <YAxis type="category" dataKey="model" tickLine={false} axisLine={false} width={140} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
-                      <Bar dataKey="stock" fill="var(--color-stock)" stackId="top10" radius={[0, 0, 0, 0]} />
-                      <Bar dataKey="customer" fill="var(--color-customer)" stackId="top10" radius={[0, 6, 6, 0]}>
-                        <LabelList dataKey="total" position="right" fill="#0f172a" />
-                      </Bar>
-                    </BarChart>
-                  </ChartContainer>
-                )}
-              </CardContent>
+              <CardContent>{renderMirroredTopModelChart(topModelOrders, `No order received data for ${selectedYear}.`)}</CardContent>
             </Card>
             <Card>
               <CardHeader>
@@ -3114,34 +3148,7 @@ export default function DealerOverallDashboard() {
                 <p className="text-sm text-muted-foreground">Forecast production volume split by customer vs stock.</p>
               </CardHeader>
               <CardContent>
-                {forecastTopModelOrders.length === 0 ? (
-                  <p className="text-muted-foreground">No forecast production data for {selectedYear}.</p>
-                ) : (
-                  <ChartContainer
-                    config={{
-                      stock: { label: "Stock", color: "#3b82f6" },
-                      customer: { label: "Customer", color: "#10b981" },
-                      total: { label: "Total", color: "#0f172a" },
-                    }}
-                    className="h-[420px]"
-                  >
-                    <BarChart
-                      data={forecastTopModelOrders}
-                      margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
-                      layout="vertical"
-                    >
-                      <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                      <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
-                      <YAxis type="category" dataKey="model" tickLine={false} axisLine={false} width={140} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
-                      <Bar dataKey="stock" fill="var(--color-stock)" stackId="forecast10" radius={[0, 0, 0, 0]} />
-                      <Bar dataKey="customer" fill="var(--color-customer)" stackId="forecast10" radius={[0, 6, 6, 0]}>
-                        <LabelList dataKey="total" position="right" fill="#0f172a" />
-                      </Bar>
-                    </BarChart>
-                  </ChartContainer>
-                )}
+                {renderMirroredTopModelChart(forecastTopModelOrders, `No forecast production data for ${selectedYear}.`)}
               </CardContent>
             </Card>
           </div>
