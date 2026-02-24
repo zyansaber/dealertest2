@@ -19,6 +19,7 @@ import type {
   DateTrack,
   YardNewVanInvoice,
   NewSaleRecord,
+  ChassisPriceRecord,
   StockToCustomerRecord,
   CustomerBpRecord,
   CampervanScheduleItem,
@@ -870,6 +871,44 @@ export const subscribeToNewSales = (
 
   onValue(salesRef, handler);
   return () => off(salesRef, "value", handler);
+};
+
+/** -------------------- chassis prices -------------------- */
+export const subscribeToChassisPrices = (callback: (data: ChassisPriceRecord[]) => void) => {
+  const pricesRef = ref(database, "chassis_prices");
+
+  const handler = (snapshot: DataSnapshot) => {
+    const value = snapshot.val();
+    if (!value || typeof value !== "object") {
+      callback([]);
+      return;
+    }
+
+    const records: ChassisPriceRecord[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const source = payload ?? {};
+      return {
+        id: key,
+        billToNameFinal: pickString(source, ["billToNameFinal", "Bill_To_Name_Final", "customer"]),
+        chassisNumber: pickString(source, ["chassisNumber", "chassisnumber", "Chassis Number"]),
+        salesOfficeName: pickString(source, ["salesOfficeName", "Sales_Office_Name", "salesOfficeCode"]),
+        hasInvoice: Boolean(source.hasInvoice),
+        invoiceDate312x: pickString(source, ["invoiceDate_312x", "invoiceDate"]),
+        invoiceNetValueIncGst: toSafeNumber(
+          source.invoiceNetValue_inc_gst ?? source.invoiceNetValueInclGst ?? source.invoiceNetValue
+        ),
+        soNetValue3110IncGst: toSafeNumber(
+          source.soNetValue_3110_inc_gst ?? source.soNetValue3110IncGst ?? source.soNetValue
+        ),
+        finalPriceIncGst: toSafeNumber(source.final_price_incgst ?? source.finalPriceIncGst),
+        raw: source,
+      };
+    });
+
+    callback(records);
+  };
+
+  onValue(pricesRef, handler);
+  return () => off(pricesRef, "value", handler);
 };
 
 export const formatDateDDMMYYYY = (dateStr: string | null): string => {
