@@ -19,10 +19,9 @@ import {
   subscribeToSchedule,
   subscribeToSchedule2024,
   subscribeToYardStock,
-  subscribeToChassisPrices,
 } from "@/lib/firebase";
 import { parseFlexibleDateToDate } from "@/lib/showDatabase";
-import type { CampervanScheduleItem, ChassisPriceRecord, ScheduleItem } from "@/types";
+import type { CampervanScheduleItem, ScheduleItem } from "@/types";
 import { isDealerGroup } from "@/types/dealer";
 
 const PLANNING_MONTHS = 8;
@@ -51,14 +50,6 @@ const MODEL_RANGE_CHART_COLORS: Record<(typeof MODEL_RANGE_KEYS)[number], string
   OTHER: "#64748b",
 };
 const MAP_STATE_ORDER = ["WA", "NT", "SA", "QLD", "NSW", "ACT", "VIC", "TAS", "NZ"] as const;
-const SALES_OFFICE_TO_FACTORY_SLUG: Record<string, string> = {
-  "3121": "st-james",
-  "3123": "traralgon",
-  "3126": "launceston",
-  "3128": "geelong",
-  "3141": "frankston",
-};
-
 const MANAGED_STATE_SLUGS = new Set([
   "abco",
   "alldealers",
@@ -329,7 +320,7 @@ export default function DealerOverallDashboard() {
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [trendMode, setTrendMode] = useState<"week" | "month">("week");
-  const [overviewMode, setOverviewMode] = useState<"customer" | "group" | "modelRange" | "profit">("customer");
+  const [overviewMode, setOverviewMode] = useState<"customer" | "group" | "modelRange">("customer");
   const groupRatioEntries = [
     { key: "overall", label: "Overall" },
     { key: "factory", label: "FACTORY DEALER" },
@@ -356,7 +347,6 @@ export default function DealerOverallDashboard() {
   const [globalYardStock, setGlobalYardStock] = useState<Record<string, AnyRecord>>({});
   const [pgiRecords, setPgiRecords] = useState<Record<string, AnyRecord>>({});
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
-  const [chassisPrices, setChassisPrices] = useState<ChassisPriceRecord[]>([]);
 
   useEffect(() => {
     const scheduleOptions = { includeNoChassis: true, includeNoCustomer: true, includeFinished: true };
@@ -377,16 +367,11 @@ export default function DealerOverallDashboard() {
       setDealerStateMappings(buildStateMappingRows(data || {}));
     });
 
-    const unsubChassisPrices = subscribeToChassisPrices((data) => {
-      setChassisPrices(data || []);
-    });
-
     return () => {
       unsubSchedule?.();
       unsubSchedule2024?.();
       unsubCampervan?.();
       unsubStateMapping?.();
-      unsubChassisPrices?.();
     };
   }, []);
 
@@ -2134,103 +2119,6 @@ export default function DealerOverallDashboard() {
     XLSX.writeFile(workbook, `${dealerDisplayName.replace(/\s+/g, "_")}_Order_Received_Matrix_2024_2026_${todayLabel}.xlsx`);
   };
 
-  const profitScopeSlugs = useMemo(() => {
-    const factorySet = new Set(factoryDealerSlugs);
-
-    if (!dealerSlug) {
-      if (!filteredStateSlugs) return factorySet;
-      return new Set(Array.from(factorySet).filter((slug) => filteredStateSlugs.has(slug)));
-    }
-
-    if (isFactoryDealerAggregate) return factorySet;
-
-    if (isGroupAggregate) {
-      return new Set(activeAggregateSlugs.filter((slug) => factorySet.has(slug)));
-    }
-
-    return factorySet.has(dealerSlug) ? new Set([dealerSlug]) : new Set<string>();
-  }, [activeAggregateSlugs, dealerSlug, factoryDealerSlugs, filteredStateSlugs, isFactoryDealerAggregate, isGroupAggregate]);
-
-  const profitForecastAndInvoiceHistory = useMemo(() => {
-    const scheduleByChassis: Record<string, ScheduleItem> = {};
-    allOrders.forEach((order) => {
-      const chassis = toStr(order?.Chassis).trim().toUpperCase();
-      if (!chassis) return;
-      scheduleByChassis[chassis] = order;
-    });
-
-    const resolveFactorySlug = (price: ChassisPriceRecord, scheduleDealer?: string) => {
-      const officeRaw = toStr(price.salesOfficeName).trim();
-      const officeSlug = slugifyDealerName(officeRaw);
-      if (profitScopeSlugs.has(officeSlug)) return officeSlug;
-
-      const officeCode = officeRaw.replace(/\D/g, "");
-      const mappedByCode = SALES_OFFICE_TO_FACTORY_SLUG[officeCode];
-      if (mappedByCode && profitScopeSlugs.has(mappedByCode)) return mappedByCode;
-
-      const scheduleSlug = slugifyDealerName(scheduleDealer);
-      if (profitScopeSlugs.has(scheduleSlug)) return scheduleSlug;
-
-      return "";
-    };
-
-    const forecastRows = monthBuckets.map((bucket) => ({ label: bucket.label, forecastCustomerUninvoiced: 0 }));
-    const invoiceMonthMap = new Map<string, { label: string; secondHand: number; stock: number; customer: number; total: number }>();
-
-    chassisPrices.forEach((price) => {
-      const chassis = toStr(price.chassisNumber).trim().toUpperCase();
-      const scheduleMatch = chassis ? scheduleByChassis[chassis] : undefined;
-      const dealerSlug = resolveFactorySlug(price, toStr(scheduleMatch?.Dealer));
-      if (!dealerSlug) return;
-
-      const forecastDate = parseDate(toStr(scheduleMatch?.["Forecast Production Date"]));
-      const arrivalDate = forecastDate ? addDays(forecastDate, 30) : null;
-
-      const isCustomer = !isStockCustomer(price.billToNameFinal);
-      if (isCustomer && price.hasInvoice === false && arrivalDate) {
-        monthBuckets.forEach((bucket, idx) => {
-          if (arrivalDate >= bucket.start && arrivalDate < bucket.end) {
-            forecastRows[idx].forecastCustomerUninvoiced += 1;
-          }
-        });
-      }
-
-      if (!price.hasInvoice) return;
-      const invoiceDate = parseDate(price.invoiceDate312x);
-      if (!invoiceDate) return;
-
-      const monthKey = `${invoiceDate.getFullYear()}-${String(invoiceDate.getMonth() + 1).padStart(2, "0")}`;
-      if (!invoiceMonthMap.has(monthKey)) {
-        invoiceMonthMap.set(monthKey, {
-          label: monthFormatter.format(new Date(invoiceDate.getFullYear(), invoiceDate.getMonth(), 1)),
-          secondHand: 0,
-          stock: 0,
-          customer: 0,
-          total: 0,
-        });
-      }
-
-      const row = invoiceMonthMap.get(monthKey)!;
-      const material = toStr((price.raw as any)?.materialNumber0010_3120).toUpperCase();
-      if (material.startsWith("Z12")) {
-        row.secondHand += 1;
-      } else if (material.startsWith("Z19")) {
-        const scheduleCustomer = toStr((scheduleMatch as any)?.Customer);
-        if (isStockCustomer(scheduleCustomer)) row.stock += 1;
-        else row.customer += 1;
-      } else {
-        row.customer += 1;
-      }
-      row.total += 1;
-    });
-
-    const invoiceRows = Array.from(invoiceMonthMap.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([, value]) => value);
-
-    return { forecastRows, invoiceRows };
-  }, [allOrders, chassisPrices, monthBuckets, profitScopeSlugs]);
-
   const modelRangeFilterOptions = useMemo(
     () => ["ALL", ...modelRangeRows.map((row) => row.modelRange)],
     [modelRangeRows]
@@ -2633,22 +2521,10 @@ export default function DealerOverallDashboard() {
                 >
                   by model range
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setOverviewMode("profit")}
-                  className={`rounded-full border px-3 py-1 transition ${
-                    overviewMode === "profit"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  }`}
-                >
-                  by profit
-                </button>
               </div>
             </>
           )}
 
-          {overviewMode !== "profit" && (
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {selectedYear !== 2024 && (
               <Card className="overflow-hidden border-slate-200">
@@ -2802,7 +2678,6 @@ export default function DealerOverallDashboard() {
               </Card>
             ) : null}
           </div>
-          )}
         </header>
 
         <div className="flex-1 space-y-6 p-6">
@@ -2811,7 +2686,7 @@ export default function DealerOverallDashboard() {
             <CardHeader>
               <CardTitle>Forecast Delivery Volume (+30 days)</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : overviewMode === "profit" ? "customer type + uninvoiced chassis volume (hasInvoice=false)." : "stacked by customer vs stock (schedule + campervan)."}
+                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
               </p>
               </CardHeader>
               <CardContent>
@@ -2833,10 +2708,6 @@ export default function DealerOverallDashboard() {
                             srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
                             srhPct: { label: "SRH % (Acc)", color: "#15803d" },
                           }
-                        : overviewMode === "profit"
-                          ? {
-                              forecastCustomerUninvoiced: { label: "Customer (Uninvoiced)", color: "#2563eb" },
-                            }
                         : {
                           stock: { label: "Stock", color: "#3b82f6" },
                           customer: { label: "Customer", color: "#10b981" },
@@ -2847,7 +2718,7 @@ export default function DealerOverallDashboard() {
                   className="h-80"
                 >
                   <ComposedChart
-                    data={overviewMode === "group" ? orderVolumeByMonthGroup : overviewMode === "modelRange" ? orderVolumeByMonthModelRange : overviewMode === "profit" ? profitForecastAndInvoiceHistory.forecastRows : orderVolumeByMonth}
+                    data={overviewMode === "group" ? orderVolumeByMonthGroup : overviewMode === "modelRange" ? orderVolumeByMonthModelRange : orderVolumeByMonth}
                     margin={{ top: 20, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
                     barGap={4}
@@ -2855,7 +2726,7 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    {overviewMode !== "group" && overviewMode !== "profit" && (
+                    {overviewMode !== "group" && (
                       <YAxis
                         yAxisId="pct"
                         orientation="right"
@@ -2895,12 +2766,6 @@ export default function DealerOverallDashboard() {
                         <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
                         <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
                       </>
-                    ) : overviewMode === "profit" ? (
-                      <>
-                        <Bar dataKey="forecastCustomerUninvoiced" fill="var(--color-forecastCustomerUninvoiced)" radius={[6, 6, 0, 0]} stackId="production">
-                          <LabelList dataKey="forecastCustomerUninvoiced" position="top" offset={8} fill="#0f172a" />
-                        </Bar>
-                      </>
                     ) : (
                       <>
                         <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="production" />
@@ -2935,9 +2800,9 @@ export default function DealerOverallDashboard() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <CardTitle className="flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-slate-500" />
-                    {overviewMode === "profit" ? "Invoice History" : "Order Received Trend"}
+                    Order Received Trend
                   </CardTitle>
-                  {overviewMode !== "profit" && (<div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
                     <button
                       type="button"
                       onClick={() => setTrendMode("week")}
@@ -2960,16 +2825,14 @@ export default function DealerOverallDashboard() {
                     >
                       Month
                     </button>
-                  </div>)}
+                  </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {overviewMode === "group"
                     ? "Weekly or monthly order volume stacked by dealer group."
                     : overviewMode === "modelRange"
                       ? "Weekly or monthly order volume stacked by model range with SRC/SRH cumulative ratio trend."
-                      : overviewMode === "profit"
-                        ? "Stacked invoice units by type: second hand (Z12), stock (Z19 + schedule stock), customer."
-                        : "Weekly or monthly order volume split by customer vs stock."}
+                      : "Weekly or monthly order volume split by customer vs stock."}
                 </p>
               </CardHeader>
               <CardContent>
@@ -2991,10 +2854,6 @@ export default function DealerOverallDashboard() {
                             srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
                             srhPct: { label: "SRH % (Acc)", color: "#15803d" },
                           }
-                        : overviewMode === "profit"
-                          ? {
-                              forecastCustomerUninvoiced: { label: "Customer (Uninvoiced)", color: "#2563eb" },
-                            }
                         : {
                           stock: { label: "Stock", color: "#3b82f6" },
                           customer: { label: "Customer", color: "#10b981" },
@@ -3013,11 +2872,9 @@ export default function DealerOverallDashboard() {
                           ? trendMode === "week"
                             ? weeklyOrderTrendModelRange
                             : monthlyOrderTrendModelRange
-                          : overviewMode === "profit"
-                            ? profitForecastAndInvoiceHistory.invoiceRows
-                            : trendMode === "week"
-                              ? weeklyOrderTrend
-                              : monthlyOrderTrend
+                          : trendMode === "week"
+                            ? weeklyOrderTrend
+                            : monthlyOrderTrend
                     }
                     margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
                     barCategoryGap="20%"
@@ -3026,7 +2883,7 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    {overviewMode !== "group" && overviewMode !== "profit" && (
+                    {overviewMode !== "group" && (
                       <YAxis
                         yAxisId="pct"
                         orientation="right"
@@ -3065,14 +2922,6 @@ export default function DealerOverallDashboard() {
                         ))}
                         <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
                         <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                      </>
-                    ) : overviewMode === "profit" ? (
-                      <>
-                        <Bar dataKey="secondHand" fill="var(--color-secondHand)" radius={[0, 0, 0, 0]} stackId="trend" />
-                        <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="trend" />
-                        <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="trend">
-                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
-                        </Bar>
                       </>
                     ) : (
                       <>
