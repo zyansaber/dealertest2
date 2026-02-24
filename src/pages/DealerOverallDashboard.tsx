@@ -102,7 +102,10 @@ type ModelRangeRow = {
   modelRange: string;
   currentStock: number;
   recentPgi: number;
-  recentHandover: number;
+  recentHandover3m: number;
+  recentHandover3mStock: number;
+  recentHandover6m: number;
+  recentHandover6mStock: number;
   incoming: number[];
   last5WeeksOrders: number;
 };
@@ -770,6 +773,16 @@ export default function DealerOverallDashboard() {
   }, [today, totalDaysInYear, selectedYear]);
 
   const ytdTarget = initialTarget ? (initialTarget * elapsedDays) / totalDaysInYear : 0;
+  const ytdTargetPlus180 = useMemo(() => {
+    if (!initialTarget || !totalDaysInYear) return 0;
+    const horizonDate = addDays(today, 180);
+    const start = new Date(selectedYear, 0, 1);
+    const end = new Date(selectedYear + 1, 0, 1);
+    if (horizonDate < start) return 0;
+    if (horizonDate >= end) return initialTarget;
+    const elapsedToHorizon = Math.round((horizonDate.getTime() - start.getTime()) / 86400000) + 1;
+    return (initialTarget * elapsedToHorizon) / totalDaysInYear;
+  }, [initialTarget, selectedYear, today, totalDaysInYear]);
 
   const ordersLastTenWeeks = useMemo(() => {
     const start = addDays(today, -70);
@@ -1448,7 +1461,10 @@ export default function DealerOverallDashboard() {
           modelRange: key,
           currentStock: 0,
           recentPgi: 0,
-          recentHandover: 0,
+          recentHandover3m: 0,
+          recentHandover3mStock: 0,
+          recentHandover6m: 0,
+          recentHandover6mStock: 0,
           incoming: Array(monthBuckets.length).fill(0),
           last5WeeksOrders: 0,
         });
@@ -1467,6 +1483,7 @@ export default function DealerOverallDashboard() {
       });
 
     const threeMonthsAgo = startOfDay(addMonths(today, -3));
+    const sixMonthsAgo = startOfDay(addMonths(today, -6));
     Object.entries(pgiRecords || {}).forEach(([chassis, rec]) => {
       if (dealerSlug) {
         const recordDealer = slugifyDealerName((rec as any)?.dealer);
@@ -1497,10 +1514,17 @@ export default function DealerOverallDashboard() {
         }
       }
       const date = parseDate((rec as any)?.handoverAt) || parseDate((rec as any)?.createdAt);
-      if (!date || date < threeMonthsAgo) return;
+      if (!date || date < sixMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
       const range = getModelRange((rec as any)?.model ?? scheduleMatch?.Model, chassis);
-      ensureRange(range).recentHandover += 1;
+      const row = ensureRange(range);
+      const isStock = isStockCustomer((scheduleMatch as any)?.Customer);
+      row.recentHandover6m += 1;
+      if (isStock) row.recentHandover6mStock += 1;
+      if (date >= threeMonthsAgo) {
+        row.recentHandover3m += 1;
+        if (isStock) row.recentHandover3mStock += 1;
+      }
     });
 
     const horizonStart = monthBuckets[0]?.start;
@@ -1607,6 +1631,9 @@ export default function DealerOverallDashboard() {
       incoming: number[];
       currentStock: number;
       recentHandover: number;
+      recentHandoverStock: number;
+      recentHandover6m: number;
+      recentHandover6mStock: number;
       recentPgi: number;
       last5WeeksOrders: number;
     };
@@ -1623,6 +1650,9 @@ export default function DealerOverallDashboard() {
           incoming: Array(monthBuckets.length).fill(0),
           currentStock: 0,
           recentHandover: 0,
+          recentHandoverStock: 0,
+          recentHandover6m: 0,
+          recentHandover6mStock: 0,
           recentPgi: 0,
           last5WeeksOrders: 0,
         };
@@ -1642,6 +1672,7 @@ export default function DealerOverallDashboard() {
       });
 
     const threeMonthsAgo = startOfDay(addMonths(today, -3));
+    const sixMonthsAgo = startOfDay(addMonths(today, -6));
     Object.entries(pgiRecords || {}).forEach(([chassis, rec]) => {
       if (dealerSlug) {
         const recordDealer = slugifyDealerName((rec as any)?.dealer);
@@ -1673,11 +1704,18 @@ export default function DealerOverallDashboard() {
         }
       }
       const date = parseDate((rec as any)?.handoverAt) || parseDate((rec as any)?.createdAt);
-      if (!date || date < threeMonthsAgo) return;
+      if (!date || date < sixMonthsAgo) return;
       const scheduleMatch = scheduleByChassis[chassis];
       const range = getModelRange((rec as any)?.model ?? scheduleMatch?.Model, chassis);
       const modelLabel = toStr((rec as any)?.model ?? scheduleMatch?.Model).trim() || range;
-      ensure(range, modelLabel).recentHandover += 1;
+      const entry = ensure(range, modelLabel);
+      const isStock = isStockCustomer((scheduleMatch as any)?.Customer);
+      entry.recentHandover6m += 1;
+      if (isStock) entry.recentHandover6mStock += 1;
+      if (date >= threeMonthsAgo) {
+        entry.recentHandover += 1;
+        if (isStock) entry.recentHandoverStock += 1;
+      }
     });
 
     const assignToMonth = (range: string, model: string, forecastDate?: string | null) => {
@@ -2641,7 +2679,7 @@ export default function DealerOverallDashboard() {
                     {formatNumber(forecastYearWithChassis)}
                   </div>
                   <p className="text-xs text-slate-500">
-                    Initial target YTD: {formatNumber(Math.round(ytdTarget))}
+                    Initial target YTD: {formatNumber(Math.round(ytdTargetPlus180))}
                   </p>
                   {overviewMode === "customer" ? (
                     <p className="text-xs text-slate-600">Customer ratio: {customerRatios.productionConfirmed.toFixed(1)}%</p>
@@ -3022,6 +3060,7 @@ export default function DealerOverallDashboard() {
                   <TableRow className="border-b border-slate-200">
                     <TableHead className="text-left text-xs uppercase tracking-wide text-slate-600">Model Range</TableHead>
                     <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Yard</TableHead>
+                    <TableHead className="text-right text-xs uppercase tracking-wide text-red-600">Handover 6m</TableHead>
                     <TableHead className="text-right text-xs uppercase tracking-wide text-red-600">Handover 3m</TableHead>
                     <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">PGI 3m</TableHead>
                     <TableHead className="text-right text-xs uppercase tracking-wide text-slate-600">Last 5 Weeksorders</TableHead>
@@ -3039,7 +3078,7 @@ export default function DealerOverallDashboard() {
                 <TableBody>
                   {modelRangeRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6 + monthBuckets.length}>
+                      <TableCell colSpan={7 + monthBuckets.length}>
                         <div className="py-6 text-center text-slate-500">No model range data available.</div>
                       </TableCell>
                     </TableRow>
@@ -3076,7 +3115,10 @@ export default function DealerOverallDashboard() {
                               {renderBarCell(row.currentStock, modelRangeBarStats.maxCurrent, "#0ea5e9")}
                             </TableCell>
                             <TableCell className="text-right font-semibold tabular-nums text-red-600">
-                              {row.recentHandover}
+                              {row.recentHandover6m} ({row.recentHandover6mStock})
+                            </TableCell>
+                            <TableCell className="text-right font-semibold tabular-nums text-red-600">
+                              {row.recentHandover3m} ({row.recentHandover3mStock})
                             </TableCell>
                             <TableCell className="text-right font-semibold tabular-nums text-slate-900">
                               {row.recentPgi}
@@ -3103,7 +3145,12 @@ export default function DealerOverallDashboard() {
                                 <TableCell className="text-right text-sm text-slate-600">
                                   {renderBarCell(detailRow.currentStock, modelRangeBarStats.maxCurrent, "#0ea5e9")}
                                 </TableCell>
-                                <TableCell className="text-right text-sm text-red-600">{detailRow.recentHandover}</TableCell>
+                                <TableCell className="text-right text-sm text-red-600">
+                                  {detailRow.recentHandover6m} ({detailRow.recentHandover6mStock})
+                                </TableCell>
+                                <TableCell className="text-right text-sm text-red-600">
+                                  {detailRow.recentHandover} ({detailRow.recentHandoverStock})
+                                </TableCell>
                                 <TableCell className="text-right text-sm text-slate-600">{detailRow.recentPgi}</TableCell>
                                 <TableCell className="text-right text-sm text-slate-600">
                                   {renderBarCell(detailRow.last5WeeksOrders, modelRangeBarStats.maxLast5, "#f97316")}
