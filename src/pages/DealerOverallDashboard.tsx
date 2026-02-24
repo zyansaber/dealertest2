@@ -1597,14 +1597,13 @@ export default function DealerOverallDashboard() {
     today,
   ]);
 
-  const regentProductionStats = useMemo(() => {
+  const regentProductionCounts = useMemo(() => {
     const labels = [
       "Ready for Dispatch",
       "Production Commenced Regent",
       "Van Arrived",
       "Van on the sea",
       "Production Commenced Longtree",
-      "Longtree not start",
     ];
     const counts = labels.reduce<Record<string, number>>((acc, label) => {
       acc[label] = 0;
@@ -1617,33 +1616,17 @@ export default function DealerOverallDashboard() {
       const target = normalize(label);
       return v.includes(target);
     };
-    const isPurchaseOrderSent = (value: unknown) => {
-      const normalized = normalize(toStr(value));
-      return normalized !== "" && normalized !== "no";
-    };
-
-    const coreLabels = labels.filter((label) => label !== "Longtree not start");
 
     dealerOrdersAll.forEach((order) => {
       const raw = toStr((order as any)?.["Regent Production"]).trim();
       if (!raw) return;
       const lowered = normalize(raw);
       if (lowered === "finished" || lowered === "finish") return;
-      const match = coreLabels.find((label) => matchesLabel(raw, label));
-      if (match) {
-        counts[match] += 1;
-        return;
-      }
-
-      if (isPurchaseOrderSent((order as any)?.["Purchase Order Sent"])) {
-        counts["Longtree not start"] += 1;
-      }
+      const match = labels.find((label) => matchesLabel(raw, label));
+      if (match) counts[match] += 1;
     });
 
-    return {
-      counts: labels.map((label) => ({ label, count: counts[label] })),
-      longtreeOrders: counts["Production Commenced Longtree"] + counts["Longtree not start"],
-    };
+    return labels.map((label) => ({ label, count: counts[label] }));
   }, [dealerOrdersAll]);
 
   const modelRangeDetails = useMemo(() => {
@@ -3220,54 +3203,32 @@ export default function DealerOverallDashboard() {
               </CardContent>
             </Card>
           </div>
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Regent Production Status (Non-finished)</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Counts of Regent Production stages for {selectedYear} (excluding blank/finished).
-                </p>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={{
-                    count: { label: "Units", color: "#6366f1" },
-                  }}
-                  className="h-96"
-                >
-                  <BarChart data={regentProductionStats.counts} margin={{ top: 16, left: 16, right: 16, bottom: 42 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="label"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      interval={0}
-                      angle={-15}
-                      textAnchor="end"
-                      height={72}
-                    />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]}>
-                      <LabelList dataKey="count" position="top" offset={8} fill="#0f172a" />
-                    </Bar>
-                  </BarChart>
-                </ChartContainer>
-              </CardContent>
-            </Card>
-            <Card className="border-indigo-100 bg-indigo-50/40">
-              <CardHeader>
-                <CardTitle className="text-lg text-indigo-900">in Longtree Orders</CardTitle>
-                <p className="text-sm text-indigo-700">Production Commenced Longtree + Longtree not start</p>
-              </CardHeader>
-              <CardContent className="flex min-h-56 items-center justify-center">
-                <div className="text-6xl font-extrabold leading-none text-indigo-700 tabular-nums">
-                  {regentProductionStats.longtreeOrders}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Regent Production Status (Non-finished)</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Counts of Regent Production stages for {selectedYear} (excluding blank/finished).
+              </p>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer
+                config={{
+                  count: { label: "Units", color: "#6366f1" },
+                }}
+                className="h-96"
+              >
+                <BarChart data={regentProductionCounts} margin={{ top: 16, left: 16, right: 16, bottom: 12 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[6, 6, 0, 0]}>
+                    <LabelList dataKey="count" position="top" offset={8} fill="#0f172a" />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
         </div>
       </main>
     </div>
