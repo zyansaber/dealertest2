@@ -151,6 +151,19 @@ export interface NewSaleRecord {
   soNetValue?: number;
 }
 
+export interface ChassisPriceRecord {
+  id: string;
+  billToNameFinal?: string;
+  chassisNumber?: string;
+  salesOfficeName?: string;
+  hasInvoice?: boolean;
+  invoiceDate312x?: string;
+  invoiceNetValueIncGst?: number;
+  soNetValue3110IncGst?: number;
+  finalPriceIncGst?: number;
+  raw?: Record<string, any>;
+}
+
 export interface StockToCustomerRecord {
   id: string;
   salesOrder: string;
