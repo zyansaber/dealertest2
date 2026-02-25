@@ -292,20 +292,6 @@ export type TargetHighlightConfig = {
   updatedAt?: string;
 };
 
-export type TierRuleConfig = {
-  enabled: boolean;
-  handover6mMultiplier: number;
-  handover3mMultiplier: number;
-  note?: string;
-};
-
-export type OverallDashboardTierPlannerConfig = {
-  selectedTier?: string;
-  rules?: Record<string, TierRuleConfig>;
-  modelTierAssignments?: Record<string, string>;
-  updatedAt?: string;
-};
-
 export const subscribeTargetHighlightConfig = (callback: (data: TargetHighlightConfig | null) => void) => {
   const configRef = ref(database, "overallDashboard/targetHighlight");
 
@@ -323,29 +309,6 @@ export const setTargetHighlightConfig = async (config: TargetHighlightConfig) =>
   await set(configRef, {
     modelRangeTargets: config.modelRangeTargets || {},
     focusModelRanges: config.focusModelRanges || [],
-    updatedAt: new Date().toISOString(),
-  });
-};
-
-export const subscribeOverallDashboardTierPlannerConfig = (
-  callback: (data: OverallDashboardTierPlannerConfig | null) => void
-) => {
-  const configRef = ref(database, "overallDashboard/tierPlanner");
-
-  const handler = (snapshot: DataSnapshot) => {
-    callback(snapshot.val() || null);
-  };
-
-  onValue(configRef, handler);
-  return () => off(configRef, "value", handler);
-};
-
-export const setOverallDashboardTierPlannerConfig = async (config: OverallDashboardTierPlannerConfig) => {
-  const configRef = ref(database, "overallDashboard/tierPlanner");
-  await set(configRef, {
-    selectedTier: config.selectedTier || "tier1",
-    rules: config.rules || {},
-    modelTierAssignments: config.modelTierAssignments || {},
     updatedAt: new Date().toISOString(),
   });
 };
@@ -985,13 +948,6 @@ export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<stri
   return () => off(r, "value", handler);
 }
 
-export function subscribeToYardStockAll(cb: (value: Record<string, Record<string, any>>) => void) {
-  const r = ref(database, "yardstock");
-  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
-  onValue(r, handler);
-  return () => off(r, "value", handler);
-}
-
 export function subscribeToYardPending(dealerSlug: string, cb: (value: Record<string, any>) => void) {
   const r = ref(database, `yardpending/${dealerSlug}`);
   const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
@@ -1239,13 +1195,6 @@ export function subscribeToHandover(
   cb: (value: Record<string, any>) => void
 ) {
   const r = ref(database, `handover/${dealerSlug}`);
-  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
-  onValue(r, handler);
-  return () => off(r, "value", handler);
-}
-
-export function subscribeToHandoverAll(cb: (value: Record<string, Record<string, any>>) => void) {
-  const r = ref(database, "handover");
   const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
