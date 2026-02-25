@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
 import * as XLSX from "xlsx";
@@ -2320,30 +2320,6 @@ export default function DealerOverallDashboard() {
               )}
             </div>
             <div>
-            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Dashboard Pages</p>
-              <div className="mt-2 space-y-1">
-                {[
-                  { to: "/overall-dashboard", label: "Overview", end: true },
-                  { to: "/overall-dashboard/admin", label: "Target Setup" },
-                  { to: "/overall-dashboard/target-and-highlight", label: "Target and Highlight" },
-                ].map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={Boolean(item.end)}
-                    className={({ isActive }) =>
-                      `block rounded-lg px-3 py-2 text-sm font-medium transition ${
-                        isActive ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-800 hover:text-white"
-                      }`
-                    }
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-
               <div className="mt-3 space-y-1">
                 <button
                   type="button"
