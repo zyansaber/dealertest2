@@ -285,34 +285,6 @@ export const removeDealerConfig = async (dealerSlug: string) => {
   await remove(configRef);
 };
 
-/** -------------------- Overall Dashboard Target & Highlight -------------------- */
-export type TargetHighlightConfig = {
-  modelRangeTargets?: Record<string, number>;
-  focusModelRanges?: string[];
-  updatedAt?: string;
-};
-
-export const subscribeTargetHighlightConfig = (callback: (data: TargetHighlightConfig | null) => void) => {
-  const configRef = ref(database, "overallDashboard/targetHighlight");
-
-  const handler = (snapshot: DataSnapshot) => {
-    const data = snapshot.val();
-    callback(data || null);
-  };
-
-  onValue(configRef, handler);
-  return () => off(configRef, "value", handler);
-};
-
-export const setTargetHighlightConfig = async (config: TargetHighlightConfig) => {
-  const configRef = ref(database, "overallDashboard/targetHighlight");
-  await set(configRef, {
-    modelRangeTargets: config.modelRangeTargets || {},
-    focusModelRanges: config.focusModelRanges || [],
-    updatedAt: new Date().toISOString(),
-  });
-};
-
 /** -------------------- Delivery To Assignments -------------------- */
 export const subscribeDeliveryToAssignments = (callback: (data: Record<string, DeliveryToAssignment>) => void) => {
   const deliveryRef = ref(database, "deliveryToAssignments");
