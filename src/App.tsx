@@ -38,6 +38,8 @@ import OcrPage from "./pages/OcrPage";
 import FinanceChatPlayground from "./pages/FinanceChatPlayground";
 import YardReceive from "./pages/YardReceive";
 import CustomerBpPayPage from "./pages/CustomerBpPayPage";
+import OverallDashboardAdmin from "./pages/OverallDashboardAdmin";
+import TargetAndHighlight from "./pages/TargetAndHighlight";
 
 const queryClient = new QueryClient();
 
@@ -105,6 +107,8 @@ const AppShell = () => {
           path="/overall-dashboard"
           element={<DealerOverallDashboard />}
         />
+        <Route path="/overall-dashboard/admin" element={<OverallDashboardAdmin />} />
+        <Route path="/overall-dashboard/target-and-highlight" element={<TargetAndHighlight />} />
         <Route path="/overall-dashboard/state" element={<DealerStateAdmin />} />
 
         {/* 单个 Dealer 路由 - 使用 /dealer/ 前缀 */}
