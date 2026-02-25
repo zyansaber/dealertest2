@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { NavLink, useParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
 import * as XLSX from "xlsx";
@@ -107,6 +107,7 @@ type ModelRangeRow = {
   recentHandover6m: number;
   recentHandover6mStock: number;
   incoming: number[];
+  incomingFinished: number[];
   last5WeeksOrders: number;
 };
 
@@ -241,6 +242,11 @@ const isUnsigned = (order: ScheduleItem) => {
 
 const isRegentFinished = (order: ScheduleItem) => {
   const raw = toStr((order as any)?.["Regent Production"]).trim().toLowerCase();
+  return raw === "finished" || raw === "finish";
+};
+
+const isCampervanRegentFinished = (item: CampervanScheduleItem) => {
+  const raw = toStr(item?.regentProduction).trim().toLowerCase();
   return raw === "finished" || raw === "finish";
 };
 
@@ -1468,6 +1474,7 @@ export default function DealerOverallDashboard() {
           recentHandover6m: 0,
           recentHandover6mStock: 0,
           incoming: Array(monthBuckets.length).fill(0),
+          incomingFinished: Array(monthBuckets.length).fill(0),
           last5WeeksOrders: 0,
         });
       }
@@ -1545,7 +1552,11 @@ export default function DealerOverallDashboard() {
         const row = ensureRange(range);
         const monthIndex = monthBuckets.findIndex((bucket) => arrivalDate >= bucket.start && arrivalDate < bucket.end);
         if (monthIndex >= 0) {
-          row.incoming[monthIndex] += 1;
+          if (isRegentFinished(item)) {
+            row.incomingFinished[monthIndex] += 1;
+          } else {
+            row.incoming[monthIndex] += 1;
+          }
         }
       });
 
@@ -1561,7 +1572,11 @@ export default function DealerOverallDashboard() {
         const row = ensureRange(range);
         const monthIndex = monthBuckets.findIndex((bucket) => arrivalDate >= bucket.start && arrivalDate < bucket.end);
         if (monthIndex >= 0) {
-          row.incoming[monthIndex] += 1;
+          if (isCampervanRegentFinished(item)) {
+            row.incomingFinished[monthIndex] += 1;
+          } else {
+            row.incoming[monthIndex] += 1;
+          }
         }
       });
     }
@@ -1658,6 +1673,7 @@ export default function DealerOverallDashboard() {
   const modelRangeDetails = useMemo(() => {
     type Detail = {
       incoming: number[];
+      incomingFinished: number[];
       currentStock: number;
       recentHandover: number;
       recentHandoverStock: number;
@@ -1677,6 +1693,7 @@ export default function DealerOverallDashboard() {
       if (!bucket[modelKey]) {
         bucket[modelKey] = {
           incoming: Array(monthBuckets.length).fill(0),
+          incomingFinished: Array(monthBuckets.length).fill(0),
           currentStock: 0,
           recentHandover: 0,
           recentHandoverStock: 0,
@@ -1748,7 +1765,7 @@ export default function DealerOverallDashboard() {
       }
     });
 
-    const assignToMonth = (range: string, model: string, forecastDate?: string | null) => {
+    const assignToMonth = (range: string, model: string, forecastDate?: string | null, finished = false) => {
       const parsed = parseDate(forecastDate ?? undefined);
       if (!parsed) return;
       const arrivalDate = addDays(parsed, 30);
@@ -1756,14 +1773,18 @@ export default function DealerOverallDashboard() {
       const monthIndex = monthBuckets.findIndex((bucket) => arrivalDate >= bucket.start && arrivalDate < bucket.end);
       if (monthIndex < 0) return;
       const entry = ensure(range, model);
-      entry.incoming[monthIndex] += 1;
+      if (finished) {
+        entry.incomingFinished[monthIndex] += 1;
+      } else {
+        entry.incoming[monthIndex] += 1;
+      }
     };
 
     dealerOrdersAll.forEach((item) => {
       if (!isStockCustomer((item as any)?.Customer)) return;
       const range = getModelRange((item as any)?.Model, (item as any)?.Chassis);
       const modelLabel = toStr((item as any)?.Model).trim() || range;
-      assignToMonth(range, modelLabel, (item as any)?.["Forecast Production Date"]);
+      assignToMonth(range, modelLabel, (item as any)?.["Forecast Production Date"], isRegentFinished(item));
     });
 
     const last5WeeksStart = addDays(today, -35);
@@ -1788,7 +1809,7 @@ export default function DealerOverallDashboard() {
       if (!isCampervanStock(item)) return;
       const range = getModelRange(item.model, item.chassisNumber);
       const modelLabel = toStr(item.model).trim() || range;
-      assignToMonth(range, modelLabel, item.forecastProductionDate);
+      assignToMonth(range, modelLabel, item.forecastProductionDate, isCampervanRegentFinished(item));
     });
 
     return details;
@@ -2320,6 +2341,30 @@ export default function DealerOverallDashboard() {
               )}
             </div>
             <div>
+            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Dashboard Pages</p>
+              <div className="mt-2 space-y-1">
+                {[
+                  { to: "/overall-dashboard", label: "Overview", end: true },
+                  { to: "/overall-dashboard/admin", label: "Target Setup" },
+                  { to: "/overall-dashboard/target-and-highlight", label: "Target and Highlight" },
+                ].map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={Boolean(item.end)}
+                    className={({ isActive }) =>
+                      `block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                        isActive ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-800 hover:text-white"
+                      }`
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+
               <div className="mt-3 space-y-1">
                 <button
                   type="button"
@@ -3156,14 +3201,18 @@ export default function DealerOverallDashboard() {
                             <TableCell className="text-right font-semibold tabular-nums text-slate-900">
                               {renderBarCell(row.last5WeeksOrders, modelRangeBarStats.maxLast5, "#f97316")}
                             </TableCell>
-                            {row.incoming.map((value, idx) => (
-                              <TableCell
-                                key={`${row.modelRange}-${idx}`}
-                                className={`text-right font-medium tabular-nums text-slate-800 ${idx === 0 ? "border-l border-slate-200" : ""}`}
-                              >
-                                {value}
-                              </TableCell>
-                            ))}
+                            {row.incoming.map((value, idx) => {
+                              const finished = row.incomingFinished[idx] || 0;
+                              return (
+                                <TableCell
+                                  key={`${row.modelRange}-${idx}`}
+                                  className={`text-right font-medium tabular-nums text-slate-800 ${idx === 0 ? "border-l border-slate-200" : ""}`}
+                                >
+                                  {value}
+                                  {finished > 0 ? <span className="ml-1 text-xs font-semibold text-red-600">({finished})</span> : null}
+                                </TableCell>
+                              );
+                            })}
                             <TableCell className="text-right font-semibold tabular-nums text-slate-900">
                               {renderBarCell(totalIncoming(row.incoming), modelRangeBarStats.maxTotal, "#22c55e")}
                             </TableCell>
@@ -3185,14 +3234,18 @@ export default function DealerOverallDashboard() {
                                 <TableCell className="text-right text-sm text-slate-600">
                                   {renderBarCell(detailRow.last5WeeksOrders, modelRangeBarStats.maxLast5, "#f97316")}
                                 </TableCell>
-                                {detailRow.incoming.map((value, idx) => (
-                                  <TableCell
-                                    key={`${row.modelRange}-${model}-${idx}`}
-                                    className={`text-right text-sm text-slate-500 ${idx === 0 ? "border-l border-slate-200" : ""}`}
-                                  >
-                                    {value}
-                                  </TableCell>
-                                ))}
+                                {detailRow.incoming.map((value, idx) => {
+                                  const finished = detailRow.incomingFinished[idx] || 0;
+                                  return (
+                                    <TableCell
+                                      key={`${row.modelRange}-${model}-${idx}`}
+                                      className={`text-right text-sm text-slate-500 ${idx === 0 ? "border-l border-slate-200" : ""}`}
+                                    >
+                                      {value}
+                                      {finished > 0 ? <span className="ml-1 text-xs font-semibold text-red-600">({finished})</span> : null}
+                                    </TableCell>
+                                  );
+                                })}
                                 <TableCell className="text-right font-semibold tabular-nums text-slate-900">
                                   {renderBarCell(
                                     detailRow.incoming.reduce((sum, val) => sum + val, 0),
