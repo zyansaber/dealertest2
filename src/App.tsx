@@ -40,7 +40,6 @@ import YardReceive from "./pages/YardReceive";
 import CustomerBpPayPage from "./pages/CustomerBpPayPage";
 import OverallDashboardAdmin from "./pages/OverallDashboardAdmin";
 import TargetAndHighlight from "./pages/TargetAndHighlight";
-import OverallDashboardHub from "@/pages/OverallDashboardHub";
 
 const queryClient = new QueryClient();
 
@@ -104,11 +103,13 @@ const AppShell = () => {
         <Route path="/xxx/internal-snowy-2487" element={<InternalSnowyPage />} />
 
         {/* Overall dashboard (no dealer slug) */}
-        <Route path="/overall-dashboard" element={<OverallDashboardHub />} />
-        <Route path="/overall-dashboard/overview" element={<DealerOverallDashboard />} />
-        <Route path="/overall-dashboard/admin" element={<Navigate to="/overall-dashboard?tab=admin" replace />} />
-        <Route path="/overall-dashboard/target-and-highlight" element={<Navigate to="/overall-dashboard?tab=target" replace />} />
-        <Route path="/overall-dashboard/state" element={<Navigate to="/overall-dashboard?tab=state" replace />} />
+        <Route
+          path="/overall-dashboard"
+          element={<DealerOverallDashboard />}
+        />
+        <Route path="/overall-dashboard/admin" element={<OverallDashboardAdmin />} />
+        <Route path="/overall-dashboard/target-and-highlight" element={<TargetAndHighlight />} />
+        <Route path="/overall-dashboard/state" element={<DealerStateAdmin />} />
 
         {/* 单个 Dealer 路由 - 使用 /dealer/ 前缀 */}
         <Route
