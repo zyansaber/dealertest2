@@ -9,6 +9,7 @@ import AustraliaDealerMap from "@/components/AustraliaDealerMap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   subscribeDealerConfig,
   subscribeAllDealerConfigs,
@@ -109,6 +110,14 @@ type ModelRangeRow = {
   incoming: number[];
   incomingFinished: number[];
   last5WeeksOrders: number;
+};
+
+type IncomingChassisDetail = {
+  chassis: string;
+  model: string;
+  customer: string;
+  forecastProductionDate: string;
+  status: "incoming" | "finished";
 };
 
 type TopModelOrderRow = {
@@ -365,6 +374,11 @@ export default function DealerOverallDashboard() {
   const [globalYardStock, setGlobalYardStock] = useState<Record<string, AnyRecord>>({});
   const [pgiRecords, setPgiRecords] = useState<Record<string, AnyRecord>>({});
   const [handoverRecords, setHandoverRecords] = useState<Record<string, AnyRecord>>({});
+  const [incomingDetailDialog, setIncomingDetailDialog] = useState<{
+    title: string;
+    monthLabel: string;
+    records: IncomingChassisDetail[];
+  } | null>(null);
 
   useEffect(() => {
     const scheduleOptions = { includeNoChassis: true, includeNoCustomer: true, includeFinished: true };
@@ -1828,6 +1842,98 @@ export default function DealerOverallDashboard() {
     today,
   ]);
 
+  const incomingChassisByCell = useMemo(() => {
+    const byRange = new Map<string, IncomingChassisDetail[]>();
+    const byModel = new Map<string, IncomingChassisDetail[]>();
+
+    const addRecord = ({
+      range,
+      model,
+      monthIndex,
+      chassis,
+      customer,
+      forecastProductionDate,
+      status,
+    }: {
+      range: string;
+      model: string;
+      monthIndex: number;
+      chassis: string;
+      customer: string;
+      forecastProductionDate: string;
+      status: "incoming" | "finished";
+    }) => {
+      const rangeKey = `${range || "UNK"}|${monthIndex}`;
+      const modelKey = `${range || "UNK"}|${toStr(model).trim() || "Unknown"}|${monthIndex}`;
+      const record: IncomingChassisDetail = {
+        chassis: chassis || "(no chassis)",
+        model: toStr(model).trim() || "Unknown",
+        customer: toStr(customer).trim() || "(no customer)",
+        forecastProductionDate: toStr(forecastProductionDate).trim() || "(no date)",
+        status,
+      };
+      if (!byRange.has(rangeKey)) byRange.set(rangeKey, []);
+      byRange.get(rangeKey)!.push(record);
+      if (!byModel.has(modelKey)) byModel.set(modelKey, []);
+      byModel.get(modelKey)!.push(record);
+    };
+
+    const addScheduleRecord = (item: AnyRecord, isFinished: boolean) => {
+      if (!isStockCustomer(item?.Customer)) return;
+      const forecastDate = parseDate(item?.["Forecast Production Date"]);
+      if (!forecastDate) return;
+      const arrivalDate = addDays(forecastDate, 30);
+      const monthIndex = monthBuckets.findIndex((bucket) => arrivalDate >= bucket.start && arrivalDate < bucket.end);
+      if (monthIndex < 0) return;
+      const range = getModelRange(item?.Model, item?.Chassis);
+      addRecord({
+        range,
+        model: toStr(item?.Model).trim() || range,
+        monthIndex,
+        chassis: toStr(item?.Chassis),
+        customer: toStr(item?.Customer),
+        forecastProductionDate: toStr(item?.["Forecast Production Date"]),
+        status: isFinished ? "finished" : "incoming",
+      });
+    };
+
+    dealerOrdersAll.forEach((item) => addScheduleRecord(item as AnyRecord, isRegentFinished(item)));
+
+    dealerCampervanSchedule.forEach((item) => {
+      if (!hasCampervanChassis(item)) return;
+      if (!isCampervanStock(item)) return;
+      const forecastDate = parseDate(item.forecastProductionDate);
+      if (!forecastDate) return;
+      const arrivalDate = addDays(forecastDate, 30);
+      const monthIndex = monthBuckets.findIndex((bucket) => arrivalDate >= bucket.start && arrivalDate < bucket.end);
+      if (monthIndex < 0) return;
+      const range = getModelRange(item.model, item.chassisNumber);
+      addRecord({
+        range,
+        model: toStr(item.model).trim() || range,
+        monthIndex,
+        chassis: toStr(item.chassisNumber),
+        customer: toStr(item.customer),
+        forecastProductionDate: toStr(item.forecastProductionDate),
+        status: isCampervanRegentFinished(item) ? "finished" : "incoming",
+      });
+    });
+
+    byRange.forEach((records) => records.sort((a, b) => a.chassis.localeCompare(b.chassis)));
+    byModel.forEach((records) => records.sort((a, b) => a.chassis.localeCompare(b.chassis)));
+
+    return { byRange, byModel };
+  }, [dealerCampervanSchedule, dealerOrdersAll, monthBuckets]);
+
+  const openIncomingDetailDialog = useCallback((title: string, monthLabel: string, records: IncomingChassisDetail[]) => {
+    if (!records.length) return;
+    setIncomingDetailDialog({
+      title,
+      monthLabel,
+      records: [...records].sort((a, b) => a.chassis.localeCompare(b.chassis)),
+    });
+  }, []);
+
   const modelRangeBarStats = useMemo(() => {
     let maxCurrent = 0;
     let maxTotal = 0;
@@ -3203,13 +3309,29 @@ export default function DealerOverallDashboard() {
                             </TableCell>
                             {row.incoming.map((value, idx) => {
                               const finished = row.incomingFinished[idx] || 0;
+                              const records = incomingChassisByCell.byRange.get(`${row.modelRange}|${idx}`) || [];
+                              const cellContent = (
+                                <>
+                                  {value}
+                                  {finished > 0 ? <span className="ml-1 text-xs font-semibold text-red-600">({finished})</span> : null}
+                                </>
+                              );
                               return (
                                 <TableCell
                                   key={`${row.modelRange}-${idx}`}
                                   className={`text-right font-medium tabular-nums text-slate-800 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                                 >
-                                  {value}
-                                  {finished > 0 ? <span className="ml-1 text-xs font-semibold text-red-600">({finished})</span> : null}
+                                  {records.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openIncomingDetailDialog(`${row.modelRange} (Model Range)`, monthBuckets[idx]?.label || `Month ${idx + 1}`, records)}
+                                      className="rounded px-1 text-right underline decoration-dotted underline-offset-2 hover:text-slate-950"
+                                    >
+                                      {cellContent}
+                                    </button>
+                                  ) : (
+                                    cellContent
+                                  )}
                                 </TableCell>
                               );
                             })}
@@ -3236,13 +3358,29 @@ export default function DealerOverallDashboard() {
                                 </TableCell>
                                 {detailRow.incoming.map((value, idx) => {
                                   const finished = detailRow.incomingFinished[idx] || 0;
+                                  const records = incomingChassisByCell.byModel.get(`${row.modelRange}|${model}|${idx}`) || [];
+                                  const cellContent = (
+                                    <>
+                                      {value}
+                                      {finished > 0 ? <span className="ml-1 text-xs font-semibold text-red-600">({finished})</span> : null}
+                                    </>
+                                  );
                                   return (
                                     <TableCell
                                       key={`${row.modelRange}-${model}-${idx}`}
                                       className={`text-right text-sm text-slate-500 ${idx === 0 ? "border-l border-slate-200" : ""}`}
                                     >
-                                      {value}
-                                      {finished > 0 ? <span className="ml-1 text-xs font-semibold text-red-600">({finished})</span> : null}
+                                      {records.length > 0 ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => openIncomingDetailDialog(`${model} (${row.modelRange})`, monthBuckets[idx]?.label || `Month ${idx + 1}`, records)}
+                                          className="rounded px-1 text-right underline decoration-dotted underline-offset-2 hover:text-slate-700"
+                                        >
+                                          {cellContent}
+                                        </button>
+                                      ) : (
+                                        cellContent
+                                      )}
                                     </TableCell>
                                   );
                                 })}
@@ -3332,6 +3470,43 @@ export default function DealerOverallDashboard() {
           </div>
         </div>
       </main>
+
+      <Dialog open={Boolean(incomingDetailDialog)} onOpenChange={(open) => !open && setIncomingDetailDialog(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              Incoming Chassis — {incomingDetailDialog?.title} / {incomingDetailDialog?.monthLabel}
+            </DialogTitle>
+            <DialogDescription>
+              Clicked value details from Stock Model Outlook (Model Range). Includes incoming and finished records in that month bucket.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-auto rounded-md border">
+            <Table>
+              <TableHeader className="bg-slate-100/80 sticky top-0">
+                <TableRow>
+                  <TableHead>Chassis</TableHead>
+                  <TableHead>Model</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Forecast Production Date</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(incomingDetailDialog?.records || []).map((record, idx) => (
+                  <TableRow key={`${record.chassis}-${idx}`}>
+                    <TableCell className="font-medium">{record.chassis}</TableCell>
+                    <TableCell>{record.model}</TableCell>
+                    <TableCell>{record.customer}</TableCell>
+                    <TableCell>{record.forecastProductionDate}</TableCell>
+                    <TableCell>{record.status === "finished" ? "Finished" : "Incoming"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
