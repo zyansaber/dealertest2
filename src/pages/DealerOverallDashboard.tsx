@@ -36,6 +36,7 @@ const NEW_ZEALAND_TOTAL_SLUG = "new-zealand-total";
 const JV_NAMES = ["Heatherbrae", "Gympie", "Toowoomba", "Bundaberg", "Townsville"];
 const JV_TOTAL_SLUG = "jv-total";
 const EXTERNAL_TOTAL_SLUG = "external-total";
+const EMPTY_SLUGS: string[] = [];
 const ALLOWED_MODEL_RANGES = new Set(["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB"]);
 const MODEL_RANGE_KEYS = ["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB", "OTHER"] as const;
 const MODEL_RANGE_CHART_COLORS: Record<(typeof MODEL_RANGE_KEYS)[number], string> = {
@@ -564,7 +565,10 @@ export default function DealerOverallDashboard() {
     [externalSlugs, factoryDealerSlugs, greenRvSlugs, jvSlugs, newZealandSlugs]
   );
 
-  const activeAggregateSlugs = aggregateSlugMap[dealerSlug ?? ""] ?? [];
+  const activeAggregateSlugs = useMemo(
+    () => aggregateSlugMap[dealerSlug ?? ""] ?? EMPTY_SLUGS,
+    [aggregateSlugMap, dealerSlug]
+  );
 
   useEffect(() => {
     if (!dealerSlug) {
