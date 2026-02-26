@@ -29,12 +29,29 @@ function prettifyDealerName(slug: string): string {
 }
 
 export default function DealerDashboard() {
-  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
+  const { dealerSlug: rawDealerSlug, dashboardPage } = useParams<{ dealerSlug: string; dashboardPage?: string }>();
   const dealerSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
 
   const [allOrders, setAllOrders] = useState<ScheduleItem[]>([]);
   const [dealerConfig, setDealerConfig] = useState<any>(null);
   const [configLoading, setConfigLoading] = useState(true);
+
+  const powerBiEmbedUrl = useMemo(() => {
+    const baseUrl = dealerConfig?.powerbi_url;
+    if (!baseUrl) return "";
+    if (!dashboardPage) return baseUrl;
+
+    const normalizedPage = dashboardPage.trim();
+    if (!normalizedPage) return baseUrl;
+
+    const [urlWithoutHash, hashPart] = baseUrl.split("#", 2);
+    const [pathPart, queryPart] = urlWithoutHash.split("?", 2);
+    const params = new URLSearchParams(queryPart || "");
+    params.set("pageName", normalizedPage);
+    const query = params.toString();
+    const rebuilt = `${pathPart}${query ? `?${query}` : ""}`;
+    return hashPart ? `${rebuilt}#${hashPart}` : rebuilt;
+  }, [dashboardPage, dealerConfig?.powerbi_url]);
 
   // 订阅订单数据
   useEffect(() => {
@@ -144,14 +161,14 @@ export default function DealerDashboard() {
             </div>
             
             <div className="flex items-center gap-3">
-              {dealerConfig?.powerbi_url && (
+              {powerBiEmbedUrl && (
                 <Button
                   variant="outline"
                   size="sm"
                   asChild
                 >
                   <a
-                    href={dealerConfig.powerbi_url}
+                    href={powerBiEmbedUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2"
@@ -167,11 +184,11 @@ export default function DealerDashboard() {
 
         {/* Dashboard Content */}
         <div className="flex-1 p-6">
-          {dealerConfig?.powerbi_url ? (
+          {powerBiEmbedUrl ? (
             <Card className="h-full">
               <CardContent className="p-0 h-full">
                 <iframe
-                  src={dealerConfig.powerbi_url}
+                  src={powerBiEmbedUrl}
                   className="w-full h-full min-h-[600px] border-0 rounded-lg"
                   title={`${dealerDisplayName} PowerBI Dashboard`}
                   allowFullScreen
