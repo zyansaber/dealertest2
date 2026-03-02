@@ -41,6 +41,7 @@ import CustomerBpPayPage from "./pages/CustomerBpPayPage";
 import OverallDashboardAdmin from "./pages/OverallDashboardAdmin";
 import TargetAndHighlight from "./pages/TargetAndHighlight";
 import OverallDashboardHub from "@/pages/OverallDashboardHub";
+import PlanningIntegration from "@/pages/PlanningIntegration";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,15 @@ const AppShell = () => {
 
         {/* Standalone yard receive upload page (public) */}
         <Route path="/yard-receive" element={<YardReceive />} />
+
+        <Route
+          path="/planningintegration"
+          element={
+            <ProtectedMainRoute>
+              <PlanningIntegration />
+            </ProtectedMainRoute>
+          }
+        />
 
 
         {/* 主仪表板（需要密码验证） */}
