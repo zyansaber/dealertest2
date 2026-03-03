@@ -1,0 +1,226 @@
+import { useMemo, useRef, useState } from "react";
+import type { Row } from "./types";
+import { displayValue, parseDateToTimestamp } from "./utils";
+import { milestoneSequence, phaseCardMap } from "./types";
+
+const columns: Array<{ label: string; key: string; source: "schedule" | "dateTrack"; className?: string }> = [
+  { label: "Current Status", key: "_status", source: "schedule" },
+  { label: "Aging Days", key: "_aging", source: "schedule" },
+  { label: "Waiting for ordering", key: "_wfo", source: "schedule" },
+  { label: "Forecast Production Date", key: "Forecast Production Date", source: "schedule" },
+  { label: "Chassis", key: "Chassis", source: "schedule" },
+  { label: "Customer", key: "Customer", source: "schedule", className: "max-w-[110px] truncate" },
+  { label: "Dealer", key: "Dealer", source: "schedule" },
+  { label: "Model", key: "Model", source: "schedule" },
+  { label: "Model Year", key: "Model Year", source: "schedule" },
+  { label: "Order Received Date", key: "Order Received Date", source: "schedule" },
+  { label: "Signed Plans Received", key: "Signed Plans Received", source: "schedule" },
+  { label: "Purchase Order Sent", key: "Purchase Order Sent", source: "schedule" },
+  { label: "chassisWelding", key: "chassisWelding", source: "dateTrack" },
+  { label: "assemblyLine", key: "assemblyLine", source: "dateTrack" },
+  { label: "finishGoods", key: "finishGoods", source: "dateTrack" },
+  { label: "leavingFactory", key: "leavingFactory", source: "dateTrack" },
+  { label: "estLeavngPort", key: "estLeavngPort", source: "dateTrack" },
+  { label: "Left Port", key: "Left Port", source: "dateTrack" },
+  { label: "melbournePortDate", key: "melbournePortDate", source: "dateTrack" },
+  { label: "Received in Melbourne", key: "Received in Melbourne", source: "dateTrack" },
+];
+
+const statusGroup = {
+  "Melbourn Factory": ["Melbourn Factory"],
+  "Order Processing": ["not confirmed orders", "Waiting for sending"],
+  "Longtree Factory": ["Not Start in Longtree", "Chassis welding in Longtree", "Assembly line Longtree", "Finishedin Longtree"],
+  "on the transit": ["Leaving factory from Longtree", "waiting in port", "On the sea", "Melbourn Port"],
+} as const;
+
+const statusClass: Record<string, string> = {
+  "Melbourn Factory": "bg-emerald-100",
+  "not confirmed orders": "bg-amber-100",
+  "Waiting for sending": "bg-yellow-100",
+  "Not Start in Longtree": "bg-sky-100",
+  "Chassis welding in Longtree": "bg-blue-100",
+  "Assembly line Longtree": "bg-indigo-100",
+  "Finishedin Longtree": "bg-violet-100",
+  "Leaving factory from Longtree": "bg-orange-100",
+  "waiting in port": "bg-pink-100",
+  "On the sea": "bg-cyan-100",
+  "Melbourn Port": "bg-lime-100",
+};
+
+const PAGE_SIZE = 80;
+
+export default function SchedulePage({ rows, waitingOrderPrices }: { rows: Row[]; waitingOrderPrices: Record<string, number> }) {
+  const top = useRef<HTMLDivElement | null>(null);
+  const bottom = useRef<HTMLDivElement | null>(null);
+
+  const [agingFilter, setAgingFilter] = useState<"all" | "0-30" | "31-60" | "61-90" | "90+">("all");
+  const [groupFilter, setGroupFilter] = useState<keyof typeof statusGroup | "all">("all");
+  const [page, setPage] = useState(1);
+
+  const enriched = useMemo(
+    () =>
+      rows.map((r) => {
+        let last = "";
+        milestoneSequence.forEach((m) => {
+          const ts = parseDateToTimestamp(m.source === "schedule" ? (r.schedule as any)?.[m.key] : r.dateTrack?.[m.key]);
+          if (ts != null) last = m.key;
+        });
+        const posTs = parseDateToTimestamp((r.schedule as any)?.["Purchase Order Sent"]);
+        const leftTs = parseDateToTimestamp(r.dateTrack?.["Left Port"]);
+        const end = leftTs ?? Date.now();
+        const agingNum = posTs == null ? null : Math.max(0, Math.floor((end - posTs) / 86400000));
+        const currentStatus = (phaseCardMap[last] ?? last) || "-";
+        return { ...r, currentStatus, aging: agingNum == null ? "-" : String(agingNum), agingNum };
+      }),
+    [rows]
+  );
+
+  const filtered = useMemo(() => {
+    return enriched.filter((r) => {
+      if (groupFilter !== "all" && !statusGroup[groupFilter].includes(r.currentStatus as any)) return false;
+      if (agingFilter === "all") return true;
+      if (r.agingNum == null) return false;
+      if (agingFilter === "0-30") return r.agingNum <= 30;
+      if (agingFilter === "31-60") return r.agingNum >= 31 && r.agingNum <= 60;
+      if (agingFilter === "61-90") return r.agingNum >= 61 && r.agingNum <= 90;
+      return r.agingNum > 90;
+    });
+  }, [enriched, groupFilter, agingFilter]);
+
+  const noLeftPort = useMemo(() => enriched.filter((r) => !parseDateToTimestamp(r.dateTrack?.["Left Port"])), [enriched]);
+  const buckets = useMemo(() => {
+    const b = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
+    noLeftPort.forEach((r) => {
+      const d = r.agingNum;
+      if (d == null) return;
+      if (d <= 30) b["0-30"] += 1;
+      else if (d <= 60) b["31-60"] += 1;
+      else if (d <= 90) b["61-90"] += 1;
+      else b["90+"] += 1;
+    });
+    return b;
+  }, [noLeftPort]);
+
+  const groupCards = useMemo(() => {
+    const mk = (k: keyof typeof statusGroup) => ({ key: k, count: enriched.filter((r) => statusGroup[k].includes(r.currentStatus as any)).length });
+    return [mk("Melbourn Factory"), mk("Order Processing"), mk("Longtree Factory"), mk("on the transit")];
+  }, [enriched]);
+
+  const max = Math.max(1, ...Object.values(buckets));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pagedRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  return (
+    <>
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-2xl font-semibold">schedule</h2>
+        <p className="text-sm text-slate-600">Finished hidden only in this page. Status + aging included.</p>
+      </div>
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {groupCards.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => {
+              setGroupFilter((prev) => (prev === c.key ? "all" : c.key));
+              setPage(1);
+            }}
+            className={`rounded-xl border p-4 text-left shadow-sm transition ${groupFilter === c.key ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-white"}`}
+          >
+            <div className="text-sm font-semibold text-slate-700">{c.key}</div>
+            <div className="mt-1 text-3xl font-bold text-slate-900">{c.count}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 text-sm font-semibold">Aging bar chart (no Left Port yet) — click to filter</div>
+        {Object.entries(buckets).map(([k, v]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => {
+              setAgingFilter((prev) => (prev === k ? "all" : (k as any)));
+              setPage(1);
+            }}
+            className={`mb-2 flex w-full items-center gap-3 rounded px-1 py-1 text-left ${agingFilter === k ? "bg-slate-100" : ""}`}
+          >
+            <div className="w-20 text-xs">{k}</div>
+            <div className="h-4 flex-1 rounded bg-slate-100">
+              <div className="h-4 rounded bg-slate-700" style={{ width: `${(v / max) * 100}%` }} />
+            </div>
+            <div className="w-8 text-right text-sm">{v}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
+        <div>Filtered rows: {filtered.length}</div>
+        <div className="flex items-center gap-2">
+          <button type="button" disabled={page <= 1} className="rounded border px-2 py-1 disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+          <span>Page {page}/{totalPages}</span>
+          <button type="button" disabled={page >= totalPages} className="rounded border px-2 py-1 disabled:opacity-50" onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div
+          ref={top}
+          className="overflow-x-auto overflow-y-hidden border-b border-slate-200"
+          onScroll={() => {
+            if (bottom.current && top.current) bottom.current.scrollLeft = top.current.scrollLeft;
+          }}
+        >
+          <div style={{ width: 2600, height: 1 }} />
+        </div>
+        <div
+          ref={bottom}
+          className="max-h-[calc(100vh-420px)] overflow-auto"
+          onScroll={() => {
+            if (top.current && bottom.current) top.current.scrollLeft = bottom.current.scrollLeft;
+          }}
+        >
+          <table className="min-w-[2600px] divide-y divide-slate-200 text-sm">
+            <thead className="sticky top-0 bg-slate-100">
+              <tr>
+                {columns.map((c) => (
+                  <th key={c.key} className="px-3 py-3 text-left font-semibold">
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {pagedRows.map((r, i) => (
+                <tr key={`${r.chassis}-${i}`} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                  {columns.map((c) => {
+                    let v: unknown;
+                    if (c.key === "_status") v = r.currentStatus;
+                    else if (c.key === "_aging") v = r.aging;
+                else if (c.key === "_wfo") v = Number.isFinite(Number(waitingOrderPrices[r.chassis])) ? `AUD ${waitingOrderPrices[r.chassis]}` : "-";
+                    else v = c.source === "schedule" ? (r.schedule as any)?.[c.key] : r.dateTrack?.[c.key];
+
+                    if (c.key === "_status") {
+                      return (
+                        <td key={`${r.chassis}-${c.key}-${i}`} className="whitespace-nowrap px-3 py-2.5">
+                          <span className={`rounded px-2 py-1 text-xs ${statusClass[String(v)] ?? "bg-slate-100"}`}>{displayValue(v)}</span>
+                        </td>
+                      );
+                    }
+
+                    return (
+                      <td key={`${r.chassis}-${c.key}-${i}`} className={`whitespace-nowrap px-3 py-2.5 ${c.className ?? ""}`}>
+                        {displayValue(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
