@@ -1,37 +1,134 @@
-export type PlanningLang = "en" | "zh";
+import { useMemo } from "react";
 
-export const tr = (lang: PlanningLang, en: string, zh: string) => (lang === "zh" ? zh : en);
+import { displayValue, parseDateToTimestamp } from "./utils";
+import { phaseCardMap } from "./types";
+import type { Row } from "./types";
+import type { PlanningLang } from "./i18n";
+import { tr } from "./i18n";
 
-const statusMap: Record<string, { en: string; zh: string }> = {
-  "Melbourn Factory": { en: "Melbourn Factory", zh: "墨尔本工厂" },
-  "not confirmed orders": { en: "not confirmed orders", zh: "未确认订单" },
-  "Waiting for sending": { en: "Waiting for sending", zh: "待发送" },
-  "Not Start in Longtree": { en: "Not Start in Longtree", zh: "Longtree 未开始" },
-  "Chassis welding in Longtree": { en: "Chassis welding in Longtree", zh: "Longtree 底盘焊接" },
-  "Assembly line Longtree": { en: "Assembly line Longtree", zh: "Longtree 总装线" },
-  "Finishedin Longtree": { en: "Finishedin Longtree", zh: "Longtree 已完工" },
-  "Leaving factory from Longtree": { en: "Leaving factory from Longtree", zh: "Longtree 出厂" },
-  "waiting in port": { en: "waiting in port", zh: "港口等待" },
-  "On the sea": { en: "On the sea", zh: "海运中" },
-  "Melbourn Port": { en: "Melbourn Port", zh: "墨尔本港" },
-};
+export default function WaitingForOrderingPage({
+  withStatus,
+  waitingOrderPrices,
+  saveWaitingPrice,
+  specByChassis,
+  planByChassis,
+  lang,
+}: {
+  withStatus: Array<Row & { status: string }>;
+  waitingOrderPrices: Record<string, number>;
+  saveWaitingPrice: (chassis: string, value: number) => Promise<void>;
+  specByChassis: Record<string, string>;
+  planByChassis: Record<string, string>;
+  lang: PlanningLang;
+}) {
+  const waitingForSending = useMemo(() => {
+    const now = Date.now();
+    return withStatus
+      .filter((r) => (phaseCardMap[r.status] ?? r.status) === "Waiting for sending")
+      .map((r) => {
+        const forecastTs = parseDateToTimestamp((r.schedule as any)?.["Forecast Production Date"]);
+        const daysToForecast = forecastTs == null ? null : Math.floor((forecastTs - now) / 86400000);
+        const canSend = daysToForecast != null && daysToForecast <= 180;
+        return { ...r, daysToForecast, canSend };
+      })
+      .sort((a, b) => (a.daysToForecast ?? 9999) - (b.daysToForecast ?? 9999));
+  }, [withStatus]);
 
-export const statusText = (lang: PlanningLang, value: string) => {
-  const found = statusMap[value];
-  if (!found) return value;
-  return lang === "zh" ? found.zh : found.en;
-};
+  const downloadExcel = () => {
+    const header = [
+      tr(lang, "Chassis Number", "底盘号"),
+      tr(lang, "Model", "车型"),
+      tr(lang, "Forecast Production Date", "预测生产日期"),
+      tr(lang, "Forecast - Today (days)", "Forecast-今天（天）"),
+      tr(lang, "Status", "状态"),
+      tr(lang, "Price", "价格"),
+      tr(lang, "Spec", "Spec"),
+      tr(lang, "Plan", "Plan"),
+    ];
 
-export const metricText = (lang: PlanningLang, metric: string) => {
-  const map: Record<string, string> = {
-    "Purchase Order Sent": "采购单发送",
-    chassisWelding: "底盘焊接",
-    assemblyLine: "总装线",
-    finishGoods: "完工入库",
-    leavingFactory: "离开工厂",
-    estLeavngPort: "预计离港",
-    "Left Port": "已离港",
-    melbournePortDate: "墨尔本港到港",
+    const lines = waitingForSending.map((r) => {
+      const chassis = displayValue(r.dateTrack?.["Chassis Number"] ?? r.chassis);
+      const model = displayValue((r.schedule as any)?.Model);
+      const forecast = displayValue((r.schedule as any)?.["Forecast Production Date"]);
+      const days = r.daysToForecast == null ? "-" : String(r.daysToForecast);
+      const status = r.canSend ? tr(lang, "can send", "可发送") : "-";
+      const price = waitingOrderPrices[r.chassis] ?? "";
+      const spec = specByChassis[r.chassis] ?? "";
+      const plan = planByChassis[r.chassis] ?? "";
+      return [chassis, model, forecast, days, status, price, spec, plan].map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",");
+    });
+
+    const csv = [header.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `waiting-for-po-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
-  return lang === "zh" ? map[metric] ?? metric : metric;
-};
+
+  const openUrl = (url?: string) => {
+    if (!url) return;
+    window.open(url, "_blank");
+  };
+
+  return (
+    <>
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-semibold">{tr(lang, "waiting for PO", "待下 PO")}</h2>
+          <button type="button" onClick={downloadExcel} className="rounded-md border border-slate-300 bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">
+            {tr(lang, "Download Excel", "下载 Excel")}
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-[1200px] divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="px-3 py-3 text-left">{tr(lang, "Chassis Number", "底盘号")}</th>
+              <th className="px-3 py-3 text-left">{tr(lang, "Model", "车型")}</th>
+              <th className="px-3 py-3 text-left">{tr(lang, "Forecast Production Date", "预测生产日期")}</th>
+              <th className="px-3 py-3 text-left">{tr(lang, "Forecast - Today (days)", "Forecast-今天（天）")}</th>
+              <th className="px-3 py-3 text-left">{tr(lang, "Status", "状态")}</th>
+              <th className="px-3 py-3 text-left">{tr(lang, "Price", "价格")}</th>
+              <th className="px-3 py-3 text-left">{tr(lang, "Spec", "Spec")}</th>
+              <th className="px-3 py-3 text-left">{tr(lang, "Plan", "Plan")}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {waitingForSending.map((r) => (
+              <tr key={`wfs-${r.chassis}`}>
+                <td className="px-3 py-2.5">{displayValue(r.dateTrack?.["Chassis Number"] ?? r.chassis)}</td>
+                <td className="px-3 py-2.5">{displayValue((r.schedule as any)?.Model)}</td>
+                <td className="px-3 py-2.5">{displayValue((r.schedule as any)?.["Forecast Production Date"])}</td>
+                <td className="px-3 py-2.5">{r.daysToForecast == null ? "-" : r.daysToForecast}</td>
+                <td className={`px-3 py-2.5 font-medium ${r.canSend ? "text-emerald-700" : "text-slate-500"}`}>{r.canSend ? tr(lang, "can send", "可发送") : "-"}</td>
+                <td className="px-3 py-2.5">
+                  <input
+                    type="number"
+                    className="w-28 rounded border px-2 py-1"
+                    value={waitingOrderPrices[r.chassis] ?? ""}
+                    onChange={(e) => saveWaitingPrice(r.chassis, Number(e.target.value || 0))}
+                  />
+                </td>
+                <td className="px-3 py-2.5">
+                  <button type="button" onClick={() => openUrl(specByChassis[r.chassis])} disabled={!specByChassis[r.chassis]} className="rounded border px-2 py-1 disabled:opacity-40">
+                    {tr(lang, "Download", "下载")}
+                  </button>
+                </td>
+                <td className="px-3 py-2.5">
+                  <button type="button" onClick={() => openUrl(planByChassis[r.chassis])} disabled={!planByChassis[r.chassis]} className="rounded border px-2 py-1 disabled:opacity-40">
+                    {tr(lang, "Download", "下载")}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
