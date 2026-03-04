@@ -9,6 +9,8 @@ import TargetPage from "./planningIntegration/TargetPage";
 import ReportPage from "./planningIntegration/ReportPage";
 import WaitingForOrderingPage from "./planningIntegration/WaitingForOrderingPage";
 import VansInDelayPage from "./planningIntegration/VansInDelayPage";
+import NewPOPage from "./planningIntegration/NewPOPage";
+import RequsitionPage from "./planningIntegration/RequsitionPage";
 import { usePlanningData } from "./planningIntegration/usePlanningData";
 import type { Granularity } from "./planningIntegration/types";
 import type { PlanningLang } from "./planningIntegration/i18n";
@@ -29,6 +31,7 @@ export default function PlanningIntegration() {
   }, []);
 
   const data = usePlanningData(reportGranularity);
+  const planningVersion = "2026-03-04-refresh";
 
   const onLogin = () => {
     if (password !== "admin") {
@@ -87,6 +90,7 @@ export default function PlanningIntegration() {
           <button type="button" onClick={onLogin} className="w-full rounded-md bg-slate-900 px-4 py-2 text-white hover:bg-slate-800">
             {tr(lang, "Login", "登录")}
           </button>
+          <p className="mt-3 text-center text-xs text-slate-400">{tr(lang, "Version", "版本")}: {planningVersion}</p>
         </div>
       </div>
     );
@@ -107,9 +111,11 @@ export default function PlanningIntegration() {
           <Route path="/schedule" element={<SchedulePage rows={data.scheduleRows} waitingOrderPrices={data.waitingOrderPrices} lang={lang} />} />
           <Route
             path="/waiting-for-po"
-            element={<WaitingForOrderingPage withStatus={data.withStatus} waitingOrderPrices={data.waitingOrderPrices} saveWaitingPrice={data.saveWaitingPrice} lang={lang} />}
+            element={<WaitingForOrderingPage withStatus={data.withStatus} waitingOrderPrices={data.waitingOrderPrices} saveWaitingPrice={data.saveWaitingPrice} specByChassis={data.specByChassis} planByChassis={data.planByChassis} lang={lang} />}
           />
           <Route path="/waiting-for-ordering" element={<Navigate to="/planningintegration/waiting-for-po" replace />} />
+          <Route path="/new-po" element={<NewPOPage rows={data.rows} specByChassis={data.specByChassis} planByChassis={data.planByChassis} lang={lang} />} />
+          <Route path="/requsition" element={<RequsitionPage lang={lang} />} />
           <Route path="/vans-in-delay" element={<VansInDelayPage rows={data.rows} lang={lang} />} />
           <Route
             path="/target"
