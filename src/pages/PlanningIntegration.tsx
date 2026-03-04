@@ -8,6 +8,7 @@ import SchedulePage from "./planningIntegration/SchedulePage";
 import TargetPage from "./planningIntegration/TargetPage";
 import ReportPage from "./planningIntegration/ReportPage";
 import WaitingForOrderingPage from "./planningIntegration/WaitingForOrderingPage";
+import VansInDelayPage from "./planningIntegration/VansInDelayPage";
 import { usePlanningData } from "./planningIntegration/usePlanningData";
 import type { Granularity } from "./planningIntegration/types";
 import type { PlanningLang } from "./planningIntegration/i18n";
@@ -109,6 +110,7 @@ export default function PlanningIntegration() {
             element={<WaitingForOrderingPage withStatus={data.withStatus} waitingOrderPrices={data.waitingOrderPrices} saveWaitingPrice={data.saveWaitingPrice} lang={lang} />}
           />
           <Route path="/waiting-for-ordering" element={<Navigate to="/planningintegration/waiting-for-po" replace />} />
+          <Route path="/vans-in-delay" element={<VansInDelayPage rows={data.rows} lang={lang} />} />
           <Route
             path="/target"
             element={<TargetPage monthsForTargetInput={data.monthsForTargetInput} monthsForDiff={data.monthsForDiff} targets={data.targets} saveSharedTarget={data.saveSharedTarget} monthlyActuals={data.monthlyActuals} lang={lang} />}

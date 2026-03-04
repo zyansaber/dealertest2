@@ -1,9 +1,9 @@
-import { BarChart3, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Target } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Target } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { PlanningLang } from "@/pages/planningIntegration/i18n";
 import { tr } from "@/pages/planningIntegration/i18n";
 
-type PlanningTabPath = "/planningintegration" | "/planningintegration/schedule" | "/planningintegration/waiting-for-po" | "/planningintegration/target" | "/planningintegration/report";
+type PlanningTabPath = "/planningintegration" | "/planningintegration/schedule" | "/planningintegration/waiting-for-po" | "/planningintegration/vans-in-delay" | "/planningintegration/target" | "/planningintegration/report";
 
 interface PlanningIntegrationSidebarProps {
   collapsed: boolean;
@@ -18,6 +18,7 @@ export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, 
     { path: "/planningintegration", label: tr(lang, "planning dashboard", "计划总览"), icon: ClipboardList, end: true },
     { path: "/planningintegration/schedule", label: tr(lang, "schedule", "排产表"), icon: ClipboardList },
     { path: "/planningintegration/waiting-for-po", label: tr(lang, "waiting for PO", "待下 PO"), icon: ClipboardList },
+    { path: "/planningintegration/vans-in-delay", label: tr(lang, "Vans in Delay", "延误车辆"), icon: AlertTriangle },
     { path: "/planningintegration/target", label: tr(lang, "target", "目标"), icon: Target },
     { path: "/planningintegration/report", label: tr(lang, "report", "报表"), icon: BarChart3 },
   ];
