@@ -51,7 +51,6 @@ const MODEL_RANGE_CHART_COLORS: Record<(typeof MODEL_RANGE_KEYS)[number], string
   NGB: "#8b5cf6",
   OTHER: "#64748b",
 };
-const GROUP_TREND_KEYS = ["factory", "greenRv", "newZealand", "jv", "external"] as const;
 const MAP_STATE_ORDER = ["WA", "NT", "SA", "QLD", "NSW", "ACT", "VIC", "TAS", "NZ"] as const;
 const MANAGED_STATE_SLUGS = new Set([
   "abco",
@@ -1388,11 +1387,6 @@ export default function DealerOverallDashboard() {
       jv: 0,
       external: 0,
       total: 0,
-      factoryPct: 0,
-      greenRvPct: 0,
-      newZealandPct: 0,
-      jvPct: 0,
-      externalPct: 0,
     }));
 
     const addToBucket = (date: Date | null, dealerRaw?: string) => {
@@ -1410,23 +1404,7 @@ export default function DealerOverallDashboard() {
       addToBucket(parseDate(item.forecastProductionDate), toStr(item.dealer));
     });
 
-    const running = { total: 0, factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0 };
-
-    return buckets.map((bucket) => {
-      running.total += bucket.total;
-      GROUP_TREND_KEYS.forEach((key) => {
-        running[key] += bucket[key];
-      });
-
-      return {
-        ...bucket,
-        factoryPct: running.total ? (running.factory / running.total) * 100 : 0,
-        greenRvPct: running.total ? (running.greenRv / running.total) * 100 : 0,
-        newZealandPct: running.total ? (running.newZealand / running.total) * 100 : 0,
-        jvPct: running.total ? (running.jv / running.total) * 100 : 0,
-        externalPct: running.total ? (running.external / running.total) * 100 : 0,
-      };
-    });
+    return buckets;
   }, [dealerCampervanSchedule, dealerOrders, planningBuckets, resolveGroupKey]);
 
   const weeklyOrderTrendGroup = useMemo(() => {
@@ -1442,21 +1420,7 @@ export default function DealerOverallDashboard() {
 
     const buckets = Array.from({ length: 10 }).map((_, index) => {
       const weekStart = addDays(startOfWeek(trendBaseDate), -7 * (9 - index));
-      return {
-        weekStart,
-        label: weekStart.toLocaleDateString("en-AU", { month: "short", day: "numeric" }),
-        factory: 0,
-        greenRv: 0,
-        newZealand: 0,
-        jv: 0,
-        external: 0,
-        total: 0,
-        factoryPct: 0,
-        greenRvPct: 0,
-        newZealandPct: 0,
-        jvPct: 0,
-        externalPct: 0,
-      };
+      return { weekStart, label: weekStart.toLocaleDateString("en-AU", { month: "short", day: "numeric" }), factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0, total: 0 };
     });
 
     dealerOrdersAll.forEach((order) => {
@@ -1479,44 +1443,14 @@ export default function DealerOverallDashboard() {
       bucket.total += 1;
     });
 
-    const running = { total: 0, factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0 };
-    return buckets.map((bucket) => {
-      running.total += bucket.total;
-      GROUP_TREND_KEYS.forEach((key) => {
-        running[key] += bucket[key];
-      });
-
-      return {
-        ...bucket,
-        factoryPct: running.total ? (running.factory / running.total) * 100 : 0,
-        greenRvPct: running.total ? (running.greenRv / running.total) * 100 : 0,
-        newZealandPct: running.total ? (running.newZealand / running.total) * 100 : 0,
-        jvPct: running.total ? (running.jv / running.total) * 100 : 0,
-        externalPct: running.total ? (running.external / running.total) * 100 : 0,
-      };
-    });
+    return buckets;
   }, [dealerCampervanSchedule, dealerOrdersAll, resolveGroupKey, today]);
 
   const monthlyOrderTrendGroup = useMemo(() => {
     const base = startOfMonth(new Date(selectedYear, 0, 1));
     const buckets = Array.from({ length: 12 }).map((_, index) => {
       const start = startOfMonth(addMonths(base, index));
-      return {
-        label: monthFormatter.format(start),
-        start,
-        end: startOfMonth(addMonths(start, 1)),
-        factory: 0,
-        greenRv: 0,
-        newZealand: 0,
-        jv: 0,
-        external: 0,
-        total: 0,
-        factoryPct: 0,
-        greenRvPct: 0,
-        newZealandPct: 0,
-        jvPct: 0,
-        externalPct: 0,
-      };
+      return { label: monthFormatter.format(start), start, end: startOfMonth(addMonths(start, 1)), factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0, total: 0 };
     });
 
     const addToBucket = (date: Date | null, dealerRaw?: string) => {
@@ -1530,22 +1464,7 @@ export default function DealerOverallDashboard() {
     orderReceivedYearOrders.scheduleOrders.forEach((order) => addToBucket(parseScheduleDate(order["Order Received Date"] ?? undefined), order?.Dealer));
     orderReceivedYearOrders.campervanOrders.forEach((item) => addToBucket(getCampervanOrderReceivedDate(item), toStr(item.dealer)));
 
-    const running = { total: 0, factory: 0, greenRv: 0, newZealand: 0, jv: 0, external: 0 };
-    return buckets.map((bucket) => {
-      running.total += bucket.total;
-      GROUP_TREND_KEYS.forEach((key) => {
-        running[key] += bucket[key];
-      });
-
-      return {
-        ...bucket,
-        factoryPct: running.total ? (running.factory / running.total) * 100 : 0,
-        greenRvPct: running.total ? (running.greenRv / running.total) * 100 : 0,
-        newZealandPct: running.total ? (running.newZealand / running.total) * 100 : 0,
-        jvPct: running.total ? (running.jv / running.total) * 100 : 0,
-        externalPct: running.total ? (running.external / running.total) * 100 : 0,
-      };
-    });
+    return buckets;
   }, [orderReceivedYearOrders, resolveGroupKey, selectedYear]);
 
 
@@ -3049,7 +2968,7 @@ export default function DealerOverallDashboard() {
             <CardHeader>
               <CardTitle>Forecast Delivery Volume (+30 days)</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group with cumulative group ratio trend." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
+                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
               </p>
               </CardHeader>
               <CardContent>
@@ -3062,11 +2981,6 @@ export default function DealerOverallDashboard() {
                           newZealand: { label: "New Zealand", color: "#a855f7" },
                           jv: { label: "JV", color: "#f59e0b" },
                           external: { label: "External Dealers", color: "#64748b" },
-                          factoryPct: { label: "Factory % (Acc)", color: "#0369a1" },
-                          greenRvPct: { label: "Green RV % (Acc)", color: "#15803d" },
-                          newZealandPct: { label: "New Zealand % (Acc)", color: "#7e22ce" },
-                          jvPct: { label: "JV % (Acc)", color: "#b45309" },
-                          externalPct: { label: "External % (Acc)", color: "#334155" },
                         }
                       : overviewMode === "modelRange"
                         ? {
@@ -3094,16 +3008,18 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    <YAxis
-                      yAxisId="pct"
-                      orientation="right"
-                      tickFormatter={(value) => `${value}%`}
-                      domain={[0, 100]}
-                      tickLine={false}
-                      axisLine={false}
-                      width={40}
-                      tickMargin={8}
-                    />
+                    {overviewMode !== "group" && (
+                      <YAxis
+                        yAxisId="pct"
+                        orientation="right"
+                        tickFormatter={(value) => `${value}%`}
+                        domain={[0, 100]}
+                        tickLine={false}
+                        axisLine={false}
+                        width={40}
+                        tickMargin={8}
+                      />
+                    )}
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <ChartLegend content={<ChartLegendContent />} />
                     {overviewMode === "group" ? (
@@ -3115,11 +3031,6 @@ export default function DealerOverallDashboard() {
                         <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="production">
                           <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
                         </Bar>
-                        <Line type="monotone" dataKey="factoryPct" stroke="var(--color-factoryPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="greenRvPct" stroke="var(--color-greenRvPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="newZealandPct" stroke="var(--color-newZealandPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="jvPct" stroke="var(--color-jvPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="externalPct" stroke="var(--color-externalPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
                       </>
                     ) : overviewMode === "modelRange" ? (
                       <>
@@ -3200,7 +3111,7 @@ export default function DealerOverallDashboard() {
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {overviewMode === "group"
-                    ? "Weekly or monthly order volume stacked by dealer group with cumulative group ratio trend."
+                    ? "Weekly or monthly order volume stacked by dealer group."
                     : overviewMode === "modelRange"
                       ? "Weekly or monthly order volume stacked by model range with SRC/SRH cumulative ratio trend."
                       : "Weekly or monthly order volume split by customer vs stock."}
@@ -3216,11 +3127,6 @@ export default function DealerOverallDashboard() {
                           newZealand: { label: "New Zealand", color: "#a855f7" },
                           jv: { label: "JV", color: "#f59e0b" },
                           external: { label: "External Dealers", color: "#64748b" },
-                          factoryPct: { label: "Factory % (Acc)", color: "#0369a1" },
-                          greenRvPct: { label: "Green RV % (Acc)", color: "#15803d" },
-                          newZealandPct: { label: "New Zealand % (Acc)", color: "#7e22ce" },
-                          jvPct: { label: "JV % (Acc)", color: "#b45309" },
-                          externalPct: { label: "External % (Acc)", color: "#334155" },
                         }
                       : overviewMode === "modelRange"
                         ? {
@@ -3259,16 +3165,18 @@ export default function DealerOverallDashboard() {
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    <YAxis
-                      yAxisId="pct"
-                      orientation="right"
-                      tickFormatter={(value) => `${value}%`}
-                      domain={[0, 100]}
-                      tickLine={false}
-                      axisLine={false}
-                      width={40}
-                      tickMargin={8}
-                    />
+                    {overviewMode !== "group" && (
+                      <YAxis
+                        yAxisId="pct"
+                        orientation="right"
+                        tickFormatter={(value) => `${value}%`}
+                        domain={[0, 100]}
+                        tickLine={false}
+                        axisLine={false}
+                        width={40}
+                        tickMargin={8}
+                      />
+                    )}
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <ChartLegend content={<ChartLegendContent />} />
                     {overviewMode === "group" ? (
@@ -3280,11 +3188,6 @@ export default function DealerOverallDashboard() {
                         <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="trend">
                           <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
                         </Bar>
-                        <Line type="monotone" dataKey="factoryPct" stroke="var(--color-factoryPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="greenRvPct" stroke="var(--color-greenRvPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="newZealandPct" stroke="var(--color-newZealandPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="jvPct" stroke="var(--color-jvPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="externalPct" stroke="var(--color-externalPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} />
                       </>
                     ) : overviewMode === "modelRange" ? (
                       <>
