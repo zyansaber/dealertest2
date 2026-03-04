@@ -5,8 +5,99 @@ import type { PlanningLang } from "./i18n";
 import { tr } from "./i18n";
 import { parseDateToTimestamp, displayValue } from "./utils";
 
+type ZipInput = { name: string; bytes: Uint8Array };
+
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+const crc32 = (data: Uint8Array) => {
+  let crc = 0xffffffff;
+  for (let i = 0; i < data.length; i += 1) {
+    crc = crcTable[(crc ^ data[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const createZipBlob = (files: ZipInput[]) => {
+  const encoder = new TextEncoder();
+  const fileRecords: Array<{ local: Uint8Array; central: Uint8Array; size: number }> = [];
+  let offset = 0;
+
+  files.forEach(({ name, bytes }) => {
+    const fileNameBytes = encoder.encode(name);
+    const crc = crc32(bytes);
+    const size = bytes.length;
+
+    const localHeader = new Uint8Array(30 + fileNameBytes.length + size);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, 0, true);
+    localView.setUint16(12, 0, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, size, true);
+    localView.setUint32(22, size, true);
+    localView.setUint16(26, fileNameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    localHeader.set(fileNameBytes, 30);
+    localHeader.set(bytes, 30 + fileNameBytes.length);
+
+    const centralHeader = new Uint8Array(46 + fileNameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, 0, true);
+    centralView.setUint16(14, 0, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, size, true);
+    centralView.setUint32(24, size, true);
+    centralView.setUint16(28, fileNameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, offset, true);
+    centralHeader.set(fileNameBytes, 46);
+
+    fileRecords.push({ local: localHeader, central: centralHeader, size: localHeader.length });
+    offset += localHeader.length;
+  });
+
+  const centralDirSize = fileRecords.reduce((acc, rec) => acc + rec.central.length, 0);
+  const centralDirOffset = offset;
+
+  const endHeader = new Uint8Array(22);
+  const endView = new DataView(endHeader.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(4, 0, true);
+  endView.setUint16(6, 0, true);
+  endView.setUint16(8, fileRecords.length, true);
+  endView.setUint16(10, fileRecords.length, true);
+  endView.setUint32(12, centralDirSize, true);
+  endView.setUint32(16, centralDirOffset, true);
+  endView.setUint16(20, 0, true);
+
+  return new Blob([...fileRecords.map((r) => r.local), ...fileRecords.map((r) => r.central), endHeader], { type: "application/zip" });
+};
+
 export default function NewPOPage({ rows, specByChassis, planByChassis, lang }: { rows: Row[]; specByChassis: Record<string, string>; planByChassis: Record<string, string>; lang: PlanningLang }) {
   const [period, setPeriod] = useState<"week" | "month">("week");
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   const data = useMemo(() => {
     const now = Date.now();
@@ -26,9 +117,43 @@ export default function NewPOPage({ rows, specByChassis, planByChassis, lang }: 
     window.open(url, "_blank");
   };
 
-  const downloadAll = () => {
-    const urls = data.flatMap((r) => [specByChassis[r.chassis], planByChassis[r.chassis]]).filter(Boolean) as string[];
-    urls.forEach((u, i) => setTimeout(() => window.open(u, "_blank"), i * 80));
+  const downloadAll = async () => {
+    const files = data
+      .flatMap((r) => [
+        { chassis: r.chassis, kind: "spec", url: specByChassis[r.chassis] },
+        { chassis: r.chassis, kind: "plan", url: planByChassis[r.chassis] },
+      ])
+      .filter((f) => Boolean(f.url)) as Array<{ chassis: string; kind: string; url: string }>;
+
+    if (!files.length) return;
+
+    setDownloadingAll(true);
+    try {
+      const zipFiles = await Promise.all(
+        files.map(async (file) => {
+          const resp = await fetch(file.url);
+          if (!resp.ok) return null;
+          const bytes = new Uint8Array(await resp.arrayBuffer());
+          const urlPart = file.url.split("?")[0] ?? "";
+          const ext = urlPart.includes(".") ? urlPart.split(".").pop() : "bin";
+          const safeExt = (ext || "bin").toLowerCase();
+          return { name: `${file.chassis}_${file.kind}.${safeExt}`, bytes };
+        }),
+      );
+
+      const validFiles = zipFiles.filter(Boolean) as ZipInput[];
+      if (!validFiles.length) return;
+
+      const zipBlob = createZipBlob(validFiles);
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `new-po-spec-plan-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloadingAll(false);
+    }
   };
 
   return (
@@ -41,8 +166,8 @@ export default function NewPOPage({ rows, specByChassis, planByChassis, lang }: 
               <option value="week">{tr(lang, "Within 1 week", "一周内")}</option>
               <option value="month">{tr(lang, "Within 1 month", "一个月内")}</option>
             </select>
-            <button type="button" onClick={downloadAll} className="rounded-md border border-slate-300 bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">
-              {tr(lang, "Download all spec & plan", "批量下载 spec & plan")}
+            <button type="button" onClick={downloadAll} disabled={downloadingAll} className="rounded-md border border-slate-300 bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+              {downloadingAll ? tr(lang, "Preparing zip...", "正在打包...") : tr(lang, "Download all spec & plan (zip)", "批量下载 spec & plan（压缩包）")}
             </button>
           </div>
         </div>
