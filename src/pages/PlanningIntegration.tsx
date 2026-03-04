@@ -31,6 +31,7 @@ export default function PlanningIntegration() {
   }, []);
 
   const data = usePlanningData(reportGranularity);
+  const planningVersion = "2026-03-04-refresh";
 
   const onLogin = () => {
     if (password !== "admin") {
@@ -89,6 +90,7 @@ export default function PlanningIntegration() {
           <button type="button" onClick={onLogin} className="w-full rounded-md bg-slate-900 px-4 py-2 text-white hover:bg-slate-800">
             {tr(lang, "Login", "登录")}
           </button>
+          <p className="mt-3 text-center text-xs text-slate-400">{tr(lang, "Version", "版本")}: {planningVersion}</p>
         </div>
       </div>
     );
