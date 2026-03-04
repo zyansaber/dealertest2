@@ -1,12 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
 import { off, onValue, ref, set } from "firebase/database";
 
-import { database, subscribeToDateTrack } from "@/lib/firebase";
+import { database, subscribeToDateTrack, subscribeToSpecPlan } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 
 import { milestoneSequence, trackedMilestones } from "./types";
 import type { DateTrackRecord, Granularity, Row } from "./types";
 import { buildPeriods, extractScheduleRowsById, getDateTrackByChassis, normalizeKey, parseDateToTimestamp } from "./utils";
+
+const normalizeChassis = (value: unknown) => String(value ?? "").trim().toUpperCase();
+
+const buildSpecPlanMaps = (raw: unknown) => {
+  const specByChassis: Record<string, string> = {};
+  const planByChassis: Record<string, string> = {};
+
+  const put = (chassisRaw: unknown, payload: any) => {
+    const chassis = normalizeChassis(chassisRaw);
+    if (!chassis || !payload || typeof payload !== "object") return;
+    if (typeof payload.spec === "string" && payload.spec.trim()) specByChassis[chassis] = payload.spec;
+    if (typeof payload.plan === "string" && payload.plan.trim()) planByChassis[chassis] = payload.plan;
+  };
+
+  if (Array.isArray(raw)) {
+    raw.forEach((item) => put((item as any)?.Chassis ?? (item as any)?.chassis, item));
+    return { specByChassis, planByChassis };
+  }
+
+  if (raw && typeof raw === "object") {
+    Object.entries(raw as Record<string, any>).forEach(([key, value]) => {
+      if (value && typeof value === "object") put((value as any)?.Chassis ?? key, value);
+    });
+  }
+
+  return { specByChassis, planByChassis };
+};
+
 
 export function usePlanningData(granularity: Granularity) {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
@@ -15,6 +43,8 @@ export function usePlanningData(granularity: Granularity) {
 
   const [targets, setTargets] = useState<Record<string, number>>({});
   const [waitingOrderPrices, setWaitingOrderPrices] = useState<Record<string, number>>({});
+  const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
+  const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const scheduleRef = ref(database, "schedule");
@@ -33,6 +63,12 @@ export function usePlanningData(granularity: Granularity) {
     };
     onValue(targetRef, targetHandler);
 
+    const unsubSpecPlan = subscribeToSpecPlan((data) => {
+      const maps = buildSpecPlanMaps(data);
+      setSpecByChassis(maps.specByChassis);
+      setPlanByChassis(maps.planByChassis);
+    });
+
     const waitingRef = ref(database, "planningTargets/waitingOrderPrice");
     const waitingHandler = (snapshot: any) => {
       const val = snapshot.val();
@@ -46,6 +82,7 @@ export function usePlanningData(granularity: Granularity) {
       unsubDateTrack?.();
       off(targetRef, "value", targetHandler);
       off(waitingRef, "value", waitingHandler);
+      unsubSpecPlan?.();
     };
   }, []);
 
@@ -149,5 +186,7 @@ export function usePlanningData(granularity: Granularity) {
     previousMonthEnd,
     waitingOrderPrices,
     saveWaitingPrice,
+    specByChassis,
+    planByChassis,
   };
 }
