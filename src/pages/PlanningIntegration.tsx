@@ -11,7 +11,6 @@ import WaitingForOrderingPage from "./planningIntegration/WaitingForOrderingPage
 import VansInDelayPage from "./planningIntegration/VansInDelayPage";
 import NewPOPage from "./planningIntegration/NewPOPage";
 import RequsitionPage from "./planningIntegration/RequsitionPage";
-import VehicleSearchPage from "./planningIntegration/VehicleSearchPage";
 import { usePlanningData } from "./planningIntegration/usePlanningData";
 import type { Granularity } from "./planningIntegration/types";
 import type { PlanningLang } from "./planningIntegration/i18n";
@@ -118,7 +117,6 @@ export default function PlanningIntegration() {
           <Route path="/new-po" element={<NewPOPage rows={data.rows} specByChassis={data.specByChassis} planByChassis={data.planByChassis} lang={lang} />} />
           <Route path="/requsition" element={<RequsitionPage lang={lang} />} />
           <Route path="/vans-in-delay" element={<VansInDelayPage rows={data.rows} lang={lang} />} />
-          <Route path="/vehicle-search" element={<VehicleSearchPage rows={data.rows} specByChassis={data.specByChassis} planByChassis={data.planByChassis} lang={lang} />} />
           <Route
             path="/target"
             element={<TargetPage monthsForTargetInput={data.monthsForTargetInput} monthsForDiff={data.monthsForDiff} targets={data.targets} saveSharedTarget={data.saveSharedTarget} monthlyActuals={data.monthlyActuals} currentMonthLabel={data.currentMonthLabel} currentMonthActuals={data.currentMonthActuals} lang={lang} />}
