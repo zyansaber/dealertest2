@@ -10,8 +10,6 @@ export default function TargetPage({
   targets,
   saveSharedTarget,
   monthlyActuals,
-  currentMonthLabel,
-  currentMonthActuals,
   lang,
 }: {
   monthsForTargetInput: string[];
@@ -19,8 +17,6 @@ export default function TargetPage({
   targets: Record<string, number>;
   saveSharedTarget: (month: string, value: number) => Promise<void>;
   monthlyActuals: Record<string, Record<string, number>>;
-  currentMonthLabel: string;
-  currentMonthActuals: Record<string, number>;
   lang: PlanningLang;
 }) {
   const [metric, setMetric] = useState<(typeof trackedMilestones)[number]>("leavingFactory");
@@ -39,11 +35,6 @@ export default function TargetPage({
   const series = monthsForDiff.map((month) => ({ month, value: differences[metric][month] ?? 0 }));
   const totalDifference = useMemo(() => series.reduce((sum, x) => sum + x.value, 0), [series]);
   const maxAbs = Math.max(1, ...series.map((s) => Math.abs(s.value)));
-  const currentMonthTarget = targets[currentMonthLabel] ?? 0;
-  const currentMonthActual = currentMonthActuals[metric] ?? 0;
-  const currentProgressRatio = currentMonthTarget > 0 ? Math.min(currentMonthActual / currentMonthTarget, 1) : 0;
-  const currentRemain = Math.max(currentMonthTarget - currentMonthActual, 0);
-  const currentOver = Math.max(currentMonthActual - currentMonthTarget, 0);
 
   return (
     <>
@@ -107,22 +98,6 @@ export default function TargetPage({
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 text-sm font-semibold">Difference Bar Chart: {metric} (Actual - {tr(lang, "Shared Target", "共享目标")})</div>
-        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-1 text-xs font-semibold text-slate-700">{tr(lang, "Current month progress", "当月进度")} · {currentMonthLabel}</div>
-          <div className="mb-2 h-5 overflow-hidden rounded bg-slate-200">
-            <div className="h-5 bg-blue-500" style={{ width: `${currentProgressRatio * 100}%` }} />
-          </div>
-          <div className="text-xs text-slate-700">
-            {tr(lang, "Current", "当前")}: <span className="font-semibold">{currentMonthActual}</span> /
-            {tr(lang, "Target", "目标")}: <span className="font-semibold">{currentMonthTarget}</span>
-            {currentRemain > 0 ? (
-              <span className="ml-2 text-amber-700">({tr(lang, "Remaining", "还差")} {currentRemain})</span>
-            ) : null}
-            {currentOver > 0 ? (
-              <span className="ml-2 text-emerald-700">(+{currentOver})</span>
-            ) : null}
-          </div>
-        </div>
         {series.map((s) => (
           <div key={s.month} className="mb-2 flex items-center gap-3">
             <div className="w-28 text-xs text-slate-600">{s.month}</div>
