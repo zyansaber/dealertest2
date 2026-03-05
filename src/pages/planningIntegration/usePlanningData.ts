@@ -113,6 +113,11 @@ export function usePlanningData(granularity: Granularity) {
   const periods = useMemo(() => buildPeriods(granularity, fromTs, now), [granularity, now]);
   const monthsForDiff = useMemo(() => buildPeriods("month", fromTs, previousMonthEnd).map((p) => p.label), [previousMonthEnd]);
   const monthsForTargetInput = useMemo(() => buildPeriods("month", fromTs, new Date(2026, 11, 31).getTime()).map((p) => p.label), []);
+  const currentMonthLabel = useMemo(() => {
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  }, []);
 
   const trend = useMemo(() => periods.map((p, idx) => {
     const counts: Record<string, number> = {};
@@ -160,6 +165,24 @@ export function usePlanningData(granularity: Granularity) {
     return out;
   }, [rows, previousMonthEnd]);
 
+  const currentMonthActuals = useMemo(() => {
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+    const monthEnd = Date.now();
+    const out: Record<string, number> = {};
+    trackedMilestones.forEach((m) => {
+      out[m] = 0;
+    });
+    rows.forEach((r) => {
+      trackedMilestones.forEach((m) => {
+        const mm = milestoneSequence.find((x) => x.key === m);
+        if (!mm) return;
+        const ts = parseDateToTimestamp(mm.source === "schedule" ? (r.schedule as any)?.[mm.key] : r.dateTrack?.[mm.key]);
+        if (ts != null && ts >= monthStart && ts <= monthEnd) out[m] += 1;
+      });
+    });
+    return out;
+  }, [rows]);
+
   const saveSharedTarget = async (month: string, value: number) => {
     const next = { ...targets, [month]: value };
     setTargets(next);
@@ -183,6 +206,8 @@ export function usePlanningData(granularity: Granularity) {
     monthlyActuals,
     monthsForDiff,
     monthsForTargetInput,
+    currentMonthLabel,
+    currentMonthActuals,
     previousMonthEnd,
     waitingOrderPrices,
     saveWaitingPrice,
