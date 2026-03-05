@@ -1,9 +1,9 @@
-import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Target } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Search, Target } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { PlanningLang } from "@/pages/planningIntegration/i18n";
 import { tr } from "@/pages/planningIntegration/i18n";
 
-type PlanningTabPath = "/planningintegration" | "/planningintegration/schedule" | "/planningintegration/waiting-for-po" | "/planningintegration/new-po" | "/planningintegration/requsition" | "/planningintegration/vans-in-delay" | "/planningintegration/target" | "/planningintegration/report";
+type PlanningTabPath = "/planningintegration" | "/planningintegration/schedule" | "/planningintegration/waiting-for-po" | "/planningintegration/new-po" | "/planningintegration/requsition" | "/planningintegration/vans-in-delay" | "/planningintegration/vehicle-search" | "/planningintegration/target" | "/planningintegration/report";
 
 interface PlanningIntegrationSidebarProps {
   collapsed: boolean;
@@ -15,6 +15,7 @@ interface PlanningIntegrationSidebarProps {
 
 export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, onToggleLang, onLogout }: PlanningIntegrationSidebarProps) {
   const navItems: Array<{ path: PlanningTabPath; label: string; icon: typeof ClipboardList; end?: boolean }> = [
+    { path: "/planningintegration/vehicle-search", label: tr(lang, "Vehicle Search", "车辆情况搜索"), icon: Search },
     { path: "/planningintegration", label: tr(lang, "planning dashboard", "计划总览"), icon: ClipboardList, end: true },
     { path: "/planningintegration/schedule", label: tr(lang, "schedule", "排产表"), icon: ClipboardList },
     { path: "/planningintegration/waiting-for-po", label: tr(lang, "waiting for PO", "待下 PO"), icon: ClipboardList },
