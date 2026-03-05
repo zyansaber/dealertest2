@@ -50,6 +50,8 @@ function OrderList({
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
   const [deliveryToAssignments, setDeliveryToAssignments] = useState<Record<string, any>>({});
   const [activeTab, setActiveTab] = useState<"caravan" | "vehicles">("caravan");
+  const [vehicleSearchTerm, setVehicleSearchTerm] = useState("");
+  const [vehicleStatusFilter, setVehicleStatusFilter] = useState("all");
   const [filters, setFilters] = useState<FilterOptions>({
     model: "",
     modelYear: "",
@@ -255,6 +257,99 @@ function OrderList({
     if (!dealerSlug) return campervanOrders;
     return campervanOrders.filter((order) => slugifyDealerName(order.dealer) === dealerSlug);
   }, [campervanOrders, dealerSlug, slugifyDealerName]);
+
+  const vehicleStatusSequence = useMemo(
+    () => [
+      "not confirmed orders",
+      "Waiting for sending",
+      "Not Start in Longtree",
+      "Chassis welding in Longtree",
+      "Assembly line Longtree",
+      "Finishedin Longtree",
+      "Leaving factory from Longtree",
+      "waiting in port",
+      "On the sea",
+      "Melbourn Port",
+    ],
+    []
+  );
+
+  const vehicleStatusText: Record<string, string> = {
+    "not confirmed orders": "未确认订单",
+    "Waiting for sending": "待发送",
+    "Not Start in Longtree": "Longtree 未开始",
+    "Chassis welding in Longtree": "Longtree 底盘焊接",
+    "Assembly line Longtree": "Longtree 总装线",
+    "Finishedin Longtree": "Longtree 已完工",
+    "Leaving factory from Longtree": "Longtree 出厂",
+    "waiting in port": "港口等待",
+    "On the sea": "海运中",
+    "Melbourn Port": "墨尔本港",
+    "Melbourn Factory": "墨尔本工厂",
+  };
+
+  const vehicleStatusClass: Record<string, string> = {
+    "not confirmed orders": "bg-amber-100 text-amber-800",
+    "Waiting for sending": "bg-yellow-100 text-yellow-800",
+    "Not Start in Longtree": "bg-sky-100 text-sky-800",
+    "Chassis welding in Longtree": "bg-blue-100 text-blue-800",
+    "Assembly line Longtree": "bg-indigo-100 text-indigo-800",
+    "Finishedin Longtree": "bg-violet-100 text-violet-800",
+    "Leaving factory from Longtree": "bg-orange-100 text-orange-800",
+    "waiting in port": "bg-pink-100 text-pink-800",
+    "On the sea": "bg-cyan-100 text-cyan-800",
+    "Melbourn Port": "bg-lime-100 text-lime-800",
+    "Melbourn Factory": "bg-emerald-100 text-emerald-800",
+  };
+
+  const vehicleStatusBuckets = useMemo(() => {
+    const countMap = filteredCampervanOrders.reduce((acc, order) => {
+      const status = String(order.regentProduction || "-").trim();
+      if (!status) return acc;
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const ordered = vehicleStatusSequence
+      .filter((status) => countMap[status])
+      .map((status) => ({ status, count: countMap[status] }));
+
+    const extras = Object.entries(countMap)
+      .filter(([status]) => !vehicleStatusSequence.includes(status))
+      .map(([status, count]) => ({ status, count }));
+
+    return [...ordered, ...extras];
+  }, [filteredCampervanOrders, vehicleStatusSequence]);
+
+  const searchedVehicleOrders = useMemo(() => {
+    const q = vehicleSearchTerm.trim().toLowerCase();
+    return filteredCampervanOrders.filter((order) => {
+      const status = String(order.regentProduction || "").trim();
+      if (vehicleStatusFilter !== "all" && status !== vehicleStatusFilter) return false;
+      if (!q) return true;
+
+      return [
+        order.forecastProductionDate,
+        order.chassisNumber,
+        order.customer,
+        order.model,
+        order.regentProduction,
+        order.signedOrderReceived,
+        order.vehicle,
+        order.vinNumber,
+      ]
+        .map((x) => String(x || "").toLowerCase())
+        .some((val) => val.includes(q));
+    });
+  }, [filteredCampervanOrders, vehicleSearchTerm, vehicleStatusFilter]);
+
+  const getVehicleDocUrl = useCallback((chassis: string | undefined, kind: "spec" | "plan") => {
+    if (!chassis) return "";
+    const doc = specPlan[chassis] || specPlan[chassis.toUpperCase()] || specPlan[chassis.toLowerCase()];
+    if (!doc) return "";
+    if (kind === "spec") return doc.spec || doc["Spec File"] || "";
+    return doc.plan || doc["Plan File"] || "";
+  }, [specPlan]);
 
   const parseFlexibleDate = useCallback((dateStr: string | null | undefined): Date | null => {
     if (!dateStr) return null;
@@ -540,39 +635,91 @@ function OrderList({
           <TabsContent value="vehicles" className="mt-0">
             <Card>
               <CardHeader>
-                <CardTitle>Vehicles ({filteredCampervanOrders.length})</CardTitle>
+                <CardTitle>Vehicles ({searchedVehicleOrders.length})</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-8 gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <div className="col-span-1 text-left">Forecast Production Date</div>
-                  <div className="col-span-1 text-left">Chassis</div>
-                  <div className="col-span-1 text-left">Customer</div>
-                  <div className="col-span-1 text-left">Model</div>
-                  <div className="col-span-1 text-left">Regent Production</div>
-                  <div className="col-span-1 text-left">Signed Order Received</div>
-                  <div className="col-span-1 text-left">Vehicle</div>
-                  <div className="col-span-1 text-left">VIN</div>
+                <div className="mb-4 flex flex-col gap-3">
+                  <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      placeholder="搜索车辆情况（底盘号 / 客户 / VIN / 状态）"
+                      className="pl-10"
+                      value={vehicleSearchTerm}
+                      onChange={(e) => setVehicleSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">墨尔本工厂</div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant={vehicleStatusFilter === "all" ? "default" : "outline"}
+                        className={vehicleStatusFilter === "all" ? "" : "!bg-transparent"}
+                        onClick={() => setVehicleStatusFilter("all")}
+                      >
+                        全部状态 ({filteredCampervanOrders.length})
+                      </Button>
+                      {vehicleStatusBuckets.map(({ status, count }) => (
+                        <Button
+                          key={status}
+                          size="sm"
+                          variant={vehicleStatusFilter === status ? "default" : "outline"}
+                          className={vehicleStatusFilter === status ? "" : "!bg-white"}
+                          onClick={() => setVehicleStatusFilter((prev) => (prev === status ? "all" : status))}
+                        >
+                          {(vehicleStatusText[status] || status)} ({count})
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {loadingVehicles ? (
                   <div className="text-center py-8 text-slate-500">Loading vehicle schedule...</div>
-                ) : filteredCampervanOrders.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    {filteredCampervanOrders.map((order, idx) => (
+                ) : searchedVehicleOrders.length > 0 ? (
+                  <div className="overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <div className="grid min-w-[1180px] grid-cols-10 gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <div>Forecast Production Date</div>
+                      <div>Chassis</div>
+                      <div>Customer</div>
+                      <div>Model</div>
+                      <div>Current Status</div>
+                      <div>Signed Order Received</div>
+                      <div>Vehicle</div>
+                      <div>VIN</div>
+                      <div className="text-center">Spec</div>
+                      <div className="text-center">Plan</div>
+                    </div>
+
+                    <div className="mt-2 space-y-2">
+                    {searchedVehicleOrders.map((order, idx) => {
+                      const specUrl = getVehicleDocUrl(order.chassisNumber, "spec");
+                      const planUrl = getVehicleDocUrl(order.chassisNumber, "plan");
+                      const status = String(order.regentProduction || "-").trim() || "-";
+                      return (
                       <div
                         key={`${order.chassisNumber || order.vinNumber || idx}`}
-                        className="grid grid-cols-8 gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                        className="grid min-w-[1180px] grid-cols-10 gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition hover:border-slate-300"
                       >
-                        <div className="col-span-1">{order.forecastProductionDate || "-"}</div>
-                        <div className="col-span-1">{order.chassisNumber || "-"}</div>
-                        <div className="col-span-1">{order.customer || "-"}</div>
-                        <div className="col-span-1">{order.model || "-"}</div>
-                        <div className="col-span-1">{order.regentProduction || "-"}</div>
-                        <div className="col-span-1">{order.signedOrderReceived || "-"}</div>
-                        <div className="col-span-1">{order.vehicle || "-"}</div>
-                        <div className="col-span-1">{order.vinNumber || "-"}</div>
+                        <div>{order.forecastProductionDate || "-"}</div>
+                        <div className="font-medium">{order.chassisNumber || "-"}</div>
+                        <div>{order.customer || "-"}</div>
+                        <div>{order.model || "-"}</div>
+                        <div>
+                          <Badge className={vehicleStatusClass[status] || "bg-slate-100 text-slate-700"}>{vehicleStatusText[status] || status}</Badge>
+                        </div>
+                        <div>{order.signedOrderReceived || "-"}</div>
+                        <div>{order.vehicle || "-"}</div>
+                        <div>{order.vinNumber || "-"}</div>
+                        <div className="text-center">
+                          <Button size="sm" variant={specUrl ? "outline" : "ghost"} disabled={!specUrl} onClick={() => window.open(specUrl, "_blank")}>下载</Button>
+                        </div>
+                        <div className="text-center">
+                          <Button size="sm" variant={planUrl ? "outline" : "ghost"} disabled={!planUrl} onClick={() => window.open(planUrl, "_blank")}>下载</Button>
+                        </div>
                       </div>
-                    ))}
+                    )})}
+                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-8 text-slate-500">
