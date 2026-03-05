@@ -119,7 +119,7 @@ export default function PlanningIntegration() {
           <Route path="/vans-in-delay" element={<VansInDelayPage rows={data.rows} lang={lang} />} />
           <Route
             path="/target"
-            element={<TargetPage monthsForTargetInput={data.monthsForTargetInput} monthsForDiff={data.monthsForDiff} targets={data.targets} saveSharedTarget={data.saveSharedTarget} monthlyActuals={data.monthlyActuals} lang={lang} />}
+            element={<TargetPage monthsForTargetInput={data.monthsForTargetInput} monthsForDiff={data.monthsForDiff} targets={data.targets} saveSharedTarget={data.saveSharedTarget} monthlyActuals={data.monthlyActuals} currentMonthLabel={data.currentMonthLabel} currentMonthActuals={data.currentMonthActuals} lang={lang} />}
           />
           <Route path="/report" element={<ReportPage trend={data.trend} granularity={reportGranularity} setGranularity={setReportGranularity} lang={lang} />} />
           <Route path="*" element={<Navigate to="/planningintegration" replace />} />
