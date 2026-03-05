@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import type { Row } from "./types";
 import type { PlanningLang } from "./i18n";
@@ -96,17 +95,6 @@ const createZipBlob = (files: ZipInput[]) => {
   return new Blob([...fileRecords.map((r) => r.local), ...fileRecords.map((r) => r.central), endHeader], { type: "application/zip" });
 };
 
-
-const triggerDirectDownload = (url: string) => {
-  const iframe = document.createElement("iframe");
-  iframe.style.display = "none";
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  window.setTimeout(() => {
-    iframe.remove();
-  }, 60000);
-};
-
 export default function NewPOPage({ rows, specByChassis, planByChassis, lang }: { rows: Row[]; specByChassis: Record<string, string>; planByChassis: Record<string, string>; lang: PlanningLang }) {
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [downloadingAll, setDownloadingAll] = useState(false);
@@ -137,85 +125,32 @@ export default function NewPOPage({ rows, specByChassis, planByChassis, lang }: 
       ])
       .filter((f) => Boolean(f.url)) as Array<{ chassis: string; kind: string; url: string }>;
 
-    if (!files.length) {
-      toast.error(tr(lang, "No spec/plan files found in current filter", "当前筛选范围内没有可下载的 spec/plan 文件"));
-      return;
-    }
+    if (!files.length) return;
 
     setDownloadingAll(true);
     try {
-      const crossOriginIndexes: number[] = [];
-      const fetchableFiles = files.filter((file, idx) => {
-        try {
-          const fileOrigin = new URL(file.url, window.location.href).origin;
-          const isSameOrigin = fileOrigin === window.location.origin;
-          if (!isSameOrigin) {
-            crossOriginIndexes.push(idx);
-          }
-          return isSameOrigin;
-        } catch {
-          crossOriginIndexes.push(idx);
-          return false;
-        }
-      });
-
-      const zipFiles = await Promise.allSettled(
-        fetchableFiles.map(async (file) => {
+      const zipFiles = await Promise.all(
+        files.map(async (file) => {
           const resp = await fetch(file.url);
-          if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`);
-          }
+          if (!resp.ok) return null;
           const bytes = new Uint8Array(await resp.arrayBuffer());
           const urlPart = file.url.split("?")[0] ?? "";
           const ext = urlPart.includes(".") ? urlPart.split(".").pop() : "bin";
           const safeExt = (ext || "bin").toLowerCase();
-          return { name: `${file.chassis}_${file.kind}.${safeExt}`, bytes, url: file.url };
+          return { name: `${file.chassis}_${file.kind}.${safeExt}`, bytes };
         }),
       );
 
-      const successResults = zipFiles.filter((item): item is PromiseFulfilledResult<ZipInput & { url: string }> => item.status === "fulfilled");
-      const failedFetchUrls = zipFiles
-        .filter((item): item is PromiseRejectedResult => item.status === "rejected");
+      const validFiles = zipFiles.filter(Boolean) as ZipInput[];
+      if (!validFiles.length) return;
 
-      const validFiles = successResults.map((item) => ({ name: item.value.name, bytes: item.value.bytes }));
-      const fallbackUrls = [
-        ...crossOriginIndexes.map((idx) => files[idx].url),
-        ...failedFetchUrls.map((_, i) => {
-          const rejectedItems = zipFiles
-            .map((item, idx) => ({ item, idx }))
-            .filter(({ item }) => item.status === "rejected");
-          const fetchableFileIdx = rejectedItems[i].idx;
-          return fetchableFiles[fetchableFileIdx].url;
-        }),
-      ];
-
-      if (validFiles.length) {
-        const zipBlob = createZipBlob(validFiles);
-        const url = URL.createObjectURL(zipBlob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `new-po-spec-plan-${new Date().toISOString().slice(0, 10)}.zip`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      }
-
-      if (fallbackUrls.length) {
-        fallbackUrls.forEach((url) => {
-          triggerDirectDownload(url);
-        });
-      }
-
-      if (!validFiles.length && fallbackUrls.length) {
-        toast.warning(tr(lang, `Browser blocked zip by CORS, started ${fallbackUrls.length} direct downloads`, `浏览器受 CORS 限制无法打包，已改为直接下载 ${fallbackUrls.length} 个文件`));
-      } else if (fallbackUrls.length) {
-        toast.warning(tr(lang, `Zip downloaded ${validFiles.length} files; ${fallbackUrls.length} files downloaded directly`, `压缩包已下载 ${validFiles.length} 个文件；另有 ${fallbackUrls.length} 个已直接下载`));
-      } else {
-        toast.success(tr(lang, `Downloaded ${validFiles.length} files`, `已打包下载 ${validFiles.length} 个文件`));
-      }
-    } catch {
-      toast.error(tr(lang, "Failed to generate zip", "压缩包生成失败，请重试"));
+      const zipBlob = createZipBlob(validFiles);
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `new-po-spec-plan-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
     } finally {
       setDownloadingAll(false);
     }
