@@ -1,5 +1,5 @@
 // src/pages/DealerYard.tsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,20 @@ import {
 import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
-import { ArrowDown, ArrowUp, Download, FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileCheck2,
+  ShieldAlert,
+  ShieldCheck,
+  Truck,
+  PackageCheck,
+  Handshake,
+  Warehouse,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   BarChart,
@@ -358,6 +371,46 @@ function parseNum(val: unknown): number | null {
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
 }
+
+type YardStockItem = {
+  itemNo: string;
+  materialCode: string;
+  description: string;
+  price: number | null;
+};
+
+function parseYardItems(rawItems: unknown): YardStockItem[] {
+  if (!rawItems) return [];
+
+  const normalizeItem = (item: any): YardStockItem | null => {
+    if (!item || typeof item !== "object") return null;
+    const itemNo = toStr(item?.itemNo ?? item?.itemno ?? item?.item_number).trim();
+    const materialCode = toStr(item?.materialCode ?? item?.materialcode ?? item?.material).trim();
+    const description = toStr(item?.description ?? item?.desc).trim();
+    const price = parseWholesale(item?.price);
+    if (!itemNo && !materialCode && !description && price == null) return null;
+    return { itemNo, materialCode, description, price };
+  };
+
+  if (Array.isArray(rawItems)) {
+    return rawItems.map((item) => normalizeItem(item)).filter(Boolean) as YardStockItem[];
+  }
+
+  if (typeof rawItems === "object") {
+    return Object.entries(rawItems as Record<string, unknown>)
+      .map(([key, item]) => {
+        const normalized = normalizeItem(item);
+        if (!normalized) return null;
+        if (!normalized.itemNo) {
+          return { ...normalized, itemNo: key };
+        }
+        return normalized;
+      })
+      .filter(Boolean) as YardStockItem[];
+  }
+
+  return [];
+}
 function countBy(rows: ExcelRow[], key: keyof ExcelRow) {
   const map: Record<string, number> = {};
   rows.forEach((r) => {
@@ -503,6 +556,7 @@ export default function DealerYard() {
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
   const [selectedVanCondition, setSelectedVanCondition] = useState<"All" | "new" | "second">("All");
   const [daysInYardSort, setDaysInYardSort] = useState<"asc" | "desc" | null>(null);
+  const [expandedChassis, setExpandedChassis] = useState<Record<string, boolean>>({});
   const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
   const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
 
@@ -721,6 +775,9 @@ export default function DealerYard() {
         (parseBooleanFlag(rec?.newVans) || parseBooleanFlag(wholesaleObject?.newVans) || !/^z19/i.test(model.trim()));
       const wholesaleDisplay =
         wholesalePoValue == null ? "-" : currencyFormatter.format(wholesalePoValue);
+      const retailSalePrice = parseWholesale(rec?.retailsaleprice ?? rec?.retailSalePrice);
+      const discount = parseWholesale(rec?.discount);
+      const items = parseYardItems(rec?.items);
       const vinRaw = extractVin(rec);
       return {
         chassis,
@@ -738,6 +795,11 @@ export default function DealerYard() {
         height,
         wholesalePo: wholesalePoValue,
         wholesaleDisplay,
+        retailSalePrice,
+        retailSalePriceDisplay: retailSalePrice == null ? "-" : currencyFormatter.format(retailSalePrice),
+        discount,
+        discountDisplay: discount == null ? "-" : currencyFormatter.format(discount),
+        items,
         vanCondition: isSecondHand ? "second" : isNewVan ? "new" : "new",
         vanConditionLabel: isSecondHand ? "Second Hand" : "New Vans",
         isSecondHand,
@@ -2340,67 +2402,143 @@ export default function DealerYard() {
                           </TableRow>
                         ))}
                         {yardListDisplay.map((row) => (
-                          <TableRow key={row.chassis}>
-                            <TableCell className="font-medium">{row.chassis}</TableCell>
-                            <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
-                            <TableCell>{toStr(row.model) || "-"}</TableCell>
-                            {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
-                            <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                            <TableCell>
-                              <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
-                                {row.type}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <span className={row.vanCondition === "second" ? "text-amber-700 font-medium" : "text-sky-700 font-medium"}>
-                                {row.vanConditionLabel}
-                              </span>
-                            </TableCell>
-                            <TableCell>{row.daysInYard}</TableCell>
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                variant={specByChassis[row.chassis] ? "outline" : "ghost"}
-                                disabled={!specByChassis[row.chassis]}
-                                onClick={() => handleViewSpec(row.chassis)}
-                              >
-                                Spec
-                              </Button>
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                variant={planByChassis[row.chassis] ? "outline" : "ghost"}
-                                disabled={!planByChassis[row.chassis]}
-                                onClick={() => handleViewPlan(row.chassis)}
-                              >
-                                Plan
-                              </Button>
-                            </TableCell>
-                            <TableCell>
-                              {yardActionsEnabled ? (
+                          <Fragment key={row.chassis}>
+                            <TableRow className={expandedChassis[row.chassis] ? "bg-slate-50/80" : ""}>
+                              <TableCell className="font-medium">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1 text-left text-slate-800 transition hover:border-slate-300 hover:bg-slate-50"
+                                  onClick={() =>
+                                    setExpandedChassis((prev) => ({ ...prev, [row.chassis]: !prev[row.chassis] }))
+                                  }
+                                  aria-expanded={!!expandedChassis[row.chassis]}
+                                  aria-label={`Toggle details for ${row.chassis}`}
+                                >
+                                  {expandedChassis[row.chassis] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  <span>{row.chassis}</span>
+                                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                    Details
+                                  </span>
+                                </button>
+                              </TableCell>
+                              <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
+                              <TableCell>{toStr(row.model) || "-"}</TableCell>
+                              {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
+                              <TableCell>{toStr(row.customer) || "-"}</TableCell>
+                              <TableCell>
+                                <span className={row.type === "Stock" ? "text-blue-700 font-medium" : "text-emerald-700 font-medium"}>
+                                  {row.type}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <span className={row.vanCondition === "second" ? "text-amber-700 font-medium" : "text-sky-700 font-medium"}>
+                                  {row.vanConditionLabel}
+                                </span>
+                              </TableCell>
+                              <TableCell>{row.daysInYard}</TableCell>
+                              <TableCell>
                                 <Button
                                   size="sm"
-                                  className="bg-purple-600 hover:bg-purple-700"
-                                  onClick={() => {
-                                    setHandoverData({
-                                      chassis: row.chassis,
-                                      model: row.model,
-                                      vinnumber: row.vinnumber ? String(row.vinnumber) : null,
-                                      dealerName: dealerDisplayName,
-                                      dealerSlug,
-                                      handoverAt: new Date().toISOString(),
-                                    });
-                                    setHandoverOpen(true);
-                                  }}
+                                  variant={specByChassis[row.chassis] ? "outline" : "ghost"}
+                                  disabled={!specByChassis[row.chassis]}
+                                  onClick={() => handleViewSpec(row.chassis)}
                                 >
-                                  Handover
+                                  Spec
                                 </Button>
-                              ) : (
-                                <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant={planByChassis[row.chassis] ? "outline" : "ghost"}
+                                  disabled={!planByChassis[row.chassis]}
+                                  onClick={() => handleViewPlan(row.chassis)}
+                                >
+                                  Plan
+                                </Button>
+                              </TableCell>
+                              <TableCell>
+                                {yardActionsEnabled ? (
+                                  <Button
+                                    size="sm"
+                                    className="bg-purple-600 hover:bg-purple-700"
+                                    onClick={() => {
+                                      setHandoverData({
+                                        chassis: row.chassis,
+                                        model: row.model,
+                                        vinnumber: row.vinnumber ? String(row.vinnumber) : null,
+                                        dealerName: dealerDisplayName,
+                                        dealerSlug,
+                                        handoverAt: new Date().toISOString(),
+                                      });
+                                      setHandoverOpen(true);
+                                    }}
+                                  >
+                                    Handover
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs uppercase tracking-wide text-slate-400">Unavailable</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            {expandedChassis[row.chassis] && (
+                              <TableRow>
+                                <TableCell colSpan={showPriceColumn ? 11 : 10} className="bg-slate-100/80 p-3">
+                                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                                    <div className="mb-3 flex items-center justify-between">
+                                      <h4 className="text-sm font-semibold text-slate-800">Pricing & Line Items</h4>
+                                      <span className="text-xs text-slate-500">{row.chassis}</span>
+                                    </div>
+                                    <div className="mb-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+                                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Wholesale</div>
+                                        <div className="mt-1 font-semibold text-slate-800">{row.wholesaleDisplay}</div>
+                                      </div>
+                                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                                        <div className="text-xs font-medium uppercase tracking-wide text-emerald-700">Retail (incl. GST)</div>
+                                        <div className="mt-1 font-semibold text-emerald-900">{row.retailSalePriceDisplay}</div>
+                                      </div>
+                                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                        <div className="text-xs font-medium uppercase tracking-wide text-amber-700">Discount (incl. GST)</div>
+                                        <div className="mt-1 font-semibold text-amber-900">{row.discountDisplay}</div>
+                                      </div>
+                                    </div>
+                                    <div className="overflow-auto rounded-lg border border-slate-200">
+                                      <Table>
+                                        <TableHeader className="bg-slate-50">
+                                          <TableRow>
+                                            <TableHead>Item No</TableHead>
+                                            <TableHead>Material Code</TableHead>
+                                            <TableHead>Description</TableHead>
+                                            <TableHead className="text-right">Price (incl. GST)</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {row.items.length === 0 ? (
+                                            <TableRow>
+                                              <TableCell colSpan={4} className="text-sm text-slate-500">
+                                                No item data available.
+                                              </TableCell>
+                                            </TableRow>
+                                          ) : (
+                                            row.items.map((item) => (
+                                              <TableRow key={`${row.chassis}-${item.itemNo}-${item.materialCode}`}>
+                                                <TableCell>{item.itemNo || "-"}</TableCell>
+                                                <TableCell>{item.materialCode || "-"}</TableCell>
+                                                <TableCell>{item.description || "-"}</TableCell>
+                                                <TableCell className="text-right font-medium text-slate-800">
+                                                  {item.price == null ? "-" : currencyFormatter.format(item.price)}
+                                                </TableCell>
+                                              </TableRow>
+                                            ))
+                                          )}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
                         ))}
                       </TableBody>
                     </Table>
