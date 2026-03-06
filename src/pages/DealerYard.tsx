@@ -1,5 +1,5 @@
 // src/pages/DealerYard.tsx
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
@@ -25,20 +25,7 @@ import {
 import { getSubscription } from "@/lib/subscriptions";
 import type { ScheduleItem } from "@/types";
 import ProductRegistrationForm from "@/components/ProductRegistrationForm";
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronDown,
-  ChevronRight,
-  Download,
-  FileCheck2,
-  ShieldAlert,
-  ShieldCheck,
-  Truck,
-  PackageCheck,
-  Handshake,
-  Warehouse,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Download, FileCheck2, ShieldAlert, ShieldCheck, Truck, PackageCheck, Handshake, Warehouse } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   BarChart,
@@ -371,46 +358,6 @@ function parseNum(val: unknown): number | null {
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
 }
-
-type YardStockItem = {
-  itemNo: string;
-  materialCode: string;
-  description: string;
-  price: number | null;
-};
-
-function parseYardItems(rawItems: unknown): YardStockItem[] {
-  if (!rawItems) return [];
-
-  const normalizeItem = (item: any): YardStockItem | null => {
-    if (!item || typeof item !== "object") return null;
-    const itemNo = toStr(item?.itemNo ?? item?.itemno ?? item?.item_number).trim();
-    const materialCode = toStr(item?.materialCode ?? item?.materialcode ?? item?.material).trim();
-    const description = toStr(item?.description ?? item?.desc).trim();
-    const price = parseWholesale(item?.price);
-    if (!itemNo && !materialCode && !description && price == null) return null;
-    return { itemNo, materialCode, description, price };
-  };
-
-  if (Array.isArray(rawItems)) {
-    return rawItems.map((item) => normalizeItem(item)).filter(Boolean) as YardStockItem[];
-  }
-
-  if (typeof rawItems === "object") {
-    return Object.entries(rawItems as Record<string, unknown>)
-      .map(([key, item]) => {
-        const normalized = normalizeItem(item);
-        if (!normalized) return null;
-        if (!normalized.itemNo) {
-          return { ...normalized, itemNo: key };
-        }
-        return normalized;
-      })
-      .filter(Boolean) as YardStockItem[];
-  }
-
-  return [];
-}
 function countBy(rows: ExcelRow[], key: keyof ExcelRow) {
   const map: Record<string, number> = {};
   rows.forEach((r) => {
@@ -556,7 +503,6 @@ export default function DealerYard() {
   const [selectedType, setSelectedType] = useState<"All" | "Stock" | "Customer">("All");
   const [selectedVanCondition, setSelectedVanCondition] = useState<"All" | "new" | "second">("All");
   const [daysInYardSort, setDaysInYardSort] = useState<"asc" | "desc" | null>(null);
-  const [expandedChassis, setExpandedChassis] = useState<Record<string, boolean>>({});
   const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
   const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
 
@@ -775,9 +721,6 @@ export default function DealerYard() {
         (parseBooleanFlag(rec?.newVans) || parseBooleanFlag(wholesaleObject?.newVans) || !/^z19/i.test(model.trim()));
       const wholesaleDisplay =
         wholesalePoValue == null ? "-" : currencyFormatter.format(wholesalePoValue);
-      const retailSalePrice = parseWholesale(rec?.retailsaleprice ?? rec?.retailSalePrice);
-      const discount = parseWholesale(rec?.discount);
-      const items = parseYardItems(rec?.items);
       const vinRaw = extractVin(rec);
       return {
         chassis,
@@ -795,11 +738,6 @@ export default function DealerYard() {
         height,
         wholesalePo: wholesalePoValue,
         wholesaleDisplay,
-        retailSalePrice,
-        retailSalePriceDisplay: retailSalePrice == null ? "-" : currencyFormatter.format(retailSalePrice),
-        discount,
-        discountDisplay: discount == null ? "-" : currencyFormatter.format(discount),
-        items,
         vanCondition: isSecondHand ? "second" : isNewVan ? "new" : "new",
         vanConditionLabel: isSecondHand ? "Second Hand" : "New Vans",
         isSecondHand,
@@ -2402,20 +2340,8 @@ export default function DealerYard() {
                           </TableRow>
                         ))}
                         {yardListDisplay.map((row) => (
-                          <Fragment key={row.chassis}>
                           <TableRow key={row.chassis}>
-                            <TableCell className="font-medium">
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-1 text-left"
-                                onClick={() =>
-                                  setExpandedChassis((prev) => ({ ...prev, [row.chassis]: !prev[row.chassis] }))
-                                }
-                              >
-                                {expandedChassis[row.chassis] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                <span>{row.chassis}</span>
-                              </button>
-                            </TableCell>
+                            <TableCell className="font-medium">{row.chassis}</TableCell>
                             <TableCell>{formatDateOnly(row.receivedAt)}</TableCell>
                             <TableCell>{toStr(row.model) || "-"}</TableCell>
                             {showPriceColumn && <TableCell>{row.wholesaleDisplay}</TableCell>}
@@ -2475,61 +2401,6 @@ export default function DealerYard() {
                               )}
                             </TableCell>
                           </TableRow>
-                          {expandedChassis[row.chassis] && (
-                            <TableRow>
-                              <TableCell colSpan={showPriceColumn ? 11 : 10} className="bg-slate-50">
-                                <div className="space-y-3 py-2">
-                                  <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-                                    <div>
-                                      <span className="font-semibold text-slate-700">Wholesale Price: </span>
-                                      <span>{row.wholesaleDisplay}</span>
-                                    </div>
-                                    <div>
-                                      <span className="font-semibold text-slate-700">Retail Price (incl. GST): </span>
-                                      <span>{row.retailSalePriceDisplay}</span>
-                                    </div>
-                                    <div>
-                                      <span className="font-semibold text-slate-700">Discount (incl. GST): </span>
-                                      <span>{row.discountDisplay}</span>
-                                    </div>
-                                  </div>
-                                  <div className="rounded-md border bg-white overflow-auto">
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow>
-                                          <TableHead>Item No</TableHead>
-                                          <TableHead>Material Code</TableHead>
-                                          <TableHead>Description</TableHead>
-                                          <TableHead className="text-right">Price (incl. GST)</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {row.items.length === 0 ? (
-                                          <TableRow>
-                                            <TableCell colSpan={4} className="text-sm text-slate-500">
-                                              No item data available.
-                                            </TableCell>
-                                          </TableRow>
-                                        ) : (
-                                          row.items.map((item) => (
-                                            <TableRow key={`${row.chassis}-${item.itemNo}-${item.materialCode}`}>
-                                              <TableCell>{item.itemNo || "-"}</TableCell>
-                                              <TableCell>{item.materialCode || "-"}</TableCell>
-                                              <TableCell>{item.description || "-"}</TableCell>
-                                              <TableCell className="text-right">
-                                                {item.price == null ? "-" : currencyFormatter.format(item.price)}
-                                              </TableCell>
-                                            </TableRow>
-                                          ))
-                                        )}
-                                      </TableBody>
-                                    </Table>
-                                  </div>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          )}
-                          </Fragment>
                         ))}
                       </TableBody>
                     </Table>
