@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 
 const links = [
-  { to: "/overall-dashboard/overview", label: "Overview" },
+  { to: "/overall-dashboard?tab=overview", label: "Overview" },
   { to: "/overall-dashboard?tab=admin", label: "Target Setup" },
   { to: "/overall-dashboard?tab=target", label: "Target and Highlight" },
   { to: "/overall-dashboard?tab=state", label: "Dealer State" },
