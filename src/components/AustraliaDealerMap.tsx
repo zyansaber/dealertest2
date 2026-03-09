@@ -38,7 +38,6 @@ type Props = {
   stateMetrics?: Partial<Record<DealerStateCode, StateMetricRow>>;
   timelineFrames?: Partial<Record<"orders" | "forecast", TimelineFrame[]>>;
   modelRangeMetrics?: ModelRangeMetric[];
-  onModelRangeSelectionChange?: (ranges: string[] | null) => void;
 };
 
 type GeoFeature = {
@@ -134,7 +133,6 @@ export default function AustraliaDealerMap({
   stateMetrics,
   timelineFrames,
   modelRangeMetrics = [],
-  onModelRangeSelectionChange,
 }: Props) {
   const [features, setFeatures] = useState<GeoFeature[]>([]);
   const [metricFilter, setMetricFilter] = useState<MetricFilterKey>("orders");
@@ -142,10 +140,6 @@ export default function AustraliaDealerMap({
   const [frameIndex, setFrameIndex] = useState(0);
   const [hasPlayed, setHasPlayed] = useState(false);
   const [selectedModelRanges, setSelectedModelRanges] = useState<string[] | null>(null);
-
-  useEffect(() => {
-    onModelRangeSelectionChange?.(selectedModelRanges);
-  }, [onModelRangeSelectionChange, selectedModelRanges]);
 
   useEffect(() => {
     let mounted = true;

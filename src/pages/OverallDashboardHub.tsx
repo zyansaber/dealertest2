@@ -5,20 +5,19 @@ import OverallDashboardSidebar from "@/components/OverallDashboardSidebar";
 import OverallDashboardAdmin from "@/pages/OverallDashboardAdmin";
 import TargetAndHighlight from "@/pages/TargetAndHighlight";
 import DealerStateAdmin from "@/pages/DealerStateAdmin";
-import DealerOverallDashboard from "@/pages/DealerOverallDashboard";
 
-type TabKey = "overview" | "target" | "admin" | "state";
+type TabKey = "target" | "admin" | "state";
 
-const isTabKey = (value: string): value is TabKey => ["overview", "target", "admin", "state"].includes(value);
+const isTabKey = (value: string): value is TabKey => ["target", "admin", "state"].includes(value);
 
 export default function OverallDashboardHub() {
   const [searchParams] = useSearchParams();
-  const tab = searchParams.get("tab") || "overview";
+  const tab = searchParams.get("tab") || "target";
 
-  const activeTab = useMemo<TabKey>(() => (isTabKey(tab) ? tab : "overview"), [tab]);
+  const activeTab = useMemo<TabKey>(() => (isTabKey(tab) ? tab : "target"), [tab]);
 
   if (!isTabKey(tab)) {
-    return <Navigate to="/overall-dashboard?tab=overview" replace />;
+    return <Navigate to="/overall-dashboard?tab=target" replace />;
   }
 
   return (
@@ -26,7 +25,6 @@ export default function OverallDashboardHub() {
       <div className="flex">
         <OverallDashboardSidebar />
         <main className="flex-1">
-          {activeTab === "overview" ? <DealerOverallDashboard withSidebar={false} /> : null}
           {activeTab === "target" ? <TargetAndHighlight withSidebar={false} /> : null}
           {activeTab === "admin" ? <OverallDashboardAdmin /> : null}
           {activeTab === "state" ? <DealerStateAdmin /> : null}
