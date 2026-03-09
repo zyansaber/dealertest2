@@ -111,7 +111,7 @@ const AppShell = () => {
 
         {/* Overall dashboard (no dealer slug) */}
         <Route path="/overall-dashboard" element={<OverallDashboardHub />} />
-        <Route path="/overall-dashboard/overview" element={<DealerOverallDashboard />} />
+        <Route path="/overall-dashboard/overview" element={<Navigate to="/overall-dashboard?tab=overview" replace />} />
         <Route path="/overall-dashboard/admin" element={<Navigate to="/overall-dashboard?tab=admin" replace />} />
         <Route path="/overall-dashboard/target-and-highlight" element={<Navigate to="/overall-dashboard?tab=target" replace />} />
         <Route path="/overall-dashboard/state" element={<Navigate to="/overall-dashboard?tab=state" replace />} />
