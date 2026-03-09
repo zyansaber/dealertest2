@@ -51,7 +51,6 @@ function OrderList({
   const [deliveryToAssignments, setDeliveryToAssignments] = useState<Record<string, any>>({});
   const [activeTab, setActiveTab] = useState<"caravan" | "vehicles">("caravan");
   const [vehicleSearchTerm, setVehicleSearchTerm] = useState("");
-  const [vehicleStatusFilter, setVehicleStatusFilter] = useState("all");
   const [filters, setFilters] = useState<FilterOptions>({
     model: "",
     modelYear: "",
@@ -258,34 +257,18 @@ function OrderList({
     return campervanOrders.filter((order) => slugifyDealerName(order.dealer) === dealerSlug);
   }, [campervanOrders, dealerSlug, slugifyDealerName]);
 
-  const vehicleStatusSequence = useMemo(
-    () => [
-      "not confirmed orders",
-      "Waiting for sending",
-      "Not Start in Longtree",
-      "Chassis welding in Longtree",
-      "Assembly line Longtree",
-      "Finishedin Longtree",
-      "Leaving factory from Longtree",
-      "waiting in port",
-      "On the sea",
-      "Melbourn Port",
-    ],
-    []
-  );
-
   const vehicleStatusText: Record<string, string> = {
-    "not confirmed orders": "未确认订单",
-    "Waiting for sending": "待发送",
-    "Not Start in Longtree": "Longtree 未开始",
-    "Chassis welding in Longtree": "Longtree 底盘焊接",
-    "Assembly line Longtree": "Longtree 总装线",
-    "Finishedin Longtree": "Longtree 已完工",
-    "Leaving factory from Longtree": "Longtree 出厂",
-    "waiting in port": "港口等待",
-    "On the sea": "海运中",
-    "Melbourn Port": "墨尔本港",
-    "Melbourn Factory": "墨尔本工厂",
+    "not confirmed orders": "Not Confirmed Orders",
+    "Waiting for sending": "Waiting for Sending",
+    "Not Start in Longtree": "Not Started in Longtree",
+    "Chassis welding in Longtree": "Chassis Welding in Longtree",
+    "Assembly line Longtree": "Assembly Line Longtree",
+    "Finishedin Longtree": "Finished in Longtree",
+    "Leaving factory from Longtree": "Leaving Factory from Longtree",
+    "waiting in port": "Waiting in Port",
+    "On the sea": "On the Sea",
+    "Melbourn Port": "Melbourne Port",
+    "Melbourn Factory": "Melbourne Factory",
   };
 
   const vehicleStatusClass: Record<string, string> = {
@@ -302,30 +285,9 @@ function OrderList({
     "Melbourn Factory": "bg-emerald-100 text-emerald-800",
   };
 
-  const vehicleStatusBuckets = useMemo(() => {
-    const countMap = filteredCampervanOrders.reduce((acc, order) => {
-      const status = String(order.regentProduction || "-").trim();
-      if (!status) return acc;
-      acc[status] = (acc[status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const ordered = vehicleStatusSequence
-      .filter((status) => countMap[status])
-      .map((status) => ({ status, count: countMap[status] }));
-
-    const extras = Object.entries(countMap)
-      .filter(([status]) => !vehicleStatusSequence.includes(status))
-      .map(([status, count]) => ({ status, count }));
-
-    return [...ordered, ...extras];
-  }, [filteredCampervanOrders, vehicleStatusSequence]);
-
   const searchedVehicleOrders = useMemo(() => {
     const q = vehicleSearchTerm.trim().toLowerCase();
     return filteredCampervanOrders.filter((order) => {
-      const status = String(order.regentProduction || "").trim();
-      if (vehicleStatusFilter !== "all" && status !== vehicleStatusFilter) return false;
       if (!q) return true;
 
       return [
@@ -341,7 +303,7 @@ function OrderList({
         .map((x) => String(x || "").toLowerCase())
         .some((val) => val.includes(q));
     });
-  }, [filteredCampervanOrders, vehicleSearchTerm, vehicleStatusFilter]);
+  }, [filteredCampervanOrders, vehicleSearchTerm]);
 
   const getVehicleDocUrl = useCallback((chassis: string | undefined, kind: "spec" | "plan") => {
     if (!chassis) return "";
@@ -635,42 +597,23 @@ function OrderList({
           <TabsContent value="vehicles" className="mt-0">
             <Card>
               <CardHeader>
-                <CardTitle>Vehicles ({searchedVehicleOrders.length})</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Vehicles ({searchedVehicleOrders.length})</CardTitle>
+                  <div className="text-sm text-slate-500">
+                    Showing {searchedVehicleOrders.length} of {filteredCampervanOrders.length} vehicles
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="mb-4 flex flex-col gap-3">
                   <div className="relative w-full">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
-                      placeholder="搜索车辆情况（底盘号 / 客户 / VIN / 状态）"
+                      placeholder="Search vehicles (chassis / customer / VIN / status)"
                       className="pl-10"
                       value={vehicleSearchTerm}
                       onChange={(e) => setVehicleSearchTerm(e.target.value)}
                     />
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">墨尔本工厂</div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant={vehicleStatusFilter === "all" ? "default" : "outline"}
-                        className={vehicleStatusFilter === "all" ? "" : "!bg-transparent"}
-                        onClick={() => setVehicleStatusFilter("all")}
-                      >
-                        全部状态 ({filteredCampervanOrders.length})
-                      </Button>
-                      {vehicleStatusBuckets.map(({ status, count }) => (
-                        <Button
-                          key={status}
-                          size="sm"
-                          variant={vehicleStatusFilter === status ? "default" : "outline"}
-                          className={vehicleStatusFilter === status ? "" : "!bg-white"}
-                          onClick={() => setVehicleStatusFilter((prev) => (prev === status ? "all" : status))}
-                        >
-                          {(vehicleStatusText[status] || status)} ({count})
-                        </Button>
-                      ))}
-                    </div>
                   </div>
                 </div>
 
@@ -712,10 +655,10 @@ function OrderList({
                         <div>{order.vehicle || "-"}</div>
                         <div>{order.vinNumber || "-"}</div>
                         <div className="text-center">
-                          <Button size="sm" variant={specUrl ? "outline" : "ghost"} disabled={!specUrl} onClick={() => window.open(specUrl, "_blank")}>下载</Button>
+                          <Button size="sm" variant={specUrl ? "outline" : "ghost"} disabled={!specUrl} onClick={() => window.open(specUrl, "_blank")}>Download</Button>
                         </div>
                         <div className="text-center">
-                          <Button size="sm" variant={planUrl ? "outline" : "ghost"} disabled={!planUrl} onClick={() => window.open(planUrl, "_blank")}>下载</Button>
+                          <Button size="sm" variant={planUrl ? "outline" : "ghost"} disabled={!planUrl} onClick={() => window.open(planUrl, "_blank")}>Download</Button>
                         </div>
                       </div>
                     )})}
