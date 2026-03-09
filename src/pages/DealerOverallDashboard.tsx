@@ -361,6 +361,7 @@ export default function DealerOverallDashboard() {
   const [dealerSearch, setDealerSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedMapState, setSelectedMapState] = useState<string>("ALL");
+  const [selectedMapModelRanges, setSelectedMapModelRanges] = useState<string[] | null>(null);
   const [selectedModelRangeFilter, setSelectedModelRangeFilter] = useState<string>("ALL");
   const [expandedSections, setExpandedSections] = useState({
     factory: false,
@@ -638,19 +639,38 @@ export default function DealerOverallDashboard() {
     );
   }, [activeAggregateSlugs, campervanSchedule, dealerSlug, isGroupAggregate]);
 
+  const effectiveModelRangeSet = useMemo(() => {
+    const tableRangeSet = selectedModelRangeFilter === "ALL" ? null : new Set([selectedModelRangeFilter]);
+    const mapRangeSet = selectedMapModelRanges === null ? null : new Set(selectedMapModelRanges);
+
+    if (!mapRangeSet && !tableRangeSet) return null;
+    if (!mapRangeSet) return tableRangeSet;
+    if (!tableRangeSet) return mapRangeSet;
+
+    const intersection = new Set<string>();
+    mapRangeSet.forEach((range) => {
+      if (tableRangeSet.has(range)) intersection.add(range);
+    });
+    return intersection;
+  }, [selectedMapModelRanges, selectedModelRangeFilter]);
+
   const dealerOrdersAll = useMemo(() => {
-    if (!dealerSlug && filteredStateSlugs) {
-      return allScopeOrders.filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)));
-    }
-    return allScopeOrders;
-  }, [allScopeOrders, dealerSlug, filteredStateSlugs]);
+    const stateFiltered = !dealerSlug && filteredStateSlugs
+      ? allScopeOrders.filter((order) => filteredStateSlugs.has(slugifyDealerName(order?.Dealer)))
+      : allScopeOrders;
+
+    if (!effectiveModelRangeSet) return stateFiltered;
+    return stateFiltered.filter((order) => effectiveModelRangeSet.has(getModelRange(toStr(order?.Model), toStr((order as any)?.Chassis))));
+  }, [allScopeOrders, dealerSlug, effectiveModelRangeSet, filteredStateSlugs]);
 
   const dealerCampervanSchedule = useMemo(() => {
-    if (!dealerSlug && filteredStateSlugs) {
-      return allScopeCampervanSchedule.filter((item) => filteredStateSlugs.has(slugifyDealerName((item as any)?.dealer)));
-    }
-    return allScopeCampervanSchedule;
-  }, [allScopeCampervanSchedule, dealerSlug, filteredStateSlugs]);
+    const stateFiltered = !dealerSlug && filteredStateSlugs
+      ? allScopeCampervanSchedule.filter((item) => filteredStateSlugs.has(slugifyDealerName((item as any)?.dealer)))
+      : allScopeCampervanSchedule;
+
+    if (!effectiveModelRangeSet) return stateFiltered;
+    return stateFiltered.filter((item) => effectiveModelRangeSet.has(getModelRange(toStr((item as any)?.model), toStr((item as any)?.chassisNumber))));
+  }, [allScopeCampervanSchedule, dealerSlug, effectiveModelRangeSet, filteredStateSlugs]);
 
   const dealerOrders = useMemo(
     () => dealerOrdersAll.filter((order) => hasChassis(order) && toStr(order.Customer).trim() !== ""),
@@ -2759,17 +2779,20 @@ export default function DealerOverallDashboard() {
           </div>
 
           {isGlobalView && !dealerSlug && (
-            <>
-              <AustraliaDealerMap
-                dealers={mapDealers}
-                selectedState={selectedMapState}
-                selectedYear={selectedYear}
-                onSelectState={setSelectedMapState}
-                stateMetrics={stateSummary}
-                timelineFrames={mapTimelineFrames}
-                modelRangeMetrics={mapModelRangeMetrics}
-              />
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700">
+            <AustraliaDealerMap
+              dealers={mapDealers}
+              selectedState={selectedMapState}
+              selectedYear={selectedYear}
+              onSelectState={setSelectedMapState}
+              stateMetrics={stateSummary}
+              timelineFrames={mapTimelineFrames}
+              modelRangeMetrics={mapModelRangeMetrics}
+              onModelRangeSelectionChange={setSelectedMapModelRanges}
+            />
+          )}
+
+          {isGlobalView && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700">
                 <button
                   type="button"
                   onClick={() => setOverviewMode("customer")}
@@ -2804,7 +2827,6 @@ export default function DealerOverallDashboard() {
                   by model range
                 </button>
               </div>
-            </>
           )}
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
