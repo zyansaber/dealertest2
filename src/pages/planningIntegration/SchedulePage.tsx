@@ -116,7 +116,6 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
     <>
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-2xl font-semibold">{tr(lang, "schedule", "排产表")}</h2>
-        <p className="text-sm text-slate-600">{tr(lang, "Finished hidden only in this page. Status + aging included.", "仅本页隐藏 finished，含状态与滞留天数。")}</p>
       </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -130,7 +129,7 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
             }}
             className={`rounded-xl border p-4 text-left shadow-sm transition ${groupFilter === c.key ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-white"}`}
           >
-            <div className="text-sm font-semibold text-slate-700">{tr(lang, c.key, c.key)}</div>
+            <div className="text-sm font-semibold text-slate-700">{c.key === "Melbourn Factory" ? tr(lang, "Melbourn Factory", "墨尔本工厂") : c.key === "Order Processing" ? tr(lang, "Order Processing", "订单处理中") : c.key === "Longtree Factory" ? tr(lang, "Longtree Factory", "Longtree 工厂") : tr(lang, "on the transit", "在途运输")}</div>
             <div className="mt-1 text-3xl font-bold text-slate-900">{c.count}</div>
           </button>
         ))}
