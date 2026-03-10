@@ -1,9 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Row } from "./types";
 import { displayValue, parseDateToTimestamp } from "./utils";
 import { milestoneSequence, phaseCardMap } from "./types";
 import type { PlanningLang } from "./i18n";
 import { statusText, tr } from "./i18n";
+import { database } from "@/lib/firebase";
+import { off, onValue, ref } from "firebase/database";
 
 const columns: Array<{ label: string; zhLabel: string; key: string; source: "schedule" | "dateTrack"; className?: string }> = [
   { label: "Current Status", zhLabel: "当前状态", key: "_status", source: "schedule" },
@@ -51,6 +53,28 @@ const statusClass: Record<string, string> = {
 
 const PAGE_SIZE = 80;
 
+type TicketType = "change-production-date" | "after-signed-off-change";
+
+type RequisitionTicket = {
+  type?: TicketType;
+  chassis?: string;
+  approvals?: {
+    techApproved?: boolean;
+    productionApproved?: boolean;
+  };
+  status?: "unread" | "approved";
+};
+
+const normalize = (value: unknown) => String(value ?? "").trim().toUpperCase();
+
+const isTicketFinalApproved = (ticket: RequisitionTicket) => {
+  if (ticket.status === "approved") return true;
+  if (ticket.type === "change-production-date") return Boolean(ticket.approvals?.productionApproved);
+  if (ticket.type === "after-signed-off-change") return Boolean(ticket.approvals?.techApproved) && Boolean(ticket.approvals?.productionApproved);
+  return false;
+};
+
+
 export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows: Row[]; waitingOrderPrices: Record<string, number>; lang: PlanningLang }) {
   const top = useRef<HTMLDivElement | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
@@ -58,6 +82,25 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
   const [agingFilter, setAgingFilter] = useState<"all" | "0-30" | "31-60" | "61-90" | "90+">("all");
   const [groupFilter, setGroupFilter] = useState<keyof typeof statusGroup | "all">("all");
   const [page, setPage] = useState(1);
+  const [approvedChangeChassisSet, setApprovedChangeChassisSet] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const ticketsRef = ref(database, "mes/requisitionTickets");
+    const handler = (snap: any) => {
+      const raw = snap.val() || {};
+      const approved = new Set<string>();
+      Object.values(raw).forEach((item: any) => {
+        const ticket: RequisitionTicket = item || {};
+        const chassis = normalize(ticket.chassis);
+        if (!chassis) return;
+        if (isTicketFinalApproved(ticket)) approved.add(chassis);
+      });
+      setApprovedChangeChassisSet(approved);
+    };
+    onValue(ticketsRef, handler);
+    return () => off(ticketsRef, "value", handler);
+  }, []);
+
 
   const enriched = useMemo(
     () =>
@@ -210,9 +253,17 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
                       );
                     }
 
+                    const chassisKey = normalize(r.chassis);
+                    const hasApprovedChange = c.key === "Chassis" && approvedChangeChassisSet.has(chassisKey);
+
                     return (
                       <td key={`${r.chassis}-${c.key}-${i}`} className={`whitespace-nowrap px-3 py-2.5 ${c.className ?? ""}`}>
                         {displayValue(v)}
+                        {hasApprovedChange ? (
+                          <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                            change
+                          </span>
+                        ) : null}
                       </td>
                     );
                   })}
