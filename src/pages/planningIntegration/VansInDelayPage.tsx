@@ -164,9 +164,9 @@ export default function VansInDelayPage({ rows, lang }: { rows: Row[]; lang: Pla
                 <MiniBars
                   values={[
                     { label: tr(lang, "Melbourne Factory", "Melbourne Factory"), value: r.melbourneFactory, color: "bg-emerald-600" },
-                    { label: tr(lang, "Longtree Factory", "Longtree Factory"), value: r.longtreeFactory, color: "bg-sky-600" },
+                    { label: tr(lang, "Longtree Factory", "Longtree 工厂"), value: r.longtreeFactory, color: "bg-sky-600" },
                     { label: tr(lang, "On transit", "On transit"), value: r.onTransit, color: "bg-amber-500" },
-                    { label: tr(lang, "Order Processing", "Order Processing"), value: r.orderProcessing, color: "bg-violet-600" },
+                    { label: tr(lang, "Order Processing", "订单处理中"), value: r.orderProcessing, color: "bg-violet-600" },
                   ]}
                 />
               </div>

@@ -149,7 +149,7 @@ export default function VehicleSearchPage({
         <table className="min-w-[1450px] divide-y divide-slate-200 text-sm">
           <thead className="sticky top-0 z-10 bg-slate-100">
             <tr>
-              {[tr(lang, "Chassis Number", "车架号"), tr(lang, "Current Status", "当前状态"), tr(lang, "PO Sent Days", "PO 发送天数"), "Purchase Order Sent", "chassisWelding", "assemblyLine", "finishGoods", "leavingFactory", "spec", "plan", tr(lang, "Customer", "客户"), tr(lang, "Dealer", "经销商"), tr(lang, "Model", "车型"), tr(lang, "Forecast Production Date", "预测生产日期")].map((head) => (
+              {[tr(lang, "Chassis Number", "车架号"), tr(lang, "Current Status", "当前状态"), tr(lang, "PO Sent Days", "PO 发送天数"), tr(lang, "Purchase Order Sent", "采购订单发送"), tr(lang, "chassisWelding", "车架焊接"), tr(lang, "assemblyLine", "总装"), tr(lang, "finishGoods", "完工入库"), tr(lang, "leavingFactory", "离厂"), tr(lang, "spec", "配置表"), tr(lang, "plan", "布局图"), tr(lang, "Customer", "客户"), tr(lang, "Dealer", "经销商"), tr(lang, "Model", "车型"), tr(lang, "Forecast Production Date", "预计生产日期")].map((head) => (
                 <th key={head} className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">{head}</th>
               ))}
             </tr>

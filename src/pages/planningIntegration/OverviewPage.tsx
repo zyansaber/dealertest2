@@ -5,7 +5,7 @@ import { milestoneSequence, phaseCardMap } from "./types";
 import { parseDateToTimestamp } from "./utils";
 import type { Row } from "./types";
 import type { PlanningLang } from "./i18n";
-import { statusText, tr } from "./i18n";
+import { metricText, statusText, tr } from "./i18n";
 
 type Mode = "customer" | "group" | "modelRange";
 
@@ -126,9 +126,9 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
         sum += (b - a) / 86400000;
         count += 1;
       });
-      return { title: `${k.from} → ${k.to}`, value: count ? `${(sum / count).toFixed(1)} days` : "-", sample: count };
+      return { title: `${metricText(lang, k.from)} → ${metricText(lang, k.to)}`, value: count ? `${(sum / count).toFixed(1)} ${tr(lang, "days", "天")}` : "-", sample: count };
     });
-  }, [filteredByModel]);
+  }, [filteredByModel, lang]);
 
   const groupCards = useMemo(() => {
     const sumAvg = (pairs: Array<{ from: string; to: string; fromSource: "schedule" | "dateTrack"; toSource: "schedule" | "dateTrack" }>) => {
@@ -147,7 +147,7 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
         sum += total;
         count += 1;
       });
-      return { value: count ? `${(sum / count).toFixed(1)} days` : "-", sample: count };
+      return { value: count ? `${(sum / count).toFixed(1)} ${tr(lang, "days", "天")}` : "-", sample: count };
     };
 
     const longtree = sumAvg([
@@ -163,7 +163,7 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       longtree,
       transit,
     };
-  }, [filteredByModel]);
+  }, [filteredByModel, lang]);
 
   const statusCounts = useMemo(() => {
     const c: Record<string, number> = {};
