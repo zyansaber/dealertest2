@@ -83,7 +83,7 @@ export default function TargetPage({
       <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card className="border-slate-200">
           <CardHeader>
-            <CardTitle className="text-sm">Total Difference (Actual - {tr(lang, "Shared Target", "共享目标")})</CardTitle>
+            <CardTitle className="text-sm">{tr(lang, "Total Difference (Actual - Shared Target)", "总差值（实际 - 共享目标）")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className={`text-4xl font-bold tracking-tight ${totalDifference >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{totalDifference}</p>
@@ -106,7 +106,7 @@ export default function TargetPage({
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 text-sm font-semibold">Difference Bar Chart: {metric} (Actual - {tr(lang, "Shared Target", "共享目标")})</div>
+        <div className="mb-3 text-sm font-semibold">{tr(lang, "Difference Bar Chart", "差值柱状图")}：{metricText(lang, metric)}（{tr(lang, "Actual - Shared Target", "实际 - 共享目标")}）</div>
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="mb-1 text-xs font-semibold text-slate-700">{tr(lang, "Current month progress", "当月进度")} · {currentMonthLabel}</div>
           <div className="mb-2 h-5 overflow-hidden rounded bg-slate-200">
