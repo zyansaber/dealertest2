@@ -1,20 +1,9 @@
-import { AlertTriangle, BarChart3, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Search, Target } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Search, Target } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { PlanningLang } from "@/pages/planningIntegration/i18n";
 import { tr } from "@/pages/planningIntegration/i18n";
 
-type PlanningTabPath =
-  | "/planningintegration"
-  | "/planningintegration/schedule"
-  | "/planningintegration/waiting-for-po"
-  | "/planningintegration/new-po"
-  | "/planningintegration/requsition"
-  | "/planningintegration/alerts-reminders"
-  | "/planningintegration/vans-in-delay"
-  | "/planningintegration/vehicle-search"
-  | "/planningintegration/target"
-  | "/planningintegration/report"
-  | "/planningintegration/australia-factory-calendar";
+type PlanningTabPath = "/planningintegration" | "/planningintegration/schedule" | "/planningintegration/waiting-for-po" | "/planningintegration/new-po" | "/planningintegration/requsition" | "/planningintegration/vans-in-delay" | "/planningintegration/vehicle-search" | "/planningintegration/target" | "/planningintegration/report";
 
 interface PlanningIntegrationSidebarProps {
   collapsed: boolean;
@@ -31,8 +20,7 @@ export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, 
     { path: "/planningintegration/schedule", label: tr(lang, "schedule", "排产表"), icon: ClipboardList },
     { path: "/planningintegration/waiting-for-po", label: tr(lang, "waiting for PO", "待下 PO"), icon: ClipboardList },
     { path: "/planningintegration/new-po", label: tr(lang, "New PO", "新下 PO"), icon: ClipboardList },
-    { path: "/planningintegration/requsition", label: tr(lang, "Requsition", "澳洲计划请求"), icon: ClipboardList },
-    { path: "/planningintegration/alerts-reminders", label: tr(lang, "Reminders", "提醒"), icon: AlertTriangle },
+    { path: "/planningintegration/requsition", label: tr(lang, "Requsition", "Requsition"), icon: ClipboardList },
     { path: "/planningintegration/vans-in-delay", label: tr(lang, "Vans in Delay", "延误车辆"), icon: AlertTriangle },
     { path: "/planningintegration/target", label: tr(lang, "target", "目标"), icon: Target },
     { path: "/planningintegration/report", label: tr(lang, "report", "报表"), icon: BarChart3 },
@@ -68,15 +56,6 @@ export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, 
       </div>
 
       <div className="mt-auto space-y-2 border-t border-slate-800 px-3 py-3">
-        <NavLink to="/planningintegration/australia-factory-calendar">
-          {({ isActive }) => (
-            <div className={`flex h-9 w-full items-center justify-center gap-2 rounded-md border border-slate-700 text-slate-100 transition ${isActive ? "bg-slate-700" : "bg-slate-800 hover:bg-slate-700"}`}>
-              <CalendarDays className="h-4 w-4" />
-              {!collapsed && <span>{tr(lang, "Australia Factory Calendar", "澳洲工厂日历")}</span>}
-            </div>
-          )}
-        </NavLink>
-
         <button type="button" onClick={onToggleLang} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700">
           <Languages className="h-4 w-4" />
           {!collapsed && <span>{lang === "zh" ? "中文" : "English"}</span>}
