@@ -1,5 +1,8 @@
 import { AlertTriangle, BarChart3, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Search, Target } from "lucide-react";
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { off, onValue, ref } from "firebase/database";
+import { database } from "@/lib/firebase";
 import type { PlanningLang } from "@/pages/planningIntegration/i18n";
 import { tr } from "@/pages/planningIntegration/i18n";
 
@@ -16,6 +19,26 @@ type PlanningTabPath =
   | "/planningintegration/report"
   | "/planningintegration/australia-factory-calendar";
 
+
+
+type TicketType = "change-production-date" | "after-signed-off-change";
+
+type RequisitionTicket = {
+  type?: TicketType;
+  approvals?: {
+    techApproved?: boolean;
+    productionApproved?: boolean;
+  };
+  status?: "unread" | "approved";
+};
+
+const isTicketFinalApproved = (ticket: RequisitionTicket) => {
+  if (ticket.status === "approved") return true;
+  if (ticket.type === "change-production-date") return Boolean(ticket.approvals?.productionApproved);
+  if (ticket.type === "after-signed-off-change") return Boolean(ticket.approvals?.techApproved) && Boolean(ticket.approvals?.productionApproved);
+  return false;
+};
+
 interface PlanningIntegrationSidebarProps {
   collapsed: boolean;
   onToggle: () => void;
@@ -25,6 +48,20 @@ interface PlanningIntegrationSidebarProps {
 }
 
 export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, onToggleLang, onLogout }: PlanningIntegrationSidebarProps) {
+  const [pendingTicketCount, setPendingTicketCount] = useState(0);
+
+  useEffect(() => {
+    const ticketsRef = ref(database, "mes/requisitionTickets");
+    const handler = (snap: any) => {
+      const raw = snap.val() || {};
+      const pending = Object.values(raw).filter((item: any) => !isTicketFinalApproved(item || {})).length;
+      setPendingTicketCount(pending);
+    };
+
+    onValue(ticketsRef, handler);
+    return () => off(ticketsRef, "value", handler);
+  }, []);
+
   const navItems: Array<{ path: PlanningTabPath; label: string; icon: typeof ClipboardList; end?: boolean }> = [
     { path: "/planningintegration/vehicle-search", label: tr(lang, "Vehicle Search", "车辆情况搜索"), icon: Search },
     { path: "/planningintegration", label: tr(lang, "planning dashboard", "计划总览"), icon: ClipboardList, end: true },
@@ -56,9 +93,17 @@ export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, 
             return (
               <NavLink key={item.path} to={item.path} end={item.end}>
                 {({ isActive }) => (
-                  <div className={`flex items-center rounded-lg px-3 py-2 text-sm font-medium transition ${collapsed ? "justify-center" : "gap-3"} ${isActive ? "bg-slate-800 text-white shadow-inner" : "text-slate-200 hover:bg-slate-800 hover:text-white"}`}>
+                  <div className={`relative flex items-center rounded-lg px-3 py-2 text-sm font-medium transition ${collapsed ? "justify-center" : "gap-3"} ${isActive ? "bg-slate-800 text-white shadow-inner" : "text-slate-200 hover:bg-slate-800 hover:text-white"}`}>
                     <Icon className="h-5 w-5" />
                     {!collapsed && <span>{item.label}</span>}
+                    {item.path === "/planningintegration/requsition" && pendingTicketCount > 0 ? (
+                      <span
+                        className={`inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold text-white ${collapsed ? "absolute right-1.5 top-1.5" : "ml-auto"}`}
+                        aria-label={`pending requisition tickets: ${pendingTicketCount}`}
+                      >
+                        {pendingTicketCount}
+                      </span>
+                    ) : null}
                   </div>
                 )}
               </NavLink>
