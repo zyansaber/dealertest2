@@ -26,6 +26,7 @@ import type { CampervanScheduleItem, ScheduleItem } from "@/types";
 import { isDealerGroup } from "@/types/dealer";
 
 const PLANNING_MONTHS = 8;
+const FORECAST_DELIVERY_OFFSET_DAYS = 20;
 const monthFormatter = new Intl.DateTimeFormat("en-AU", { month: "short", year: "numeric" });
 const FACTORY_DEALER_NAMES = ["Frankston", "Launceston", "ST James", "Traralgon", "Geelong"];
 const FACTORY_DEALER_TOTAL_SLUG = "factory-dealer-total";
@@ -935,7 +936,7 @@ export default function DealerOverallDashboard() {
 
     const addToBucket = (date: Date | null, type: "stock" | "customer" | "dispatched") => {
       if (!date) return;
-      const shifted = addDays(date, 30);
+      const shifted = addDays(date, FORECAST_DELIVERY_OFFSET_DAYS);
       const bucket = buckets.find((entry) => shifted >= entry.start && shifted < entry.end);
       if (!bucket) return;
       bucket[type] += 1;
@@ -1109,7 +1110,7 @@ export default function DealerOverallDashboard() {
 
     const addToBucket = (date: Date | null, model?: string, chassis?: string) => {
       if (!date) return;
-      const shifted = addDays(date, 30);
+      const shifted = addDays(date, FORECAST_DELIVERY_OFFSET_DAYS);
       const bucket = buckets.find((entry) => shifted >= (entry.start as Date) && shifted < (entry.end as Date));
       if (!bucket) return;
       const key = resolveModelRangeKey(model, chassis);
@@ -1411,7 +1412,7 @@ export default function DealerOverallDashboard() {
 
     const addToBucket = (date: Date | null, dealerRaw?: string) => {
       if (!date) return;
-      const shifted = addDays(date, 30);
+      const shifted = addDays(date, FORECAST_DELIVERY_OFFSET_DAYS);
       const bucket = buckets.find((entry) => shifted >= entry.start && shifted < entry.end);
       if (!bucket) return;
       bucket[resolveGroupKey(dealerRaw)] += 1;
@@ -2988,7 +2989,7 @@ export default function DealerOverallDashboard() {
           <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Forecast Delivery Volume (+30 days)</CardTitle>
+              <CardTitle>Forecast Delivery Volume (+{FORECAST_DELIVERY_OFFSET_DAYS} days)</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
               </p>
