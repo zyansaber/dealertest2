@@ -4,8 +4,9 @@ import { displayValue, parseDateToTimestamp } from "./utils";
 import { milestoneSequence, phaseCardMap } from "./types";
 import type { PlanningLang } from "./i18n";
 import { statusText, tr } from "./i18n";
-import { database } from "@/lib/firebase";
+import { database, subscribeToCampervanSchedule } from "@/lib/firebase";
 import { off, onValue, ref } from "firebase/database";
+import type { CampervanScheduleItem } from "@/types";
 
 const columns: Array<{ label: string; zhLabel: string; key: string; source: "schedule" | "dateTrack"; className?: string }> = [
   { label: "Current Status", zhLabel: "当前状态", key: "_status", source: "schedule" },
@@ -53,6 +54,34 @@ const statusClass: Record<string, string> = {
 
 const PAGE_SIZE = 80;
 
+const vehicleStatusText: Record<string, string> = {
+  "not confirmed orders": "Not Confirmed Orders",
+  "Waiting for sending": "Waiting for Sending",
+  "Not Start in Longtree": "Not Started in Longtree",
+  "Chassis welding in Longtree": "Chassis Welding in Longtree",
+  "Assembly line Longtree": "Assembly Line Longtree",
+  "Finishedin Longtree": "Finished in Longtree",
+  "Leaving factory from Longtree": "Leaving Factory from Longtree",
+  "waiting in port": "Waiting in Port",
+  "On the sea": "On the Sea",
+  "Melbourn Port": "Melbourne Port",
+  "Melbourn Factory": "Melbourne Factory",
+};
+
+const vehicleStatusClass: Record<string, string> = {
+  "not confirmed orders": "bg-amber-100 text-amber-800",
+  "Waiting for sending": "bg-yellow-100 text-yellow-800",
+  "Not Start in Longtree": "bg-sky-100 text-sky-800",
+  "Chassis welding in Longtree": "bg-blue-100 text-blue-800",
+  "Assembly line Longtree": "bg-indigo-100 text-indigo-800",
+  "Finishedin Longtree": "bg-violet-100 text-violet-800",
+  "Leaving factory from Longtree": "bg-orange-100 text-orange-800",
+  "waiting in port": "bg-pink-100 text-pink-800",
+  "On the sea": "bg-cyan-100 text-cyan-800",
+  "Melbourn Port": "bg-lime-100 text-lime-800",
+  "Melbourn Factory": "bg-emerald-100 text-emerald-800",
+};
+
 type TicketType = "change-production-date" | "after-signed-off-change";
 
 type RequisitionTicket = {
@@ -82,6 +111,10 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
   const [agingFilter, setAgingFilter] = useState<"all" | "0-30" | "31-60" | "61-90" | "90+">("all");
   const [groupFilter, setGroupFilter] = useState<keyof typeof statusGroup | "all">("all");
   const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"caravan" | "motorised">("caravan");
+  const [vehicleSearchTerm, setVehicleSearchTerm] = useState("");
+  const [campervanOrders, setCampervanOrders] = useState<CampervanScheduleItem[]>([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [approvedChangeChassisSet, setApprovedChangeChassisSet] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -99,6 +132,17 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
     };
     onValue(ticketsRef, handler);
     return () => off(ticketsRef, "value", handler);
+  }, []);
+
+  useEffect(() => {
+    setLoadingVehicles(true);
+    const unsubscribe = subscribeToCampervanSchedule((data) => {
+      setCampervanOrders(data || []);
+      setLoadingVehicles(false);
+    });
+    return () => {
+      unsubscribe?.();
+    };
   }, []);
 
 
@@ -155,11 +199,110 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pagedRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  const searchedVehicleOrders = useMemo(() => {
+    const q = vehicleSearchTerm.trim().toLowerCase();
+    return campervanOrders.filter((order) => {
+      if (!q) return true;
+
+      return [
+        order.forecastProductionDate,
+        order.chassisNumber,
+        order.customer,
+        order.dealer,
+        order.model,
+        order.regentProduction,
+        order.signedOrderReceived,
+        order.vehicle,
+        order.vinNumber,
+      ]
+        .map((v) => String(v || "").toLowerCase())
+        .some((v) => v.includes(q));
+    });
+  }, [campervanOrders, vehicleSearchTerm]);
+
   return (
     <>
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-2xl font-semibold">{tr(lang, "schedule", "排产表")}</h2>
+        <div className="mt-4 inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1 text-sm">
+          <button
+            type="button"
+            onClick={() => setActiveTab("caravan")}
+            className={`rounded-md px-3 py-1.5 ${activeTab === "caravan" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
+          >
+            {tr(lang, "Caravan", "拖挂式")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("motorised")}
+            className={`rounded-md px-3 py-1.5 ${activeTab === "motorised" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
+          >
+            {tr(lang, "Motorised", "自行式")}
+          </button>
+        </div>
       </div>
+
+      {activeTab === "motorised" ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex flex-col gap-3">
+            <div className="text-sm text-slate-500">{tr(lang, "Using same source as dealer order list > vehicles", "使用与 dealer order list > vehicles 相同的数据源")}</div>
+            <input
+              type="text"
+              value={vehicleSearchTerm}
+              onChange={(e) => setVehicleSearchTerm(e.target.value)}
+              placeholder={tr(lang, "Search vehicles (chassis / customer / VIN / status)", "搜索自行式（底盘 / 客户 / VIN / 状态）")}
+              className="w-full rounded-md border border-slate-300 px-3 py-2"
+            />
+          </div>
+
+          {loadingVehicles ? (
+            <div className="py-8 text-center text-slate-500">{tr(lang, "Loading vehicle schedule...", "正在加载自行式排产...")}</div>
+          ) : searchedVehicleOrders.length === 0 ? (
+            <div className="py-8 text-center text-slate-500">{tr(lang, "No vehicles found", "没有找到数据")}</div>
+          ) : (
+            <div className="overflow-auto rounded-lg border border-slate-200">
+              <table className="min-w-[1300px] divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Forecast Production Date", "预测生产日期")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Chassis", "底盘号")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Customer", "客户")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Dealer", "经销商")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Model", "车型")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Current Status", "当前状态")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Signed Order Received", "签单接收")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Vehicle", "车辆")}</th>
+                    <th className="px-3 py-2 text-left font-semibold">VIN</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {searchedVehicleOrders.map((order, idx) => {
+                    const status = String(order.regentProduction || "-").trim() || "-";
+                    return (
+                      <tr key={`${order.chassisNumber || order.vinNumber || idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.forecastProductionDate || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 font-medium">{String(order.chassisNumber || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.customer || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.dealer || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.model || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          <span className={`rounded px-2 py-1 text-xs ${vehicleStatusClass[status] || "bg-slate-100 text-slate-700"}`}>
+                            {lang === "zh" ? statusText(lang, status) : vehicleStatusText[status] || status}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.signedOrderReceived || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.vehicle || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.vinNumber || "-")}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {groupCards.map((c) => (
@@ -273,6 +416,8 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
           </table>
         </div>
       </div>
+        </>
+      )}
     </>
   );
 }
