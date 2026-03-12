@@ -14,7 +14,6 @@ import RequsitionPage from "./planningIntegration/RequsitionPage";
 import VehicleSearchPage from "./planningIntegration/VehicleSearchPage";
 import AlertsAndRemindersPage from "./planningIntegration/AlertsAndRemindersPage";
 import AustraliaFactoryCalendarPage from "./planningIntegration/AustraliaFactoryCalendarPage";
-import SmartSchedulingPage from "./planningIntegration/SmartSchedulingPage";
 import { usePlanningData } from "./planningIntegration/usePlanningData";
 import type { Granularity } from "./planningIntegration/types";
 import type { PlanningLang } from "./planningIntegration/i18n";
@@ -122,7 +121,6 @@ export default function PlanningIntegration() {
           <Route path="/requsition" element={<RequsitionPage lang={lang} />} />
           <Route path="/alerts-reminders" element={<AlertsAndRemindersPage rows={data.rows} lang={lang} />} />
           <Route path="/australia-factory-calendar" element={<AustraliaFactoryCalendarPage lang={lang} />} />
-          <Route path="/smart-scheduling" element={<SmartSchedulingPage rows={data.rows} lang={lang} />} />
           <Route path="/vans-in-delay" element={<VansInDelayPage rows={data.rows} lang={lang} />} />
           <Route path="/vehicle-search" element={<VehicleSearchPage rows={data.rows} specByChassis={data.specByChassis} planByChassis={data.planByChassis} lang={lang} />} />
           <Route
