@@ -17,7 +17,8 @@ type PlanningTabPath =
   | "/planningintegration/vehicle-search"
   | "/planningintegration/target"
   | "/planningintegration/report"
-  | "/planningintegration/australia-factory-calendar";
+  | "/planningintegration/australia-factory-calendar"
+  | "/planningintegration/smart-scheduling";
 
 
 
@@ -73,6 +74,7 @@ export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, 
     { path: "/planningintegration/vans-in-delay", label: tr(lang, "Vans in Delay", "延误车辆"), icon: AlertTriangle },
     { path: "/planningintegration/target", label: tr(lang, "target", "目标"), icon: Target },
     { path: "/planningintegration/report", label: tr(lang, "report", "报表"), icon: BarChart3 },
+    { path: "/planningintegration/smart-scheduling", label: tr(lang, "Intelligent Scheduling", "智能排产"), icon: BarChart3 },
   ];
 
   return (
