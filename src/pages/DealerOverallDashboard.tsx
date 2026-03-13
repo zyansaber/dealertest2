@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { NavLink, useLocation, useParams } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
 import * as XLSX from "xlsx";
@@ -326,11 +326,23 @@ const DeltaIndicator = ({ actual, target }: { actual: number; target: number }) 
 };
 
 export default function DealerOverallDashboard() {
-  const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
+  const { dealerSlug: rawDealerSlug, selectedDealerSlug: routeSelectedDealerSlug } = useParams<{
+    dealerSlug: string;
+    selectedDealerSlug?: string;
+  }>();
+  const location = useLocation();
+  const isDealerGroupRoute = location.pathname.startsWith("/dealergroup/");
   const isGlobalView = !rawDealerSlug;
   const normalizedSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
+  const normalizedRouteSelectedDealerSlug = useMemo(
+    () => normalizeDealerSlug(routeSelectedDealerSlug),
+    [routeSelectedDealerSlug]
+  );
+  const routeScopedDealerSlug = isDealerGroupRoute
+    ? normalizedRouteSelectedDealerSlug || normalizedSlug
+    : normalizedSlug;
   const [selectedDealerSlug, setSelectedDealerSlug] = useState<string | null>(null);
-  const dealerSlug = isGlobalView ? selectedDealerSlug : normalizedSlug;
+  const dealerSlug = isGlobalView ? selectedDealerSlug : routeScopedDealerSlug;
   const isFactoryDealerAggregate = dealerSlug === FACTORY_DEALER_TOTAL_SLUG;
   const isGreenRvAggregate = dealerSlug === GREEN_RV_TOTAL_SLUG;
   const isNewZealandAggregate = dealerSlug === NEW_ZEALAND_TOTAL_SLUG;
