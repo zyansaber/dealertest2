@@ -212,7 +212,7 @@ const AppShell = () => {
         {/* Dealer Group 路由 - 使用 /dealergroup/ 前缀 */}
         {/* 不带选中dealer的路由（会自动重定向到第一个dealer） */}
         <Route
-          path="/dealergroup/:dealerSlug/dashboard"
+          path="/dealergroup/:dealerSlug/dashboard/*"
           element={
             <ProtectedDealerGroupRoute>
               <DealerGroupDashboard />
@@ -254,7 +254,7 @@ const AppShell = () => {
 
         {/* 带选中dealer的路由 */}
         <Route
-          path="/dealergroup/:dealerSlug/:selectedDealerSlug/dashboard"
+          path="/dealergroup/:dealerSlug/:selectedDealerSlug/dashboard/*"
           element={
             <ProtectedDealerGroupRoute>
               <DealerGroupDashboard />
