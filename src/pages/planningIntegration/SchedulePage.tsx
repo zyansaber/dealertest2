@@ -494,9 +494,6 @@ export default function SchedulePage({
                       {tr(lang, "Model", "车型")}
                     </th>
                     <th className="px-3 py-3 text-left font-semibold">
-                      {tr(lang, "Stock/New", "Stock/新家")}
-                    </th>
-                    <th className="px-3 py-3 text-left font-semibold">
                       {tr(lang, "Current Status", "当前状态")}
                     </th>
                     <th className="px-3 py-3 text-left font-semibold">
@@ -519,7 +516,6 @@ export default function SchedulePage({
                     )
                       ? (status as EditableVehicleStatus)
                       : "longtreeScheduling";
-                    const isStock = !String(order.customer || "").trim();
                     return (
                       <tr
                         key={`${order._id || order.chassisNumber || order.vinNumber || idx}`}
@@ -545,15 +541,6 @@ export default function SchedulePage({
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5">
                           {String(order.model || "-")}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          <span
-                            className={`rounded-full px-2 py-1 text-xs font-semibold ${isStock ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}
-                          >
-                            {isStock
-                              ? tr(lang, "Stock", "Stock")
-                              : tr(lang, "New", "新家")}
-                          </span>
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5">
                           <select
