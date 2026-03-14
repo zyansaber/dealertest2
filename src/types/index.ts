@@ -18,6 +18,7 @@ export interface ScheduleItem {
 }
 
 export interface CampervanScheduleItem {
+  _id?: string;
   chassisNumber?: string;
   customer?: string;
   dealer?: string;
@@ -64,7 +65,7 @@ export interface DateTrackItem {
   "Left Port"?: string;
   "Received in Melbourne"?: string;
   "Dispatched from Factory"?: string;
-  "GRPURCHASEORDER"?: string;
+  GRPURCHASEORDER?: string;
 }
 
 export interface DateTrack {
@@ -178,4 +179,4 @@ export interface CustomerBpRecord {
 }
 
 // Export dealer types
-export * from './dealer';
+export * from "./dealer";

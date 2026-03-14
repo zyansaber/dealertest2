@@ -5,37 +5,139 @@ import { milestoneSequence, phaseCardMap } from "./types";
 import type { PlanningLang } from "./i18n";
 import { statusText, tr } from "./i18n";
 import { database, subscribeToCampervanSchedule } from "@/lib/firebase";
-import { off, onValue, ref } from "firebase/database";
+import { off, onValue, ref, update } from "firebase/database";
 import type { CampervanScheduleItem } from "@/types";
 
-const columns: Array<{ label: string; zhLabel: string; key: string; source: "schedule" | "dateTrack"; className?: string }> = [
-  { label: "Current Status", zhLabel: "当前状态", key: "_status", source: "schedule" },
-  { label: "Aging Days", zhLabel: "滞留天数", key: "_aging", source: "schedule" },
-  { label: "Waiting for ordering", zhLabel: "待下单价格", key: "_wfo", source: "schedule" },
-  { label: "Forecast Production Date", zhLabel: "预测生产日期", key: "Forecast Production Date", source: "schedule" },
+const columns: Array<{
+  label: string;
+  zhLabel: string;
+  key: string;
+  source: "schedule" | "dateTrack";
+  className?: string;
+}> = [
+  {
+    label: "Current Status",
+    zhLabel: "当前状态",
+    key: "_status",
+    source: "schedule",
+  },
+  {
+    label: "Aging Days",
+    zhLabel: "滞留天数",
+    key: "_aging",
+    source: "schedule",
+  },
+  {
+    label: "Waiting for ordering",
+    zhLabel: "待下单价格",
+    key: "_wfo",
+    source: "schedule",
+  },
+  {
+    label: "Forecast Production Date",
+    zhLabel: "预测生产日期",
+    key: "Forecast Production Date",
+    source: "schedule",
+  },
   { label: "Chassis", zhLabel: "底盘号", key: "Chassis", source: "schedule" },
-  { label: "Customer", zhLabel: "客户", key: "Customer", source: "schedule", className: "max-w-[110px] truncate" },
+  {
+    label: "Customer",
+    zhLabel: "客户",
+    key: "Customer",
+    source: "schedule",
+    className: "max-w-[110px] truncate",
+  },
   { label: "Dealer", zhLabel: "经销商", key: "Dealer", source: "schedule" },
   { label: "Model", zhLabel: "车型", key: "Model", source: "schedule" },
-  { label: "Model Year", zhLabel: "年款", key: "Model Year", source: "schedule" },
-  { label: "Order Received Date", zhLabel: "接单日期", key: "Order Received Date", source: "schedule" },
-  { label: "Signed Plans Received", zhLabel: "签图回收", key: "Signed Plans Received", source: "schedule" },
-  { label: "Purchase Order Sent", zhLabel: "采购单发送", key: "Purchase Order Sent", source: "schedule" },
-  { label: "chassisWelding", zhLabel: "底盘焊接", key: "chassisWelding", source: "dateTrack" },
-  { label: "assemblyLine", zhLabel: "总装线", key: "assemblyLine", source: "dateTrack" },
-  { label: "finishGoods", zhLabel: "完工入库", key: "finishGoods", source: "dateTrack" },
-  { label: "leavingFactory", zhLabel: "离开工厂", key: "leavingFactory", source: "dateTrack" },
-  { label: "estLeavngPort", zhLabel: "预计离港", key: "estLeavngPort", source: "dateTrack" },
-  { label: "Left Port", zhLabel: "已离港", key: "Left Port", source: "dateTrack" },
-  { label: "melbournePortDate", zhLabel: "墨尔本港到港", key: "melbournePortDate", source: "dateTrack" },
-  { label: "Received in Melbourne", zhLabel: "墨尔本工厂接收", key: "Received in Melbourne", source: "dateTrack" },
+  {
+    label: "Model Year",
+    zhLabel: "年款",
+    key: "Model Year",
+    source: "schedule",
+  },
+  {
+    label: "Order Received Date",
+    zhLabel: "接单日期",
+    key: "Order Received Date",
+    source: "schedule",
+  },
+  {
+    label: "Signed Plans Received",
+    zhLabel: "签图回收",
+    key: "Signed Plans Received",
+    source: "schedule",
+  },
+  {
+    label: "Purchase Order Sent",
+    zhLabel: "采购单发送",
+    key: "Purchase Order Sent",
+    source: "schedule",
+  },
+  {
+    label: "chassisWelding",
+    zhLabel: "底盘焊接",
+    key: "chassisWelding",
+    source: "dateTrack",
+  },
+  {
+    label: "assemblyLine",
+    zhLabel: "总装线",
+    key: "assemblyLine",
+    source: "dateTrack",
+  },
+  {
+    label: "finishGoods",
+    zhLabel: "完工入库",
+    key: "finishGoods",
+    source: "dateTrack",
+  },
+  {
+    label: "leavingFactory",
+    zhLabel: "离开工厂",
+    key: "leavingFactory",
+    source: "dateTrack",
+  },
+  {
+    label: "estLeavngPort",
+    zhLabel: "预计离港",
+    key: "estLeavngPort",
+    source: "dateTrack",
+  },
+  {
+    label: "Left Port",
+    zhLabel: "已离港",
+    key: "Left Port",
+    source: "dateTrack",
+  },
+  {
+    label: "melbournePortDate",
+    zhLabel: "墨尔本港到港",
+    key: "melbournePortDate",
+    source: "dateTrack",
+  },
+  {
+    label: "Received in Melbourne",
+    zhLabel: "墨尔本工厂接收",
+    key: "Received in Melbourne",
+    source: "dateTrack",
+  },
 ];
 
 const statusGroup = {
   "Melbourn Factory": ["Melbourn Factory"],
   "Order Processing": ["not confirmed orders", "Waiting for sending"],
-  "Longtree Factory": ["Not Start in Longtree", "Chassis welding in Longtree", "Assembly line Longtree", "Finishedin Longtree"],
-  "on the transit": ["Leaving factory from Longtree", "waiting in port", "On the sea", "Melbourn Port"],
+  "Longtree Factory": [
+    "Not Start in Longtree",
+    "Chassis welding in Longtree",
+    "Assembly line Longtree",
+    "Finishedin Longtree",
+  ],
+  "on the transit": [
+    "Leaving factory from Longtree",
+    "waiting in port",
+    "On the sea",
+    "Melbourn Port",
+  ],
 } as const;
 
 const statusClass: Record<string, string> = {
@@ -54,32 +156,29 @@ const statusClass: Record<string, string> = {
 
 const PAGE_SIZE = 80;
 
+const editableVehicleStatuses = [
+  "longtreeScheduling",
+  "productionInProgress",
+  "offLine",
+  "shipped",
+  "departedPort",
+] as const;
+type EditableVehicleStatus = (typeof editableVehicleStatuses)[number];
+
 const vehicleStatusText: Record<string, string> = {
-  "not confirmed orders": "Not Confirmed Orders",
-  "Waiting for sending": "Waiting for Sending",
-  "Not Start in Longtree": "Not Started in Longtree",
-  "Chassis welding in Longtree": "Chassis Welding in Longtree",
-  "Assembly line Longtree": "Assembly Line Longtree",
-  "Finishedin Longtree": "Finished in Longtree",
-  "Leaving factory from Longtree": "Leaving Factory from Longtree",
-  "waiting in port": "Waiting in Port",
-  "On the sea": "On the Sea",
-  "Melbourn Port": "Melbourne Port",
-  "Melbourn Factory": "Melbourne Factory",
+  longtreeScheduling: "Longtree Scheduling",
+  productionInProgress: "Production In Progress",
+  offLine: "Off Line",
+  shipped: "Shipped",
+  departedPort: "Departed Port",
 };
 
 const vehicleStatusClass: Record<string, string> = {
-  "not confirmed orders": "bg-amber-100 text-amber-800",
-  "Waiting for sending": "bg-yellow-100 text-yellow-800",
-  "Not Start in Longtree": "bg-sky-100 text-sky-800",
-  "Chassis welding in Longtree": "bg-blue-100 text-blue-800",
-  "Assembly line Longtree": "bg-indigo-100 text-indigo-800",
-  "Finishedin Longtree": "bg-violet-100 text-violet-800",
-  "Leaving factory from Longtree": "bg-orange-100 text-orange-800",
-  "waiting in port": "bg-pink-100 text-pink-800",
-  "On the sea": "bg-cyan-100 text-cyan-800",
-  "Melbourn Port": "bg-lime-100 text-lime-800",
-  "Melbourn Factory": "bg-emerald-100 text-emerald-800",
+  longtreeScheduling: "bg-indigo-100 text-indigo-800",
+  productionInProgress: "bg-blue-100 text-blue-800",
+  offLine: "bg-violet-100 text-violet-800",
+  shipped: "bg-emerald-100 text-emerald-800",
+  departedPort: "bg-cyan-100 text-cyan-800",
 };
 
 type TicketType = "change-production-date" | "after-signed-off-change";
@@ -94,28 +193,98 @@ type RequisitionTicket = {
   status?: "unread" | "approved";
 };
 
-const normalize = (value: unknown) => String(value ?? "").trim().toUpperCase();
+const normalize = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toUpperCase();
+
+const parseDdMmYyyyToUtc = (dateText: unknown) => {
+  const raw = String(dateText || "").trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\./g, "/").replace(/-/g, "/");
+  const [dd, mm, yyyy] = normalized.split("/").map(Number);
+  if (!dd || !mm || !yyyy) return null;
+  const dt = new Date(Date.UTC(yyyy, mm - 1, dd));
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+};
+
+const formatUtcToDdMmYyyy = (dt: Date) => {
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getUTCFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+const formatDateMinusDays = (dateText: unknown, days: number) => {
+  const dt = parseDdMmYyyyToUtc(dateText);
+  if (!dt) return "-";
+  dt.setUTCDate(dt.getUTCDate() - days);
+  return formatUtcToDdMmYyyy(dt);
+};
+
+const isWithinNext30Days = (dateText: unknown, minusDays = 40) => {
+  const dt = parseDdMmYyyyToUtc(dateText);
+  if (!dt) return false;
+  dt.setUTCDate(dt.getUTCDate() - minusDays);
+
+  const today = new Date();
+  const todayUtc = Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate(),
+  );
+  const targetUtc = Date.UTC(
+    dt.getUTCFullYear(),
+    dt.getUTCMonth(),
+    dt.getUTCDate(),
+  );
+  const diffDays = Math.floor((targetUtc - todayUtc) / 86400000);
+  return diffDays >= 0 && diffDays <= 30;
+};
 
 const isTicketFinalApproved = (ticket: RequisitionTicket) => {
   if (ticket.status === "approved") return true;
-  if (ticket.type === "change-production-date") return Boolean(ticket.approvals?.productionApproved);
-  if (ticket.type === "after-signed-off-change") return Boolean(ticket.approvals?.techApproved) && Boolean(ticket.approvals?.productionApproved);
+  if (ticket.type === "change-production-date")
+    return Boolean(ticket.approvals?.productionApproved);
+  if (ticket.type === "after-signed-off-change")
+    return (
+      Boolean(ticket.approvals?.techApproved) &&
+      Boolean(ticket.approvals?.productionApproved)
+    );
   return false;
 };
 
-
-export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows: Row[]; waitingOrderPrices: Record<string, number>; lang: PlanningLang }) {
+export default function SchedulePage({
+  rows,
+  waitingOrderPrices,
+  lang,
+}: {
+  rows: Row[];
+  waitingOrderPrices: Record<string, number>;
+  lang: PlanningLang;
+}) {
   const top = useRef<HTMLDivElement | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
 
-  const [agingFilter, setAgingFilter] = useState<"all" | "0-30" | "31-60" | "61-90" | "90+">("all");
-  const [groupFilter, setGroupFilter] = useState<keyof typeof statusGroup | "all">("all");
+  const [agingFilter, setAgingFilter] = useState<
+    "all" | "0-30" | "31-60" | "61-90" | "90+"
+  >("all");
+  const [groupFilter, setGroupFilter] = useState<
+    keyof typeof statusGroup | "all"
+  >("all");
   const [page, setPage] = useState(1);
-  const [activeTab, setActiveTab] = useState<"caravan" | "motorised">("caravan");
+  const [activeTab, setActiveTab] = useState<"caravan" | "motorised">(
+    "caravan",
+  );
   const [vehicleSearchTerm, setVehicleSearchTerm] = useState("");
-  const [campervanOrders, setCampervanOrders] = useState<CampervanScheduleItem[]>([]);
+  const [campervanOrders, setCampervanOrders] = useState<
+    CampervanScheduleItem[]
+  >([]);
   const [loadingVehicles, setLoadingVehicles] = useState(true);
-  const [approvedChangeChassisSet, setApprovedChangeChassisSet] = useState<Set<string>>(new Set());
+  const [approvedChangeChassisSet, setApprovedChangeChassisSet] = useState<
+    Set<string>
+  >(new Set());
 
   useEffect(() => {
     const ticketsRef = ref(database, "mes/requisitionTickets");
@@ -145,28 +314,45 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
     };
   }, []);
 
-
   const enriched = useMemo(
     () =>
       rows.map((r) => {
         let last = "";
         milestoneSequence.forEach((m) => {
-          const ts = parseDateToTimestamp(m.source === "schedule" ? (r.schedule as any)?.[m.key] : r.dateTrack?.[m.key]);
+          const ts = parseDateToTimestamp(
+            m.source === "schedule"
+              ? (r.schedule as any)?.[m.key]
+              : r.dateTrack?.[m.key],
+          );
           if (ts != null) last = m.key;
         });
-        const posTs = parseDateToTimestamp((r.schedule as any)?.["Purchase Order Sent"]);
+        const posTs = parseDateToTimestamp(
+          (r.schedule as any)?.["Purchase Order Sent"],
+        );
         const leftTs = parseDateToTimestamp(r.dateTrack?.["Left Port"]);
         const end = leftTs ?? Date.now();
-        const agingNum = posTs == null ? null : Math.max(0, Math.floor((end - posTs) / 86400000));
+        const agingNum =
+          posTs == null
+            ? null
+            : Math.max(0, Math.floor((end - posTs) / 86400000));
         const currentStatus = (phaseCardMap[last] ?? last) || "-";
-        return { ...r, currentStatus, aging: agingNum == null ? "-" : String(agingNum), agingNum };
+        return {
+          ...r,
+          currentStatus,
+          aging: agingNum == null ? "-" : String(agingNum),
+          agingNum,
+        };
       }),
-    [rows]
+    [rows],
   );
 
   const filtered = useMemo(() => {
     return enriched.filter((r) => {
-      if (groupFilter !== "all" && !statusGroup[groupFilter].includes(r.currentStatus as any)) return false;
+      if (
+        groupFilter !== "all" &&
+        !statusGroup[groupFilter].includes(r.currentStatus as any)
+      )
+        return false;
       if (agingFilter === "all") return true;
       if (r.agingNum == null) return false;
       if (agingFilter === "0-30") return r.agingNum <= 30;
@@ -176,7 +362,11 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
     });
   }, [enriched, groupFilter, agingFilter]);
 
-  const noLeftPort = useMemo(() => enriched.filter((r) => !parseDateToTimestamp(r.dateTrack?.["Left Port"])), [enriched]);
+  const noLeftPort = useMemo(
+    () =>
+      enriched.filter((r) => !parseDateToTimestamp(r.dateTrack?.["Left Port"])),
+    [enriched],
+  );
   const buckets = useMemo(() => {
     const b = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
     noLeftPort.forEach((r) => {
@@ -191,8 +381,18 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
   }, [noLeftPort]);
 
   const groupCards = useMemo(() => {
-    const mk = (k: keyof typeof statusGroup) => ({ key: k, count: enriched.filter((r) => statusGroup[k].includes(r.currentStatus as any)).length });
-    return [mk("Melbourn Factory"), mk("Order Processing"), mk("Longtree Factory"), mk("on the transit")];
+    const mk = (k: keyof typeof statusGroup) => ({
+      key: k,
+      count: enriched.filter((r) =>
+        statusGroup[k].includes(r.currentStatus as any),
+      ).length,
+    });
+    return [
+      mk("Melbourn Factory"),
+      mk("Order Processing"),
+      mk("Longtree Factory"),
+      mk("on the transit"),
+    ];
   }, [enriched]);
 
   const max = Math.max(1, ...Object.values(buckets));
@@ -201,29 +401,61 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
 
   const searchedVehicleOrders = useMemo(() => {
     const q = vehicleSearchTerm.trim().toLowerCase();
-    return campervanOrders.filter((order) => {
-      if (!q) return true;
+    return campervanOrders
+      .filter((order) => {
+        const chassis = String(order.chassisNumber || "").trim();
+        const status = String(order.regentProduction || "").trim();
+        if (!chassis) return false;
+        if (status.toLowerCase() === "finished") return false;
 
-      return [
-        order.forecastProductionDate,
-        order.chassisNumber,
-        order.customer,
-        order.dealer,
-        order.model,
-        order.regentProduction,
-        order.signedOrderReceived,
-        order.vehicle,
-        order.vinNumber,
-      ]
-        .map((v) => String(v || "").toLowerCase())
-        .some((v) => v.includes(q));
-    });
+        if (!q) return true;
+        return [
+          order.forecastProductionDate,
+          order.chassisNumber,
+          order.customer,
+          order.dealer,
+          order.model,
+          order.regentProduction,
+          order.signedOrderReceived,
+          order.vehicle,
+          order.vinNumber,
+        ]
+          .map((v) => String(v || "").toLowerCase())
+          .some((v) => v.includes(q));
+      })
+      .sort((a, b) => {
+        const aDate = parseDdMmYyyyToUtc(a.forecastProductionDate);
+        const bDate = parseDdMmYyyyToUtc(b.forecastProductionDate);
+        if (aDate && bDate) return aDate.getTime() - bDate.getTime();
+        if (aDate) return -1;
+        if (bDate) return 1;
+        return String(a.forecastProductionDate || "").localeCompare(
+          String(b.forecastProductionDate || ""),
+        );
+      });
   }, [campervanOrders, vehicleSearchTerm]);
+
+  const updateVehicleStatus = async (
+    order: CampervanScheduleItem,
+    nextStatus: string,
+  ) => {
+    const id = order._id;
+    if (!id) return;
+    try {
+      await update(ref(database, `campervanSchedule/${id}`), {
+        regentProduction: nextStatus,
+      });
+    } catch (error) {
+      console.error("Failed to update vehicle status", error);
+    }
+  };
 
   return (
     <>
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-2xl font-semibold">{tr(lang, "schedule", "排产表")}</h2>
+        <h2 className="text-2xl font-semibold">
+          {tr(lang, "schedule", "排产表")}
+        </h2>
         <div className="mt-4 inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1 text-sm">
           <button
             type="button"
@@ -245,54 +477,137 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
       {activeTab === "motorised" ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex flex-col gap-3">
-            <div className="text-sm text-slate-500">{tr(lang, "Using same source as dealer order list > vehicles", "使用与 dealer order list > vehicles 相同的数据源")}</div>
+            <div className="text-sm text-slate-500">
+              {tr(
+                lang,
+                "Using same source as dealer order list > vehicles",
+                "使用与 dealer order list > vehicles 相同的数据源",
+              )}
+            </div>
             <input
               type="text"
               value={vehicleSearchTerm}
               onChange={(e) => setVehicleSearchTerm(e.target.value)}
-              placeholder={tr(lang, "Search vehicles (chassis / customer / VIN / status)", "搜索自行式（底盘 / 客户 / VIN / 状态）")}
+              placeholder={tr(
+                lang,
+                "Search vehicles (chassis / customer / VIN / status)",
+                "搜索自行式（底盘 / 客户 / VIN / 状态）",
+              )}
               className="w-full rounded-md border border-slate-300 px-3 py-2"
             />
           </div>
 
           {loadingVehicles ? (
-            <div className="py-8 text-center text-slate-500">{tr(lang, "Loading vehicle schedule...", "正在加载自行式排产...")}</div>
+            <div className="py-8 text-center text-slate-500">
+              {tr(lang, "Loading vehicle schedule...", "正在加载自行式排产...")}
+            </div>
           ) : searchedVehicleOrders.length === 0 ? (
-            <div className="py-8 text-center text-slate-500">{tr(lang, "No vehicles found", "没有找到数据")}</div>
+            <div className="py-8 text-center text-slate-500">
+              {tr(lang, "No vehicles found", "没有找到数据")}
+            </div>
           ) : (
-            <div className="overflow-auto rounded-lg border border-slate-200">
-              <table className="min-w-[1300px] divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-100">
+            <div className="overflow-auto rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50">
+              <table className="min-w-[1500px] text-sm">
+                <thead className="bg-slate-900 text-white">
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Forecast Production Date", "预测生产日期")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Chassis", "底盘号")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Customer", "客户")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Dealer", "经销商")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Model", "车型")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Current Status", "当前状态")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Signed Order Received", "签单接收")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">{tr(lang, "Vehicle", "车辆")}</th>
-                    <th className="px-3 py-2 text-left font-semibold">VIN</th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Forecast Production Date", "预测生产日期")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Latest Shipment Date", "最晚发货日期")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Chassis", "底盘号")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Customer", "客户")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Dealer", "经销商")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Model", "车型")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Current Status", "当前状态")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Signed Order Received", "签单接收")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">
+                      {tr(lang, "Vehicle", "车辆")}
+                    </th>
+                    <th className="px-3 py-3 text-left font-semibold">VIN</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody>
                   {searchedVehicleOrders.map((order, idx) => {
-                    const status = String(order.regentProduction || "-").trim() || "-";
+                    const status =
+                      String(order.regentProduction || "").trim() || "-";
+                    const statusOptions =
+                      status === "-"
+                        ? ["-", ...editableVehicleStatuses]
+                        : !editableVehicleStatuses.includes(
+                              status as EditableVehicleStatus,
+                            )
+                          ? [status, ...editableVehicleStatuses]
+                          : [...editableVehicleStatuses];
+                    const shouldHighlight = isWithinNext30Days(
+                      order.forecastProductionDate,
+                      40,
+                    );
                     return (
-                      <tr key={`${order.chassisNumber || order.vinNumber || idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.forecastProductionDate || "-")}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 font-medium">{String(order.chassisNumber || "-")}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.customer || "-")}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.dealer || "-")}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.model || "-")}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          <span className={`rounded px-2 py-1 text-xs ${vehicleStatusClass[status] || "bg-slate-100 text-slate-700"}`}>
-                            {lang === "zh" ? statusText(lang, status) : vehicleStatusText[status] || status}
-                          </span>
+                      <tr
+                        key={`${order._id || order.chassisNumber || order.vinNumber || idx}`}
+                        className={`border-b border-slate-200 ${shouldHighlight ? "bg-amber-100/60" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/70"}`}
+                      >
+                        <td className="whitespace-nowrap px-3 py-2.5 font-medium">
+                          {String(order.forecastProductionDate || "-")}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.signedOrderReceived || "-")}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.vehicle || "-")}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{String(order.vinNumber || "-")}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">
+                          {formatDateMinusDays(
+                            order.forecastProductionDate,
+                            40,
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-900">
+                          {String(order.chassisNumber || "-")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          {String(order.customer || "-")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          {String(order.dealer || "-")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          {String(order.model || "-")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          <select
+                            value={status}
+                            onChange={(e) =>
+                              updateVehicleStatus(order, e.target.value)
+                            }
+                            className={`rounded-md border border-slate-300 px-2 py-1.5 text-xs font-semibold ${vehicleStatusClass[status] || "bg-slate-100 text-slate-700"}`}
+                          >
+                            {statusOptions.map((item) => (
+                              <option key={item} value={item}>
+                                {lang === "zh"
+                                  ? statusText(lang, item)
+                                  : vehicleStatusText[item] || item}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          {String(order.signedOrderReceived || "-")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          {String(order.vehicle || "-")}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          {String(order.vinNumber || "-")}
+                        </td>
                       </tr>
                     );
                   })}
@@ -303,119 +618,184 @@ export default function SchedulePage({ rows, waitingOrderPrices, lang }: { rows:
         </div>
       ) : (
         <>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {groupCards.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => {
+                  setGroupFilter((prev) => (prev === c.key ? "all" : c.key));
+                  setPage(1);
+                }}
+                className={`rounded-xl border p-4 text-left shadow-sm transition ${groupFilter === c.key ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-white"}`}
+              >
+                <div className="text-sm font-semibold text-slate-700">
+                  {c.key === "Melbourn Factory"
+                    ? tr(lang, "Melbourn Factory", "墨尔本工厂")
+                    : c.key === "Order Processing"
+                      ? tr(lang, "Order Processing", "订单处理中")
+                      : c.key === "Longtree Factory"
+                        ? tr(lang, "Longtree Factory", "Longtree 工厂")
+                        : tr(lang, "on the transit", "在途运输")}
+                </div>
+                <div className="mt-1 text-3xl font-bold text-slate-900">
+                  {c.count}
+                </div>
+              </button>
+            ))}
+          </div>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {groupCards.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            onClick={() => {
-              setGroupFilter((prev) => (prev === c.key ? "all" : c.key));
-              setPage(1);
-            }}
-            className={`rounded-xl border p-4 text-left shadow-sm transition ${groupFilter === c.key ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-white"}`}
-          >
-            <div className="text-sm font-semibold text-slate-700">{c.key === "Melbourn Factory" ? tr(lang, "Melbourn Factory", "墨尔本工厂") : c.key === "Order Processing" ? tr(lang, "Order Processing", "订单处理中") : c.key === "Longtree Factory" ? tr(lang, "Longtree Factory", "Longtree 工厂") : tr(lang, "on the transit", "在途运输")}</div>
-            <div className="mt-1 text-3xl font-bold text-slate-900">{c.count}</div>
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-2 text-sm font-semibold">{tr(lang, "Aging bar chart (no Left Port yet) — click to filter", "滞留分布图（尚未 Left Port）— 点击筛选")}</div>
-        {Object.entries(buckets).map(([k, v]) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => {
-              setAgingFilter((prev) => (prev === k ? "all" : (k as any)));
-              setPage(1);
-            }}
-            className={`mb-2 flex w-full items-center gap-3 rounded px-1 py-1 text-left ${agingFilter === k ? "bg-slate-100" : ""}`}
-          >
-            <div className="w-20 text-xs">{k}</div>
-            <div className="h-4 flex-1 rounded bg-slate-100">
-              <div className="h-4 rounded bg-slate-700" style={{ width: `${(v / max) * 100}%` }} />
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 text-sm font-semibold">
+              {tr(
+                lang,
+                "Aging bar chart (no Left Port yet) — click to filter",
+                "滞留分布图（尚未 Left Port）— 点击筛选",
+              )}
             </div>
-            <div className="w-8 text-right text-sm">{v}</div>
-          </button>
-        ))}
-      </div>
+            {Object.entries(buckets).map(([k, v]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  setAgingFilter((prev) => (prev === k ? "all" : (k as any)));
+                  setPage(1);
+                }}
+                className={`mb-2 flex w-full items-center gap-3 rounded px-1 py-1 text-left ${agingFilter === k ? "bg-slate-100" : ""}`}
+              >
+                <div className="w-20 text-xs">{k}</div>
+                <div className="h-4 flex-1 rounded bg-slate-100">
+                  <div
+                    className="h-4 rounded bg-slate-700"
+                    style={{ width: `${(v / max) * 100}%` }}
+                  />
+                </div>
+                <div className="w-8 text-right text-sm">{v}</div>
+              </button>
+            ))}
+          </div>
 
-      <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
-        <div>{tr(lang, "Filtered rows", "筛选后行数")}: {filtered.length}</div>
-        <div className="flex items-center gap-2">
-          <button type="button" disabled={page <= 1} className="rounded border px-2 py-1 disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))}>{tr(lang, "Prev", "上一页")}</button>
-          <span>{tr(lang, "Page", "页")} {page}/{totalPages}</span>
-          <button type="button" disabled={page >= totalPages} className="rounded border px-2 py-1 disabled:opacity-50" onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>{tr(lang, "Next", "下一页")}</button>
-        </div>
-      </div>
+          <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
+            <div>
+              {tr(lang, "Filtered rows", "筛选后行数")}: {filtered.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                className="rounded border px-2 py-1 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                {tr(lang, "Prev", "上一页")}
+              </button>
+              <span>
+                {tr(lang, "Page", "页")} {page}/{totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                className="rounded border px-2 py-1 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                {tr(lang, "Next", "下一页")}
+              </button>
+            </div>
+          </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div
-          ref={top}
-          className="overflow-x-auto overflow-y-hidden border-b border-slate-200"
-          onScroll={() => {
-            if (bottom.current && top.current) bottom.current.scrollLeft = top.current.scrollLeft;
-          }}
-        >
-          <div style={{ width: 2600, height: 1 }} />
-        </div>
-        <div
-          ref={bottom}
-          className="max-h-[calc(100vh-420px)] overflow-auto"
-          onScroll={() => {
-            if (top.current && bottom.current) top.current.scrollLeft = bottom.current.scrollLeft;
-          }}
-        >
-          <table className="min-w-[2600px] divide-y divide-slate-200 text-sm">
-            <thead className="sticky top-0 bg-slate-100">
-              <tr>
-                {columns.map((c) => (
-                  <th key={c.key} className="px-3 py-3 text-left font-semibold">
-                    {lang === "zh" ? c.zhLabel : c.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {pagedRows.map((r, i) => (
-                <tr key={`${r.chassis}-${i}`} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                  {columns.map((c) => {
-                    let v: unknown;
-                    if (c.key === "_status") v = r.currentStatus;
-                    else if (c.key === "_aging") v = r.aging;
-                else if (c.key === "_wfo") v = Number.isFinite(Number(waitingOrderPrices[r.chassis])) ? `AUD ${waitingOrderPrices[r.chassis]}` : "-";
-                    else v = c.source === "schedule" ? (r.schedule as any)?.[c.key] : r.dateTrack?.[c.key];
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div
+              ref={top}
+              className="overflow-x-auto overflow-y-hidden border-b border-slate-200"
+              onScroll={() => {
+                if (bottom.current && top.current)
+                  bottom.current.scrollLeft = top.current.scrollLeft;
+              }}
+            >
+              <div style={{ width: 2600, height: 1 }} />
+            </div>
+            <div
+              ref={bottom}
+              className="max-h-[calc(100vh-420px)] overflow-auto"
+              onScroll={() => {
+                if (top.current && bottom.current)
+                  top.current.scrollLeft = bottom.current.scrollLeft;
+              }}
+            >
+              <table className="min-w-[2600px] divide-y divide-slate-200 text-sm">
+                <thead className="sticky top-0 bg-slate-100">
+                  <tr>
+                    {columns.map((c) => (
+                      <th
+                        key={c.key}
+                        className="px-3 py-3 text-left font-semibold"
+                      >
+                        {lang === "zh" ? c.zhLabel : c.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pagedRows.map((r, i) => (
+                    <tr
+                      key={`${r.chassis}-${i}`}
+                      className={i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}
+                    >
+                      {columns.map((c) => {
+                        let v: unknown;
+                        if (c.key === "_status") v = r.currentStatus;
+                        else if (c.key === "_aging") v = r.aging;
+                        else if (c.key === "_wfo")
+                          v = Number.isFinite(
+                            Number(waitingOrderPrices[r.chassis]),
+                          )
+                            ? `AUD ${waitingOrderPrices[r.chassis]}`
+                            : "-";
+                        else
+                          v =
+                            c.source === "schedule"
+                              ? (r.schedule as any)?.[c.key]
+                              : r.dateTrack?.[c.key];
 
-                    if (c.key === "_status") {
-                      return (
-                        <td key={`${r.chassis}-${c.key}-${i}`} className="whitespace-nowrap px-3 py-2.5">
-                          <span className={`rounded px-2 py-1 text-xs ${statusClass[String(v)] ?? "bg-slate-100"}`}>{statusText(lang, displayValue(v))}</span>
-                        </td>
-                      );
-                    }
+                        if (c.key === "_status") {
+                          return (
+                            <td
+                              key={`${r.chassis}-${c.key}-${i}`}
+                              className="whitespace-nowrap px-3 py-2.5"
+                            >
+                              <span
+                                className={`rounded px-2 py-1 text-xs ${statusClass[String(v)] ?? "bg-slate-100"}`}
+                              >
+                                {statusText(lang, displayValue(v))}
+                              </span>
+                            </td>
+                          );
+                        }
 
-                    const chassisKey = normalize(r.chassis);
-                    const hasApprovedChange = c.key === "Chassis" && approvedChangeChassisSet.has(chassisKey);
+                        const chassisKey = normalize(r.chassis);
+                        const hasApprovedChange =
+                          c.key === "Chassis" &&
+                          approvedChangeChassisSet.has(chassisKey);
 
-                    return (
-                      <td key={`${r.chassis}-${c.key}-${i}`} className={`whitespace-nowrap px-3 py-2.5 ${c.className ?? ""}`}>
-                        {displayValue(v)}
-                        {hasApprovedChange ? (
-                          <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
-                            {tr(lang, "change", "改")}
-                          </span>
-                        ) : null}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                        return (
+                          <td
+                            key={`${r.chassis}-${c.key}-${i}`}
+                            className={`whitespace-nowrap px-3 py-2.5 ${c.className ?? ""}`}
+                          >
+                            {displayValue(v)}
+                            {hasApprovedChange ? (
+                              <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
+                                {tr(lang, "change", "改")}
+                              </span>
+                            ) : null}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </>
       )}
     </>
