@@ -1,16 +1,34 @@
 export type PlanningLang = "en" | "zh";
 
-export const tr = (lang: PlanningLang, en: string, zh: string) => (lang === "zh" ? zh : en);
+export const tr = (lang: PlanningLang, en: string, zh: string) =>
+  lang === "zh" ? zh : en;
 
 const statusMap: Record<string, { en: string; zh: string }> = {
+  longtreeScheduling: { en: "Longtree Scheduling", zh: "Longtree排产" },
+  productionInProgress: { en: "Production In Progress", zh: "生产中" },
+  offLine: { en: "Off Line", zh: "下线" },
+  shipped: { en: "Shipped", zh: "已发货" },
+  departedPort: { en: "Departed Port", zh: "离开港口" },
   "Melbourn Factory": { en: "Melbourn Factory", zh: "墨尔本工厂" },
   "not confirmed orders": { en: "not confirmed orders", zh: "未确认订单" },
   "Waiting for sending": { en: "Waiting for sending", zh: "待发送" },
-  "Not Start in Longtree": { en: "Not Start in Longtree", zh: "Longtree 未开始" },
-  "Chassis welding in Longtree": { en: "Chassis welding in Longtree", zh: "Longtree 底盘焊接" },
-  "Assembly line Longtree": { en: "Assembly line Longtree", zh: "Longtree 总装线" },
+  "Not Start in Longtree": {
+    en: "Not Start in Longtree",
+    zh: "Longtree 未开始",
+  },
+  "Chassis welding in Longtree": {
+    en: "Chassis welding in Longtree",
+    zh: "Longtree 底盘焊接",
+  },
+  "Assembly line Longtree": {
+    en: "Assembly line Longtree",
+    zh: "Longtree 总装线",
+  },
   "Finishedin Longtree": { en: "Finishedin Longtree", zh: "Longtree 已完工" },
-  "Leaving factory from Longtree": { en: "Leaving factory from Longtree", zh: "Longtree 出厂" },
+  "Leaving factory from Longtree": {
+    en: "Leaving factory from Longtree",
+    zh: "Longtree 出厂",
+  },
   "waiting in port": { en: "waiting in port", zh: "港口等待" },
   "On the sea": { en: "On the sea", zh: "海运中" },
   "Melbourn Port": { en: "Melbourn Port", zh: "墨尔本港" },
@@ -33,5 +51,5 @@ export const metricText = (lang: PlanningLang, metric: string) => {
     "Left Port": "已离港",
     melbournePortDate: "墨尔本港到港",
   };
-  return lang === "zh" ? map[metric] ?? metric : metric;
+  return lang === "zh" ? (map[metric] ?? metric) : metric;
 };
