@@ -325,7 +325,7 @@ const DeltaIndicator = ({ actual, target }: { actual: number; target: number }) 
   );
 };
 
-export default function DealerOverallDashboard() {
+export default function DealerOverallDashboard({ hideSidebar = false }: { hideSidebar?: boolean } = {}) {
   const { dealerSlug: rawDealerSlug } = useParams<{ dealerSlug: string }>();
   const isGlobalView = !rawDealerSlug;
   const normalizedSlug = useMemo(() => normalizeDealerSlug(rawDealerSlug), [rawDealerSlug]);
@@ -2430,7 +2430,7 @@ export default function DealerOverallDashboard() {
 
   return (
     <div className="flex min-h-screen">
-      {isGlobalView ? (
+      {!hideSidebar && (isGlobalView ? (
         <aside className="w-64 border-r border-slate-200 bg-slate-950 text-slate-100 h-screen overflow-y-auto sticky top-0">
           <div className="p-4 space-y-6 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700/70 [&::-webkit-scrollbar-track]:bg-slate-900/60">
             <div>
@@ -2744,7 +2744,7 @@ export default function DealerOverallDashboard() {
           currentDealerName={dealerDisplayName}
           showStats={false}
         />
-      )}
+      ))}
 
       <main className="flex-1 flex flex-col bg-slate-50">
         <header className="bg-white border-b border-slate-200 p-6">
