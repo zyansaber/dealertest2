@@ -11,12 +11,7 @@ import {
   remove,
   DataSnapshot,
 } from "firebase/database";
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import type {
   SecondHandSale,
   ScheduleItem,
@@ -28,11 +23,7 @@ import type {
   CustomerBpRecord,
   CampervanScheduleItem,
 } from "@/types";
-import type {
-  DealerLayoutSnapshot,
-  DealerTierLayout,
-  TierConfig,
-} from "@/types/tierConfig";
+import type { DealerLayoutSnapshot, DealerTierLayout, TierConfig } from "@/types/tierConfig";
 
 const requireEnv = (key: string, context: string) => {
   const value = import.meta.env?.[key];
@@ -44,23 +35,11 @@ const requireEnv = (key: string, context: string) => {
 
 const firebaseConfig = {
   apiKey: requireEnv("VITE_FIREBASE_API_KEY", "primary Firebase config"),
-  authDomain: requireEnv(
-    "VITE_FIREBASE_AUTH_DOMAIN",
-    "primary Firebase config",
-  ),
-  databaseURL: requireEnv(
-    "VITE_FIREBASE_DATABASE_URL",
-    "primary Firebase config",
-  ),
+  authDomain: requireEnv("VITE_FIREBASE_AUTH_DOMAIN", "primary Firebase config"),
+  databaseURL: requireEnv("VITE_FIREBASE_DATABASE_URL", "primary Firebase config"),
   projectId: requireEnv("VITE_FIREBASE_PROJECT_ID", "primary Firebase config"),
-  storageBucket: requireEnv(
-    "VITE_FIREBASE_STORAGE_BUCKET",
-    "primary Firebase config",
-  ),
-  messagingSenderId: requireEnv(
-    "VITE_FIREBASE_MESSAGING_SENDER_ID",
-    "primary Firebase config",
-  ),
+  storageBucket: requireEnv("VITE_FIREBASE_STORAGE_BUCKET", "primary Firebase config"),
+  messagingSenderId: requireEnv("VITE_FIREBASE_MESSAGING_SENDER_ID", "primary Firebase config"),
   appId: requireEnv("VITE_FIREBASE_APP_ID", "primary Firebase config"),
 };
 
@@ -105,9 +84,7 @@ const extractUploadRows = (uploadNode: unknown) => {
 
   const skip = new Set(["uploaded_at", "row_count", "data"]);
   return Object.entries(node)
-    .filter(
-      ([key, value]) => !skip.has(key) && value && typeof value === "object",
-    )
+    .filter(([key, value]) => !skip.has(key) && value && typeof value === "object")
     .map(([, value]) => value);
 };
 
@@ -134,24 +111,14 @@ const extractScheduleRows = (raw: unknown) => {
     return extractUploadRows(record[latestKey]);
   }
 
-  return Object.values(record).filter(
-    (item) => item && typeof item === "object",
-  );
+  return Object.values(record).filter((item) => item && typeof item === "object");
 };
 
 const parseScheduleSnapshot = (
   snapshot: DataSnapshot,
-  options: {
-    includeNoChassis?: boolean;
-    includeNoCustomer?: boolean;
-    includeFinished?: boolean;
-  } = {},
+  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
 ) => {
-  const {
-    includeNoChassis = false,
-    includeNoCustomer = false,
-    includeFinished = false,
-  } = options;
+  const { includeNoChassis = false, includeNoCustomer = false, includeFinished = false } = options;
   const raw = snapshot.val();
 
   const list = extractScheduleRows(raw);
@@ -162,12 +129,10 @@ const parseScheduleSnapshot = (
       if (rp === "finished" || rp === "finish") return false;
     }
     if (!includeNoChassis) {
-      if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "")
-        return false;
+      if (!("Chassis" in (item ?? {})) || String(item?.Chassis ?? "") === "") return false;
     }
     if (!includeNoCustomer) {
-      if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "")
-        return false;
+      if (!("Customer" in (item ?? {})) || String(item?.Customer ?? "") === "") return false;
     }
     return true;
   }) as ScheduleItem[];
@@ -176,11 +141,7 @@ const parseScheduleSnapshot = (
 const subscribeToSchedulePath = (
   path: string,
   callback: (data: ScheduleItem[]) => void,
-  options: {
-    includeNoChassis?: boolean;
-    includeNoCustomer?: boolean;
-    includeFinished?: boolean;
-  } = {},
+  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
 ) => {
   const scheduleRef = ref(database, path);
 
@@ -195,24 +156,16 @@ const subscribeToSchedulePath = (
 /** -------------------- schedule -------------------- */
 export const subscribeToSchedule = (
   callback: (data: ScheduleItem[]) => void,
-  options: {
-    includeNoChassis?: boolean;
-    includeNoCustomer?: boolean;
-    includeFinished?: boolean;
-  } = {},
+  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
 ) => subscribeToSchedulePath("schedule", callback, options);
 
 export const subscribeToSchedule2024 = (
   callback: (data: ScheduleItem[]) => void,
-  options: {
-    includeNoChassis?: boolean;
-    includeNoCustomer?: boolean;
-    includeFinished?: boolean;
-  } = {},
+  options: { includeNoChassis?: boolean; includeNoCustomer?: boolean; includeFinished?: boolean } = {}
 ) => subscribeToSchedulePath("2024schedule", callback, options);
 
 export const subscribeToDealerStateMapping = (
-  callback: (data: Record<string, any> | any[]) => void,
+  callback: (data: Record<string, any> | any[]) => void
 ) => {
   const stateRef = ref(database, "state");
 
@@ -231,7 +184,7 @@ export const subscribeToDealerStateMapping = (
 
 /** -------------------- campervan schedule -------------------- */
 export const subscribeToCampervanSchedule = (
-  callback: (data: CampervanScheduleItem[]) => void,
+  callback: (data: CampervanScheduleItem[]) => void
 ) => {
   const scheduleRef = ref(database, "campervanSchedule");
 
@@ -239,18 +192,8 @@ export const subscribeToCampervanSchedule = (
     const raw = snapshot.val();
     const list: CampervanScheduleItem[] = raw
       ? Array.isArray(raw)
-        ? raw
-            .map((item, index) =>
-              item
-                ? { ...(item as CampervanScheduleItem), _id: String(index) }
-                : null,
-            )
-            .filter((item): item is CampervanScheduleItem => Boolean(item))
-        : Object.entries(raw)
-            .map(([key, item]) =>
-              item ? { ...(item as CampervanScheduleItem), _id: key } : null,
-            )
-            .filter((item): item is CampervanScheduleItem => Boolean(item))
+        ? raw.filter(Boolean)
+        : Object.values(raw).filter(Boolean)
       : [];
     callback(list);
   };
@@ -261,7 +204,7 @@ export const subscribeToCampervanSchedule = (
 
 /** -------------------- spec_plan -------------------- */
 export const subscribeToSpecPlan = (
-  callback: (data: SpecPlan | Record<string, any> | any[]) => void,
+  callback: (data: SpecPlan | Record<string, any> | any[]) => void
 ) => {
   const paths = ["spec_plan", "specPlan", "specplan"];
   const unsubs: Array<() => void> = [];
@@ -270,10 +213,7 @@ export const subscribeToSpecPlan = (
     const r = ref(database, p);
     const handler = (snap: DataSnapshot) => {
       const val = snap.exists() ? snap.val() : null;
-      if (
-        val &&
-        (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)
-      ) {
+      if (val && (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)) {
         callback(val);
       }
     };
@@ -286,7 +226,7 @@ export const subscribeToSpecPlan = (
 
 /** -------------------- dateTrack -------------------- */
 export const subscribeToDateTrack = (
-  callback: (data: DateTrack | Record<string, any> | any[]) => void,
+  callback: (data: DateTrack | Record<string, any> | any[]) => void
 ) => {
   const paths = ["dateTrack", "datetrack"];
   const unsubs: Array<() => void> = [];
@@ -295,10 +235,7 @@ export const subscribeToDateTrack = (
     const r = ref(database, p);
     const handler = (snap: DataSnapshot) => {
       const val = snap.exists() ? snap.val() : null;
-      if (
-        val &&
-        (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)
-      ) {
+      if (val && (Array.isArray(val) ? val.length > 0 : Object.keys(val).length > 0)) {
         callback(val);
       }
     };
@@ -322,10 +259,7 @@ export const subscribeAllDealerConfigs = (callback: (data: any) => void) => {
   return () => off(configsRef, "value", handler);
 };
 
-export const subscribeDealerConfig = (
-  dealerSlug: string,
-  callback: (data: any) => void,
-) => {
+export const subscribeDealerConfig = (dealerSlug: string, callback: (data: any) => void) => {
   const configRef = ref(database, `dealerConfigs/${dealerSlug}`);
 
   const handler = (snapshot: DataSnapshot) => {
@@ -372,9 +306,7 @@ export type OverallDashboardTierPlannerConfig = {
   updatedAt?: string;
 };
 
-export const subscribeTargetHighlightConfig = (
-  callback: (data: TargetHighlightConfig | null) => void,
-) => {
+export const subscribeTargetHighlightConfig = (callback: (data: TargetHighlightConfig | null) => void) => {
   const configRef = ref(database, "overallDashboard/targetHighlight");
 
   const handler = (snapshot: DataSnapshot) => {
@@ -386,9 +318,7 @@ export const subscribeTargetHighlightConfig = (
   return () => off(configRef, "value", handler);
 };
 
-export const setTargetHighlightConfig = async (
-  config: TargetHighlightConfig,
-) => {
+export const setTargetHighlightConfig = async (config: TargetHighlightConfig) => {
   const configRef = ref(database, "overallDashboard/targetHighlight");
   await set(configRef, {
     modelRangeTargets: config.modelRangeTargets || {},
@@ -398,7 +328,7 @@ export const setTargetHighlightConfig = async (
 };
 
 export const subscribeOverallDashboardTierPlannerConfig = (
-  callback: (data: OverallDashboardTierPlannerConfig | null) => void,
+  callback: (data: OverallDashboardTierPlannerConfig | null) => void
 ) => {
   const configRef = ref(database, "overallDashboard/tierPlanner");
 
@@ -410,9 +340,7 @@ export const subscribeOverallDashboardTierPlannerConfig = (
   return () => off(configRef, "value", handler);
 };
 
-export const setOverallDashboardTierPlannerConfig = async (
-  config: OverallDashboardTierPlannerConfig,
-) => {
+export const setOverallDashboardTierPlannerConfig = async (config: OverallDashboardTierPlannerConfig) => {
   const configRef = ref(database, "overallDashboard/tierPlanner");
   await set(configRef, {
     selectedTier: config.selectedTier || "tier1",
@@ -423,9 +351,7 @@ export const setOverallDashboardTierPlannerConfig = async (
 };
 
 /** -------------------- Delivery To Assignments -------------------- */
-export const subscribeDeliveryToAssignments = (
-  callback: (data: Record<string, DeliveryToAssignment>) => void,
-) => {
+export const subscribeDeliveryToAssignments = (callback: (data: Record<string, DeliveryToAssignment>) => void) => {
   const deliveryRef = ref(database, "deliveryToAssignments");
   const handler = (snapshot: DataSnapshot) => {
     const data = snapshot.val();
@@ -438,7 +364,7 @@ export const subscribeDeliveryToAssignments = (
 
 export const setDeliveryToAssignment = async (
   chassis: string,
-  payload: { deliveryTo: string; sourceDealerSlug?: string | null },
+  payload: { deliveryTo: string; sourceDealerSlug?: string | null }
 ) => {
   const deliveryRef = ref(database, `deliveryToAssignments/${chassis}`);
   await set(deliveryRef, {
@@ -461,23 +387,16 @@ export const setPowerbiUrl = async (dealerSlug: string, url: string) => {
   await set(updatedAtRef, new Date().toISOString());
 };
 
-export const getPowerbiUrl = async (
-  dealerSlug: string,
-): Promise<string | null> => {
+export const getPowerbiUrl = async (dealerSlug: string): Promise<string | null> => {
   const urlRef = ref(database, `dealerConfigs/${dealerSlug}/powerbi_url`);
   const snapshot = await get(urlRef);
   return snapshot.exists() ? snapshot.val() : null;
 };
 
 /** -------------------- Tier Config -------------------- */
-const withTimestamp = <T extends Record<string, any>>(payload: T) => ({
-  ...payload,
-  updatedAt: new Date().toISOString(),
-});
+const withTimestamp = <T extends Record<string, any>>(payload: T) => ({ ...payload, updatedAt: new Date().toISOString() });
 
-export const subscribeTierConfig = (
-  callback: (data: TierConfig | null) => void,
-) => {
+export const subscribeTierConfig = (callback: (data: TierConfig | null) => void) => {
   const settingsRef = ref(database, "tierConfig/settings");
   const legacyRef = ref(database, "tierConfig");
 
@@ -510,16 +429,12 @@ export const subscribeTierConfig = (
 export const setTierConfig = async (config: TierConfig) => {
   const settingsRef = ref(database, "tierConfig/settings");
   const existingSnap = await get(settingsRef);
-  const existing = existingSnap.exists()
-    ? (existingSnap.val() as TierConfig)
-    : {};
+  const existing = existingSnap.exists() ? (existingSnap.val() as TierConfig) : {};
 
   await set(settingsRef, withTimestamp({ ...existing, ...config }));
 };
 
-export const subscribeDefaultTierLayout = (
-  callback: (layout: DealerTierLayout | null) => void,
-) => {
+export const subscribeDefaultTierLayout = (callback: (layout: DealerTierLayout | null) => void) => {
   const defaultRef = ref(database, "tierConfig/defaultLayout");
   const handler = (snapshot: DataSnapshot) => {
     callback(snapshot.exists() ? (snapshot.val() as DealerTierLayout) : null);
@@ -530,7 +445,7 @@ export const subscribeDefaultTierLayout = (
 
 export const subscribeDealerTierLayout = (
   dealerSlug: string,
-  callback: (data: DealerLayoutSnapshot) => void,
+  callback: (data: DealerLayoutSnapshot) => void
 ) => {
   const dealerRef = ref(database, `tierConfig/dealerLayouts/${dealerSlug}`);
   const defaultRef = ref(database, "tierConfig/defaultLayout");
@@ -550,16 +465,12 @@ export const subscribeDealerTierLayout = (
   };
 
   const dealerHandler = (snapshot: DataSnapshot) => {
-    dealerLayout = snapshot.exists()
-      ? (snapshot.val() as DealerTierLayout)
-      : null;
+    dealerLayout = snapshot.exists() ? (snapshot.val() as DealerTierLayout) : null;
     emit();
   };
 
   const defaultHandler = (snapshot: DataSnapshot) => {
-    defaultLayout = snapshot.exists()
-      ? (snapshot.val() as DealerTierLayout)
-      : null;
+    defaultLayout = snapshot.exists() ? (snapshot.val() as DealerTierLayout) : null;
     emit();
   };
 
@@ -571,10 +482,7 @@ export const subscribeDealerTierLayout = (
   };
 };
 
-export const setDealerTierLayout = async (
-  dealerSlug: string,
-  layout: DealerTierLayout,
-) => {
+export const setDealerTierLayout = async (dealerSlug: string, layout: DealerTierLayout) => {
   if (!dealerSlug) return;
   const dealerRef = ref(database, `tierConfig/dealerLayouts/${dealerSlug}`);
   await set(dealerRef, withTimestamp({ ...layout, slug: dealerSlug }));
@@ -592,7 +500,7 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, "");
 
 export const subscribeShowDealerMappings = (
-  callback: (data: Record<string, ShowDealerMapping>) => void,
+  callback: (data: Record<string, ShowDealerMapping>) => void
 ) => {
   const mappingRef = ref(database, "showDealerMappings");
 
@@ -605,10 +513,7 @@ export const subscribeShowDealerMappings = (
   return () => off(mappingRef, "value", handler);
 };
 
-export const setShowDealerMapping = async (
-  dealership: string,
-  dealerSlug: string,
-) => {
+export const setShowDealerMapping = async (dealership: string, dealerSlug: string) => {
   const key = slugify(dealership || dealerSlug || "unknown-dealership");
   const mappingRef = ref(database, `showDealerMappings/${key}`);
   const payload: ShowDealerMapping = {
@@ -630,16 +535,11 @@ export function generateRandomCode(): string {
 }
 
 export function dealerNameToSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 /** -------------------- yard size -------------------- */
-export const subscribeToYardSizes = (
-  callback: (data: Record<string, YardSizeRecord>) => void,
-) => {
+export const subscribeToYardSizes = (callback: (data: Record<string, YardSizeRecord>) => void) => {
   const yardRef = ref(database, "yardsize");
 
   const handler = (snapshot: DataSnapshot) => {
@@ -662,7 +562,7 @@ export type ModelAnalysisRecord = {
 };
 
 export const subscribeToModelAnalysis = (
-  callback: (data: Record<string, ModelAnalysisRecord> | any[]) => void,
+  callback: (data: Record<string, ModelAnalysisRecord> | any[]) => void
 ) => {
   const analysisRef = ref(database, "modelanalysis");
 
@@ -708,12 +608,9 @@ export const sortOrders = (orders: ScheduleItem[]): ScheduleItem[] => {
     const dateCompare = dateA.getTime() - dateB.getTime();
     if (dateCompare !== 0) return dateCompare;
 
-    const safeString = (value: any): string =>
-      value == null ? "" : String(value);
+    const safeString = (value: any): string => (value == null ? "" : String(value));
 
-    const index1Compare = safeString(a.Index1).localeCompare(
-      safeString(b.Index1),
-    );
+    const index1Compare = safeString(a.Index1).localeCompare(safeString(b.Index1));
     if (index1Compare !== 0) return index1Compare;
 
     const rank1Compare = safeString(a.Rank1).localeCompare(safeString(b.Rank1));
@@ -767,7 +664,7 @@ const pickInvoiceDate = (source: Record<string, any>): string => {
 
 export const subscribeToYardNewVanInvoices = (
   dealerSlug: string,
-  callback: (data: YardNewVanInvoice[]) => void,
+  callback: (data: YardNewVanInvoice[]) => void
 ) => {
   if (!dealerSlug) {
     callback([]);
@@ -783,45 +680,34 @@ export const subscribeToYardNewVanInvoices = (
       return;
     }
 
-    const invoices: YardNewVanInvoice[] = Object.entries(value).map(
-      ([key, payload]: [string, any]) => {
-        const rawSource = payload?._source;
-        const source =
-          rawSource &&
-          typeof rawSource === "object" &&
-          !Array.isArray(rawSource)
-            ? rawSource
-            : (payload ?? {});
+    const invoices: YardNewVanInvoice[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const rawSource = payload?._source;
+      const source =
+        rawSource && typeof rawSource === "object" && !Array.isArray(rawSource)
+          ? rawSource
+          : payload ?? {};
 
-        return {
-          id: key,
-          chassisNumber:
-            source.chassis ?? source.Chassis ?? source.chassisNumber ?? "",
-          createdOn: normalizeDateInput(
-            source.createdOn ?? source.createdAt ?? source.CreatedAt,
-          ),
-          invoiceDate: pickInvoiceDate(source),
-          pgiDate: normalizeDateInput(
-            source.pgiDateGRSO ?? source.PGIDateGRSO ?? source.pgiDate,
-          ),
-          purchasePrice: toNumber(
-            source.poFinalInvoiceValue ?? source.POFinalInvoiceValue,
-          ),
-          finalSalePrice: toNumber(source.grSONetValue ?? source.GRSONetValue),
-          discountAmount: toNumber(
-            source.totalSurchargeSO ??
-              source.TotalSurchargeSO ??
-              source.zg00Amount ??
-              source.ZG00Amount,
-          ),
-          customer: source.customer ?? source.billToParty ?? "",
-          model: source.model ?? "",
-          grSONumber: source.grSONumber ?? "",
-          locationName: source.locationName ?? dealerSlug,
-          raw: source,
-        };
-      },
-    );
+      return {
+        id: key,
+        chassisNumber: source.chassis ?? source.Chassis ?? source.chassisNumber ?? "",
+        createdOn: normalizeDateInput(source.createdOn ?? source.createdAt ?? source.CreatedAt),
+        invoiceDate: pickInvoiceDate(source),
+        pgiDate: normalizeDateInput(source.pgiDateGRSO ?? source.PGIDateGRSO ?? source.pgiDate),
+        purchasePrice: toNumber(source.poFinalInvoiceValue ?? source.POFinalInvoiceValue),
+        finalSalePrice: toNumber(source.grSONetValue ?? source.GRSONetValue),
+        discountAmount: toNumber(
+          source.totalSurchargeSO ??
+            source.TotalSurchargeSO ??
+            source.zg00Amount ??
+            source.ZG00Amount
+        ),
+        customer: source.customer ?? source.billToParty ?? "",
+        model: source.model ?? "",
+        grSONumber: source.grSONumber ?? "",
+        locationName: source.locationName ?? dealerSlug,
+        raw: source,
+      };
+    });
 
     callback(invoices);
   };
@@ -832,7 +718,7 @@ export const subscribeToYardNewVanInvoices = (
 
 export const subscribeToSecondHandSales = (
   warehouseSlug: string,
-  callback: (data: SecondHandSale[]) => void,
+  callback: (data: SecondHandSale[]) => void
 ) => {
   if (!warehouseSlug) {
     callback([]);
@@ -848,27 +734,25 @@ export const subscribeToSecondHandSales = (
       return;
     }
 
-    const sales: SecondHandSale[] = Object.entries(value).map(
-      ([key, payload]: [string, any]) => {
-        const source = payload ?? {};
+    const sales: SecondHandSale[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const source = payload ?? {};
 
-        return {
-          id: key,
-          chassis: source.chassis ?? "",
-          finalInvoicePrice: toNumber(source.final_so_invoice_price),
-          invoiceDate: normalizeDateInput(source.invoice_date),
-          item: source.item ?? "",
-          material: source.material ?? "",
-          pgiDate: normalizeDateInput(source.pgi_date),
-          grDate: normalizeDateInput(source.gr_date),
-          poLineNetValue: toNumber(source.po_line_net_value),
-          so: source.so ?? "",
-          updatedAt: normalizeDateInput(source.updated_at),
-          warehouse: source.warehouse ?? "",
-          warehouseSlug: source.warehouse_slug ?? warehouseSlug,
-        };
-      },
-    );
+      return {
+        id: key,
+        chassis: source.chassis ?? "",
+        finalInvoicePrice: toNumber(source.final_so_invoice_price),
+        invoiceDate: normalizeDateInput(source.invoice_date),
+        item: source.item ?? "",
+        material: source.material ?? "",
+        pgiDate: normalizeDateInput(source.pgi_date),
+        grDate: normalizeDateInput(source.gr_date),
+        poLineNetValue: toNumber(source.po_line_net_value),
+        so: source.so ?? "",
+        updatedAt: normalizeDateInput(source.updated_at),
+        warehouse: source.warehouse ?? "",
+        warehouseSlug: source.warehouse_slug ?? warehouseSlug,
+      };
+    });
 
     callback(sales);
   };
@@ -880,7 +764,7 @@ export const subscribeToSecondHandSales = (
 /** -------------------- stock to customer -------------------- */
 export const subscribeToStockToCustomer = (
   salesOfficeSlug: string,
-  callback: (data: StockToCustomerRecord[]) => void,
+  callback: (data: StockToCustomerRecord[]) => void
 ) => {
   if (!salesOfficeSlug) {
     callback([]);
@@ -904,31 +788,22 @@ export const subscribeToStockToCustomer = (
 
     const targetSlug = normalizeOffice(salesOfficeSlug);
 
-    const records: StockToCustomerRecord[] = Object.entries(value).map(
-      ([key, payload]: [string, any]) => {
-        const source = payload ?? {};
-        const salesOfficeName = String(
-          source.Sales_Office_Name ?? source.salesOfficeName ?? "",
-        );
+    const records: StockToCustomerRecord[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const source = payload ?? {};
+      const salesOfficeName = String(source.Sales_Office_Name ?? source.salesOfficeName ?? "");
 
-        return {
-          id: key,
-          salesOrder: source.Sales_Order ?? key,
-          materialCode: source.SO_Material_0010 ?? "",
-          materialDesc: source.SO_Material_0010_Desc ?? "",
-          salesOfficeName:
-            salesOfficeName || String(source.salesOfficeCode ?? targetSlug),
-          updateDate: normalizeDateInput(
-            source.UDATE_YYYYMMDD ?? source.updateDate,
-          ),
-          raw: source,
-        };
-      },
-    );
+      return {
+        id: key,
+        salesOrder: source.Sales_Order ?? key,
+        materialCode: source.SO_Material_0010 ?? "",
+        materialDesc: source.SO_Material_0010_Desc ?? "",
+        salesOfficeName: salesOfficeName || String(source.salesOfficeCode ?? targetSlug),
+        updateDate: normalizeDateInput(source.UDATE_YYYYMMDD ?? source.updateDate),
+        raw: source,
+      };
+    });
 
-    const filtered = records.filter(
-      (record) => normalizeOffice(record.salesOfficeName) === targetSlug,
-    );
+    const filtered = records.filter((record) => normalizeOffice(record.salesOfficeName) === targetSlug);
 
     callback(filtered);
   };
@@ -967,7 +842,7 @@ const pickString = (source: Record<string, any>, keys: string[]): string => {
 
 export const subscribeToCustomerBp = (
   dealerSlug: string,
-  callback: (data: CustomerBpRecord[]) => void,
+  callback: (data: CustomerBpRecord[]) => void
 ) => {
   if (!dealerSlug) {
     callback([]);
@@ -983,53 +858,33 @@ export const subscribeToCustomerBp = (
       return;
     }
 
-    const records: CustomerBpRecord[] = Object.entries(value).map(
-      ([key, payload]: [string, any]) => {
-        const source = payload ?? {};
+    const records: CustomerBpRecord[] = Object.entries(value).map(([key, payload]: [string, any]) => {
+      const source = payload ?? {};
 
-        return {
-          id: key,
-          bpAmountSigned: toSafeNumber(
-            source["BP Amount (Signed AMT Sum)"] ??
-              source.bp_amount_signed ??
-              source.amount_signed,
-          ),
-          businessPartner: pickString(source, [
-            "Business Partner (BP)",
-            "Business Partner",
-            "business_partner",
-          ]),
-          businessPartnerName: pickString(source, [
-            "Business Partner Name",
-            "Payer Name (RG)",
-            "business_partner_name",
-          ]),
-          salesOffice: pickString(source, ["Sales Office", "sales_office"]),
-          salesOrder: pickString(source, ["Sales Order", "sales_order"]),
-          chassisNumber: pickString(source, [
-            "Chassis Number",
-            "chassis_number",
-          ]),
-          orderCreatedDate: pickString(source, [
-            "Order Created Date",
-            "order_created_date",
-          ]),
-          orderCurrency: pickString(source, [
-            "Order Currency",
-            "order_currency",
-          ]),
-          orderNetValue: toSafeNumber(
-            source["Order Net Value"] ?? source.order_net_value,
-          ),
-          orderNetValueInclGst: toSafeNumber(
-            source["Order Net Value (Incl_ GST)"] ??
-              source.order_net_value_incl_gst,
-          ),
-          orderType: pickString(source, ["Order Type", "order_type"]),
-          raw: source,
-        };
-      },
-    );
+      return {
+        id: key,
+        bpAmountSigned: toSafeNumber(
+          source["BP Amount (Signed AMT Sum)"] ?? source.bp_amount_signed ?? source.amount_signed
+        ),
+        businessPartner: pickString(source, ["Business Partner (BP)", "Business Partner", "business_partner"]),
+        businessPartnerName: pickString(source, [
+          "Business Partner Name",
+          "Payer Name (RG)",
+          "business_partner_name",
+        ]),
+        salesOffice: pickString(source, ["Sales Office", "sales_office"]),
+        salesOrder: pickString(source, ["Sales Order", "sales_order"]),
+        chassisNumber: pickString(source, ["Chassis Number", "chassis_number"]),
+        orderCreatedDate: pickString(source, ["Order Created Date", "order_created_date"]),
+        orderCurrency: pickString(source, ["Order Currency", "order_currency"]),
+        orderNetValue: toSafeNumber(source["Order Net Value"] ?? source.order_net_value),
+        orderNetValueInclGst: toSafeNumber(
+          source["Order Net Value (Incl_ GST)"] ?? source.order_net_value_incl_gst
+        ),
+        orderType: pickString(source, ["Order Type", "order_type"]),
+        raw: source,
+      };
+    });
 
     const filtered = records.filter((record) => {
       const officeSlug = SALES_OFFICE_MAP[record.salesOffice];
@@ -1046,7 +901,7 @@ export const subscribeToCustomerBp = (
 /** -------------------- new sales -------------------- */
 export const subscribeToNewSales = (
   salesOfficeSlug: string,
-  callback: (data: NewSaleRecord[]) => void,
+  callback: (data: NewSaleRecord[]) => void
 ) => {
   if (!salesOfficeSlug) {
     callback([]);
@@ -1062,39 +917,18 @@ export const subscribeToNewSales = (
       return;
     }
 
-    const records: NewSaleRecord[] = Object.entries(value).map(
-      ([key, payload]: [string, any]) => ({
-        id: key,
-        createdOn: normalizeDateInput(payload.createdOn),
-        salesOfficeName: payload.salesOfficeName ?? salesOfficeSlug,
-        materialDesc0010:
-          payload.materialDesc0010 ??
-          payload.materialDesc ??
-          payload.modelDesc ??
-          "",
-        billToNameFinal:
-          payload.billToNameFinal ?? payload.customerName ?? payload.customer,
-        finalPriceExGst: toNumber(
-          payload.final_price_exgst ?? payload.finalPriceExGst,
-        ),
-        zg00Amount: toNumber(payload.zg00_amount ?? payload.zg00Amount),
-        chassisNumber:
-          payload.chassisnumber ??
-          payload.chassisNumber ??
-          payload.chassis ??
-          "",
-        priceSource:
-          payload.price_source ??
-          payload.priceSource ??
-          payload.price_source_new ??
-          payload.priceSourceNew,
-        soNetValue: toNumber(
-          payload.so_net_value ??
-            payload.soNetValue ??
-            payload.soNetValueInclGst,
-        ),
-      }),
-    );
+    const records: NewSaleRecord[] = Object.entries(value).map(([key, payload]: [string, any]) => ({
+      id: key,
+      createdOn: normalizeDateInput(payload.createdOn),
+      salesOfficeName: payload.salesOfficeName ?? salesOfficeSlug,
+      materialDesc0010: payload.materialDesc0010 ?? payload.materialDesc ?? payload.modelDesc ?? "",
+      billToNameFinal: payload.billToNameFinal ?? payload.customerName ?? payload.customer,
+      finalPriceExGst: toNumber(payload.final_price_exgst ?? payload.finalPriceExGst),
+      zg00Amount: toNumber(payload.zg00_amount ?? payload.zg00Amount),
+      chassisNumber: payload.chassisnumber ?? payload.chassisNumber ?? payload.chassis ?? "",
+      priceSource: payload.price_source ?? payload.priceSource ?? payload.price_source_new ?? payload.priceSourceNew,
+      soNetValue: toNumber(payload.so_net_value ?? payload.soNetValue ?? payload.soNetValueInclGst),
+    }));
 
     callback(records);
   };
@@ -1124,69 +958,50 @@ export const formatDateDDMMYYYY = (dateStr: string | null): string => {
 /** -------------------- stock / reallocation -------------------- */
 export function subscribeToStock(cb: (value: any) => void) {
   const r = ref(database, "stockorder");
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? snap.val() ?? {} : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
 
 export function subscribeToReallocation(cb: (value: any) => void) {
   const r = ref(database, "reallocation");
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? snap.val() ?? {} : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
 
 /** -------------------- PGI / Yard Stock -------------------- */
-export function subscribeToPGIRecords(
-  cb: (value: Record<string, any>) => void,
-) {
+export function subscribeToPGIRecords(cb: (value: Record<string, any>) => void) {
   const r = ref(database, "pgirecord");
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
 
-export function subscribeToYardStock(
-  dealerSlug: string,
-  cb: (value: Record<string, any>) => void,
-) {
+export function subscribeToYardStock(dealerSlug: string, cb: (value: Record<string, any>) => void) {
   const r = ref(database, `yardstock/${dealerSlug}`);
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
 
-export function subscribeToYardStockAll(
-  cb: (value: Record<string, Record<string, any>>) => void,
-) {
+export function subscribeToYardStockAll(cb: (value: Record<string, Record<string, any>>) => void) {
   const r = ref(database, "yardstock");
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
 
-export function subscribeToYardPending(
-  dealerSlug: string,
-  cb: (value: Record<string, any>) => void,
-) {
+export function subscribeToYardPending(dealerSlug: string, cb: (value: Record<string, any>) => void) {
   const r = ref(database, `yardpending/${dealerSlug}`);
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
 
-export function subscribeToYardPendingAll(
-  cb: (value: Record<string, any>) => void,
-) {
+export function subscribeToYardPendingAll(cb: (value: Record<string, any>) => void) {
   const r = ref(database, "yardpending");
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
@@ -1220,14 +1035,12 @@ type UploadDeliveryDocumentOptions = {
 export async function uploadDeliveryDocument(
   chassis: string,
   file: Blob,
-  options: UploadDeliveryDocumentOptions = {},
+  options: UploadDeliveryDocumentOptions = {}
 ): Promise<string> {
   const sanitized = chassis.trim().replace(/\s+/g, "").toUpperCase();
   const key = sanitized || `delivery_${Date.now()}`;
-  const fileName =
-    options.filename ?? (file instanceof File ? file.name : undefined);
-  const rawContentType =
-    options.contentType ?? (file instanceof File ? file.type : file.type);
+  const fileName = options.filename ?? (file instanceof File ? file.name : undefined);
+  const rawContentType = options.contentType ?? (file instanceof File ? file.type : file.type);
   const contentType = rawContentType || "application/octet-stream";
   const extension = getDeliveryDocExtension(fileName, contentType);
   const fileRef = storageRef(storage, `deliverydoc/${key}.${extension}`);
@@ -1238,7 +1051,7 @@ export async function uploadDeliveryDocument(
 export async function receiveChassisToYard(
   dealerSlug: string,
   chassis: string,
-  pgiData: Record<string, any> | null | undefined,
+  pgiData: Record<string, any> | null | undefined
 ) {
   const targetRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
   const now = new Date().toISOString();
@@ -1282,7 +1095,7 @@ export async function addManualChassisToYard(
     vinNumber?: string | null;
     wholesalePo?: number | null;
     type?: string | null;
-  },
+  }
 ) {
   const targetRef = ref(database, `yardstock/${dealerSlug}/${payload.chassis}`);
   const now = new Date().toISOString();
@@ -1312,12 +1125,9 @@ export async function addManualChassisToYardPending(
     vinNumber?: string | null;
     wholesalePo?: number | null;
     type?: string | null;
-  },
+  }
 ) {
-  const targetRef = ref(
-    database,
-    `yardpending/${dealerSlug}/${payload.chassis}`,
-  );
+  const targetRef = ref(database, `yardpending/${dealerSlug}/${payload.chassis}`);
   const now = new Date().toISOString();
   const vin = payload.vinnumber ?? payload.vinNumber ?? null;
   const wholesale = payload.wholesalePo ?? null;
@@ -1371,7 +1181,7 @@ export async function saveProductRegistration(
     };
     createdAt: string;
     method: "dealer_assist";
-  },
+  }
 ) {
   const targetRef = ref(database, `registrations/${dealerSlug}/${chassis}`);
   await set(targetRef, data);
@@ -1414,11 +1224,7 @@ type CustomerEmailHandover = {
 };
 export type HandoverPayload = DealerAssistHandover | CustomerEmailHandover;
 
-export async function saveHandover(
-  dealerSlug: string,
-  chassis: string,
-  data: HandoverPayload,
-) {
+export async function saveHandover(dealerSlug: string, chassis: string, data: HandoverPayload) {
   const targetRef = ref(database, `handover/${dealerSlug}/${chassis}`);
   await set(targetRef, data);
   const yardRef = ref(database, `yardstock/${dealerSlug}/${chassis}`);
@@ -1430,21 +1236,17 @@ export async function saveHandover(
  */
 export function subscribeToHandover(
   dealerSlug: string,
-  cb: (value: Record<string, any>) => void,
+  cb: (value: Record<string, any>) => void
 ) {
   const r = ref(database, `handover/${dealerSlug}`);
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
 
-export function subscribeToHandoverAll(
-  cb: (value: Record<string, Record<string, any>>) => void,
-) {
+export function subscribeToHandoverAll(cb: (value: Record<string, Record<string, any>>) => void) {
   const r = ref(database, "handover");
-  const handler = (snap: DataSnapshot) =>
-    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  const handler = (snap: DataSnapshot) => cb(snap?.exists() ? (snap.val() ?? {}) : {});
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
