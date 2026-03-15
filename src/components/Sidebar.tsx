@@ -18,9 +18,16 @@ import { Badge } from "@/components/ui/badge";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import type { ScheduleItem } from "@/types";
-import { isFinanceReportEnabled, normalizeDealerSlug } from "@/lib/dealerUtils";
+import {
+  getRememberedGroupDealerSlug,
+  isFinanceReportEnabled,
+  normalizeDealerSlug,
+  rememberGroupDealerSlug,
+} from "@/lib/dealerUtils";
 import {
   dealerNameToSlug,
+  subscribeAllDealerConfigs,
+  subscribeDealerConfig,
   subscribeShowDealerMappings,
   type ShowDealerMapping,
 } from "@/lib/firebase";
@@ -28,6 +35,7 @@ import { subscribeToShowOrders, subscribeToShowTasks, subscribeToShows } from "@
 import type { ShowOrder } from "@/types/showOrder";
 import type { ShowRecord } from "@/types/show";
 import type { ShowTask } from "@/types/showTask";
+import { isDealerGroup } from "@/types/dealer";
 
 interface SidebarProps {
   orders: ScheduleItem[];
@@ -54,6 +62,11 @@ type NavigationItem = {
 /** ---- 安全工具函数：统一兜底，避免 undefined.toLowerCase 报错 ---- */
 const toStr = (v: any) => String(v ?? "");
 const lower = (v: any) => toStr(v).toLowerCase();
+const prettifyDealerName = (slug?: string) =>
+  toStr(slug)
+    .replace(/-/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function Sidebar({
   orders,
@@ -69,6 +82,8 @@ export default function Sidebar({
   const { dealerSlug, selectedDealerSlug } = useParams<{ dealerSlug: string; selectedDealerSlug?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const groupMode = isGroup || location.pathname.startsWith("/dealergroup/");
+  const [autoIncludedDealers, setAutoIncludedDealers] = useState<Array<{ slug: string; name: string }> | null>(null);
 
   // 计算基础统计数据（仅保留总订单数/stock/customer）
   const stats = useMemo(() => {
@@ -94,7 +109,102 @@ export default function Sidebar({
     return selectedDealer || "Dealer Portal";
   }, [selectedDealer, hideOtherDealers, currentDealerName]);
 
-  const normalizedDealerSlug = normalizeDealerSlug(dealerSlug);
+  const resolvedIncludedDealers = includedDealers && includedDealers.length > 0 ? includedDealers : autoIncludedDealers;
+  const fallbackGroupDealerSlug = useMemo(() => resolvedIncludedDealers?.[0]?.slug || "", [resolvedIncludedDealers]);
+  const rememberedGroupDealerSlug = useMemo(
+    () => (groupMode ? getRememberedGroupDealerSlug(dealerSlug) || "" : ""),
+    [groupMode, dealerSlug]
+  );
+  const activeGroupDealerSlug = selectedDealerSlug || rememberedGroupDealerSlug || fallbackGroupDealerSlug;
+  const effectiveDealerSlug = selectedDealerSlug || activeGroupDealerSlug || dealerSlug;
+  const normalizedDealerSlug = normalizeDealerSlug(effectiveDealerSlug);
+
+  useEffect(() => {
+    if (groupMode && dealerSlug && selectedDealerSlug) {
+      rememberGroupDealerSlug(dealerSlug, selectedDealerSlug);
+    }
+  }, [groupMode, dealerSlug, selectedDealerSlug]);
+
+  useEffect(() => {
+    if (!groupMode || !dealerSlug || (includedDealers && includedDealers.length > 0)) {
+      setAutoIncludedDealers(null);
+      return;
+    }
+
+    const groupSlug = normalizeDealerSlug(dealerSlug);
+    let latestGroupConfig: any = null;
+    let latestAllConfigs: Record<string, any> = {};
+
+    const syncIncludedDealers = () => {
+      if (!latestGroupConfig || !isDealerGroup(latestGroupConfig)) {
+        setAutoIncludedDealers(null);
+        return;
+      }
+      const slugs = latestGroupConfig.includedDealers || [];
+      setAutoIncludedDealers(
+        slugs.map((slug: string) => ({
+          slug,
+          name: latestAllConfigs?.[slug]?.name || prettifyDealerName(slug),
+        }))
+      );
+    };
+
+    const unsubConfig = subscribeDealerConfig(groupSlug, (config) => {
+      latestGroupConfig = config;
+      syncIncludedDealers();
+    });
+    const unsubAll = subscribeAllDealerConfigs((data) => {
+      latestAllConfigs = data || {};
+      syncIncludedDealers();
+    });
+
+    return () => {
+      unsubConfig?.();
+      unsubAll?.();
+    };
+  }, [groupMode, dealerSlug, includedDealers]);
+
+  useEffect(() => {
+    if (groupMode || !dealerSlug) return;
+
+    const normalizedSlug = normalizeDealerSlug(dealerSlug);
+    const unsub = subscribeDealerConfig(normalizedSlug, (config) => {
+      if (!config || !isDealerGroup(config)) return;
+
+      const included = config.includedDealers || [];
+      const rememberedDealer = getRememberedGroupDealerSlug(dealerSlug);
+      const preferredDealer = rememberedDealer && included.includes(rememberedDealer)
+        ? rememberedDealer
+        : included[0];
+
+      if (!preferredDealer) return;
+
+      const path = location.pathname;
+      const currentPage = path.includes('/show-management')
+        ? 'show-management'
+        : path.includes('/inventory-management')
+        ? 'inventory-management'
+        : path.includes('/finance-report')
+        ? 'finance-report'
+        : path.includes('/customer-bp-pay')
+        ? 'customer-bp-pay'
+        : path.includes('/inventorystock')
+        ? 'inventorystock'
+        : path.includes('/unsigned')
+        ? 'unsigned'
+        : path.includes('/dealerorders')
+        ? 'dealerorders'
+        : path.includes('/yard')
+        ? 'yard'
+        : 'dashboard';
+
+      navigate(`/dealergroup/${dealerSlug}/${preferredDealer}/${currentPage}`, { replace: true });
+    });
+
+    return () => {
+      unsub?.();
+    };
+  }, [groupMode, dealerSlug, location.pathname, navigate]);
 
   const [showOrders, setShowOrders] = useState<ShowOrder[]>([]);
   const [showRecords, setShowRecords] = useState<ShowRecord[]>([]);
@@ -197,6 +307,7 @@ export default function Sidebar({
   // 获取当前页面类型（dashboard, dealerorders, inventorystock, unsigned, yard）
   const getCurrentPage = () => {
     const path = location.pathname;
+    if (path.includes('/show-management')) return 'show-management';
     if (path.includes('/inventory-management')) return 'inventory-management';
     if (path.includes('/finance-report')) return 'finance-report';
     if (path.includes('/customer-bp-pay')) return 'customer-bp-pay';
@@ -211,7 +322,8 @@ export default function Sidebar({
   // 处理dealer点击 - 切换到选中的dealer并保持当前页面
   const handleDealerClick = (newDealerSlug: string) => {
     const currentPage = getCurrentPage();
-    if (isGroup) {
+    if (groupMode) {
+      rememberGroupDealerSlug(dealerSlug, newDealerSlug);
       navigate(`/dealergroup/${dealerSlug}/${newDealerSlug}/${currentPage}`);
     } else {
       navigate(`/dealer/${newDealerSlug}/${currentPage}`);
@@ -220,66 +332,64 @@ export default function Sidebar({
 
   // 导航路径 - 根据是否是group使用不同的前缀
   const basePath = useMemo(() => {
-    if (isGroup) {
-      return dealerSlug && selectedDealerSlug
-        ? `/dealergroup/${dealerSlug}/${selectedDealerSlug}`
+    if (groupMode) {
+      return dealerSlug && activeGroupDealerSlug
+        ? `/dealergroup/${dealerSlug}/${activeGroupDealerSlug}`
         : dealerSlug
         ? `/dealergroup/${dealerSlug}`
         : "/";
     } else {
       return dealerSlug ? `/dealer/${dealerSlug}` : "/";
     }
-  }, [isGroup, dealerSlug, selectedDealerSlug]);
+  }, [groupMode, dealerSlug, activeGroupDealerSlug]);
 
   const navigationItems: NavigationItem[] = [
     { path: `${basePath}/dashboard`, label: "Dashboard", icon: LayoutDashboard, end: true },
-    { path: isGroup ? `${basePath}/dealerorders` : basePath, label: "Dealer Orders", icon: BarChart3, end: !isGroup },
+    { path: groupMode ? `${basePath}/dealerorders` : basePath, label: "Dealer Orders", icon: BarChart3, end: !groupMode },
     { path: `${basePath}/inventorystock`, label: "Factory Inventory", icon: Factory, end: true },
     { path: `${basePath}/yard`, label: "Yard Inventory & On The Road", icon: Truck, end: true },
     { path: `${basePath}/unsigned`, label: "Unsigned & Empty Slots", icon: FileX, end: true },
   ];
 
-  if (!isGroup) {
-    navigationItems.splice(4, 0, {
-      path: `${basePath}/inventory-management`,
-      label: "Inventory Management",
-      icon: ClipboardList,
-      end: true
-    });
-    navigationItems.splice(5, 0, {
-      path: `${basePath}/show-management`,
-      label: "Show Management",
-      icon: ClipboardList,
-      isDisabled: true,
-      end: false,
-      children: [
-        {
-          path: `${basePath}/show-management/tasks`,
-          label: "Task",
-          icon: Circle,
-          end: true,
-          isSubItem: true,
-          badge: incompleteTaskCount > 0 ? incompleteTaskCount : undefined,
-        },
-        {
-          path: `${basePath}/show-management/orders`,
-          label: "Show Order",
-          icon: Circle,
-          end: true,
-          isSubItem: true,
-          badge: pendingDealerConfirmations > 0 ? pendingDealerConfirmations : undefined,
-        },
-      ],
-    });
-
-    if (isFinanceReportEnabled(normalizedDealerSlug)) {
-      navigationItems.splice(6, 0, {
-        path: `${basePath}/customer-bp-pay`,
-        label: "Customer BP & Pay",
-        icon: DollarSign,
+  navigationItems.splice(4, 0, {
+    path: `${basePath}/inventory-management`,
+    label: "Inventory Management",
+    icon: ClipboardList,
+    end: true
+  });
+  navigationItems.splice(5, 0, {
+    path: `${basePath}/show-management`,
+    label: "Show Management",
+    icon: ClipboardList,
+    isDisabled: true,
+    end: false,
+    children: [
+      {
+        path: `${basePath}/show-management/tasks`,
+        label: "Task",
+        icon: Circle,
         end: true,
-      });
-    }
+        isSubItem: true,
+        badge: incompleteTaskCount > 0 ? incompleteTaskCount : undefined,
+      },
+      {
+        path: `${basePath}/show-management/orders`,
+        label: "Show Order",
+        icon: Circle,
+        end: true,
+        isSubItem: true,
+        badge: pendingDealerConfirmations > 0 ? pendingDealerConfirmations : undefined,
+      },
+    ],
+  });
+
+  if (isFinanceReportEnabled(normalizedDealerSlug)) {
+    navigationItems.splice(6, 0, {
+      path: `${basePath}/customer-bp-pay`,
+      label: "Customer BP & Pay",
+      icon: DollarSign,
+      end: true,
+    });
   }
 
   const isItemActive = useCallback(
@@ -342,7 +452,7 @@ export default function Sidebar({
     );
   };
 
-  if (!isGroup && isFinanceReportEnabled(normalizedDealerSlug)) {
+  if (isFinanceReportEnabled(normalizedDealerSlug)) {
     navigationItems.push({
       path: `${basePath}/finance-report`,
       label: "Finance Report",
@@ -439,9 +549,9 @@ export default function Sidebar({
             )}
 
             {/* 如果是分组，显示包含的dealers作为可点击的卡片 */}
-            {isGroup && includedDealers && includedDealers.length > 0 ? (
+            {groupMode && resolvedIncludedDealers && resolvedIncludedDealers.length > 0 ? (
               <div className="space-y-2">
-                {includedDealers.map((dealer) => {
+                {resolvedIncludedDealers.map((dealer) => {
                   const isSelected = selectedDealerSlug === dealer.slug;
                   return (
                     <button
