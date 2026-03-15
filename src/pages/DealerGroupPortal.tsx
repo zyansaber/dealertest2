@@ -17,7 +17,6 @@ import {
 import type { ScheduleItem, SpecPlan, DateTrack } from "@/types";
 import type { DealerGroupConfig } from "@/types/dealer";
 import { isDealerGroup } from "@/types/dealer";
-import { getRememberedGroupDealerSlug, rememberGroupDealerSlug } from "@/lib/dealerUtils";
 import * as XLSX from "xlsx";
 
 /** 将 URL 中的 dealerId 还原为真实的 slug（去掉随机后缀 -xxxxxx） */
@@ -121,20 +120,10 @@ export default function DealerGroupPortal() {
 
   // 如果是分组且没有选中dealer，自动重定向到第一个dealer
   useEffect(() => {
-    if (rawDealerSlug && selectedDealerSlug) {
-      rememberGroupDealerSlug(rawDealerSlug, selectedDealerSlug);
-    }
-  }, [rawDealerSlug, selectedDealerSlug]);
-
-  // 如果是分组且没有选中dealer，自动重定向到上次选中的dealer（否则第一个dealer）
-  useEffect(() => {
     if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !selectedDealerSlug) {
-      const rememberedDealer = getRememberedGroupDealerSlug(rawDealerSlug);
-      const preferredDealer = rememberedDealer && includedDealerSlugs.includes(rememberedDealer)
-        ? rememberedDealer
-        : includedDealerSlugs[0];
-      if (preferredDealer) {
-        navigate(`/dealergroup/${rawDealerSlug}/${preferredDealer}/dashboard`, { replace: true });
+      const firstDealer = includedDealerSlugs[0];
+      if (firstDealer) {
+        navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/dashboard`, { replace: true });
       }
     }
   }, [configLoading, dealerConfig, selectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
