@@ -2014,6 +2014,39 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       .slice(0, 10);
   }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
 
+  const bottomModelOrders = useMemo<TopModelOrderRow[]>(() => {
+    const start = new Date(selectedYear, 0, 1);
+    const end = new Date(selectedYear + 1, 0, 1);
+    const bucket = new Map<string, { model: string; stock: number; customer: number; total: number }>();
+
+    const addEntry = (model: string, type: "stock" | "customer") => {
+      const key = model || "Unknown";
+      if (!bucket.has(key)) {
+        bucket.set(key, { model: key, stock: 0, customer: 0, total: 0 });
+      }
+      const entry = bucket.get(key)!;
+      entry[type] += 1;
+      entry.total += 1;
+    };
+
+    dealerOrdersAll.forEach((order) => {
+      const receivedDate = parseDate(order["Order Received Date"]);
+      if (!receivedDate || receivedDate < start || receivedDate >= end) return;
+      const model = toStr(order.Model).trim();
+      addEntry(model, isStockOrder(order) ? "stock" : "customer");
+    });
+
+    dealerCampervanSchedule.forEach((item) => {
+      const receivedDate = getCampervanOrderReceivedDate(item);
+      if (!receivedDate || receivedDate < start || receivedDate >= end) return;
+      addEntry(toStr(item.model).trim(), isCampervanStock(item) ? "stock" : "customer");
+    });
+
+    return Array.from(bucket.values())
+      .sort((a, b) => a.customer - b.customer || a.total - b.total || a.stock - b.stock || a.model.localeCompare(b.model))
+      .slice(0, 20);
+  }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
+
   const forecastTopModelOrders = useMemo<TopModelOrderRow[]>(() => {
     const start = new Date(selectedYear, 0, 1);
     const end = new Date(selectedYear + 1, 0, 1);
@@ -2047,6 +2080,41 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
     return Array.from(bucket.values())
       .sort((a, b) => b.customer - a.customer || b.total - a.total || b.stock - a.stock || a.model.localeCompare(b.model))
       .slice(0, 10);
+  }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
+
+  const forecastBottomModelOrders = useMemo<TopModelOrderRow[]>(() => {
+    const start = new Date(selectedYear, 0, 1);
+    const end = new Date(selectedYear + 1, 0, 1);
+    const bucket = new Map<string, { model: string; stock: number; customer: number; total: number }>();
+
+    const addEntry = (model: string, type: "stock" | "customer") => {
+      const key = model.trim() || "Unknown";
+      if (key.toLowerCase() === "unknown") return;
+      if (!bucket.has(key)) {
+        bucket.set(key, { model: key, stock: 0, customer: 0, total: 0 });
+      }
+      const entry = bucket.get(key)!;
+      entry[type] += 1;
+      entry.total += 1;
+    };
+
+    dealerOrdersAll.forEach((order) => {
+      const forecastDate = parseDate(order["Forecast Production Date"]);
+      if (!forecastDate || forecastDate < start || forecastDate >= end) return;
+      const model = toStr(order.Model).trim();
+      addEntry(model, isStockOrder(order) ? "stock" : "customer");
+    });
+
+    dealerCampervanSchedule.forEach((item) => {
+      if (!hasCampervanChassis(item)) return;
+      const forecastDate = parseDate(item.forecastProductionDate);
+      if (!forecastDate || forecastDate < start || forecastDate >= end) return;
+      addEntry(toStr(item.model).trim(), isCampervanStock(item) ? "stock" : "customer");
+    });
+
+    return Array.from(bucket.values())
+      .sort((a, b) => a.customer - b.customer || a.total - b.total || a.stock - b.stock || a.model.localeCompare(b.model))
+      .slice(0, 20);
   }, [dealerCampervanSchedule, dealerOrdersAll, selectedYear]);
 
   const stockLevel = useMemo(() => {
@@ -3444,6 +3512,24 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
               </CardHeader>
               <CardContent>
                 {renderMirroredTopModelChart(forecastTopModelOrders, `No forecast production data for ${selectedYear}.`)}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Bottom 20 Models (Order Received {selectedYear})</CardTitle>
+                <p className="text-sm text-muted-foreground">Lowest order received volume split by customer vs stock.</p>
+              </CardHeader>
+              <CardContent>
+                {renderMirroredTopModelChart(bottomModelOrders, `No order received data for ${selectedYear}.`)}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Bottom 20 Models (Forecast {selectedYear})</CardTitle>
+                <p className="text-sm text-muted-foreground">Lowest forecast production volume split by customer vs stock.</p>
+              </CardHeader>
+              <CardContent>
+                {renderMirroredTopModelChart(forecastBottomModelOrders, `No forecast production data for ${selectedYear}.`)}
               </CardContent>
             </Card>
           </div>
