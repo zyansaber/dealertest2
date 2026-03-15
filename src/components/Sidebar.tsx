@@ -18,7 +18,12 @@ import { Badge } from "@/components/ui/badge";
 import { NavLink, useParams, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import type { ScheduleItem } from "@/types";
-import { isFinanceReportEnabled, normalizeDealerSlug } from "@/lib/dealerUtils";
+import {
+  getRememberedGroupDealerSlug,
+  isFinanceReportEnabled,
+  normalizeDealerSlug,
+  rememberGroupDealerSlug,
+} from "@/lib/dealerUtils";
 import {
   dealerNameToSlug,
   subscribeShowDealerMappings,
@@ -94,7 +99,20 @@ export default function Sidebar({
     return selectedDealer || "Dealer Portal";
   }, [selectedDealer, hideOtherDealers, currentDealerName]);
 
-  const normalizedDealerSlug = normalizeDealerSlug(dealerSlug);
+  const effectiveDealerSlug = selectedDealerSlug || dealerSlug;
+  const normalizedDealerSlug = normalizeDealerSlug(effectiveDealerSlug);
+  const rememberedGroupDealerSlug = useMemo(
+    () => (isGroup ? getRememberedGroupDealerSlug(dealerSlug) || "" : ""),
+    [isGroup, dealerSlug]
+  );
+  const fallbackGroupDealerSlug = useMemo(() => includedDealers?.[0]?.slug || "", [includedDealers]);
+  const activeGroupDealerSlug = selectedDealerSlug || rememberedGroupDealerSlug || fallbackGroupDealerSlug;
+
+  useEffect(() => {
+    if (isGroup && dealerSlug && selectedDealerSlug) {
+      rememberGroupDealerSlug(dealerSlug, selectedDealerSlug);
+    }
+  }, [isGroup, dealerSlug, selectedDealerSlug]);
 
   const [showOrders, setShowOrders] = useState<ShowOrder[]>([]);
   const [showRecords, setShowRecords] = useState<ShowRecord[]>([]);
@@ -197,6 +215,7 @@ export default function Sidebar({
   // 获取当前页面类型（dashboard, dealerorders, inventorystock, unsigned, yard）
   const getCurrentPage = () => {
     const path = location.pathname;
+    if (path.includes('/show-management')) return 'show-management';
     if (path.includes('/inventory-management')) return 'inventory-management';
     if (path.includes('/finance-report')) return 'finance-report';
     if (path.includes('/customer-bp-pay')) return 'customer-bp-pay';
@@ -212,6 +231,7 @@ export default function Sidebar({
   const handleDealerClick = (newDealerSlug: string) => {
     const currentPage = getCurrentPage();
     if (isGroup) {
+      rememberGroupDealerSlug(dealerSlug, newDealerSlug);
       navigate(`/dealergroup/${dealerSlug}/${newDealerSlug}/${currentPage}`);
     } else {
       navigate(`/dealer/${newDealerSlug}/${currentPage}`);
@@ -221,15 +241,15 @@ export default function Sidebar({
   // 导航路径 - 根据是否是group使用不同的前缀
   const basePath = useMemo(() => {
     if (isGroup) {
-      return dealerSlug && selectedDealerSlug
-        ? `/dealergroup/${dealerSlug}/${selectedDealerSlug}`
+      return dealerSlug && activeGroupDealerSlug
+        ? `/dealergroup/${dealerSlug}/${activeGroupDealerSlug}`
         : dealerSlug
         ? `/dealergroup/${dealerSlug}`
         : "/";
     } else {
       return dealerSlug ? `/dealer/${dealerSlug}` : "/";
     }
-  }, [isGroup, dealerSlug, selectedDealerSlug]);
+  }, [isGroup, dealerSlug, activeGroupDealerSlug]);
 
   const navigationItems: NavigationItem[] = [
     { path: `${basePath}/dashboard`, label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -239,47 +259,45 @@ export default function Sidebar({
     { path: `${basePath}/unsigned`, label: "Unsigned & Empty Slots", icon: FileX, end: true },
   ];
 
-  if (!isGroup) {
-    navigationItems.splice(4, 0, {
-      path: `${basePath}/inventory-management`,
-      label: "Inventory Management",
-      icon: ClipboardList,
-      end: true
-    });
-    navigationItems.splice(5, 0, {
-      path: `${basePath}/show-management`,
-      label: "Show Management",
-      icon: ClipboardList,
-      isDisabled: true,
-      end: false,
-      children: [
-        {
-          path: `${basePath}/show-management/tasks`,
-          label: "Task",
-          icon: Circle,
-          end: true,
-          isSubItem: true,
-          badge: incompleteTaskCount > 0 ? incompleteTaskCount : undefined,
-        },
-        {
-          path: `${basePath}/show-management/orders`,
-          label: "Show Order",
-          icon: Circle,
-          end: true,
-          isSubItem: true,
-          badge: pendingDealerConfirmations > 0 ? pendingDealerConfirmations : undefined,
-        },
-      ],
-    });
-
-    if (isFinanceReportEnabled(normalizedDealerSlug)) {
-      navigationItems.splice(6, 0, {
-        path: `${basePath}/customer-bp-pay`,
-        label: "Customer BP & Pay",
-        icon: DollarSign,
+  navigationItems.splice(4, 0, {
+    path: `${basePath}/inventory-management`,
+    label: "Inventory Management",
+    icon: ClipboardList,
+    end: true
+  });
+  navigationItems.splice(5, 0, {
+    path: `${basePath}/show-management`,
+    label: "Show Management",
+    icon: ClipboardList,
+    isDisabled: true,
+    end: false,
+    children: [
+      {
+        path: `${basePath}/show-management/tasks`,
+        label: "Task",
+        icon: Circle,
         end: true,
-      });
-    }
+        isSubItem: true,
+        badge: incompleteTaskCount > 0 ? incompleteTaskCount : undefined,
+      },
+      {
+        path: `${basePath}/show-management/orders`,
+        label: "Show Order",
+        icon: Circle,
+        end: true,
+        isSubItem: true,
+        badge: pendingDealerConfirmations > 0 ? pendingDealerConfirmations : undefined,
+      },
+    ],
+  });
+
+  if (isFinanceReportEnabled(normalizedDealerSlug)) {
+    navigationItems.splice(6, 0, {
+      path: `${basePath}/customer-bp-pay`,
+      label: "Customer BP & Pay",
+      icon: DollarSign,
+      end: true,
+    });
   }
 
   const isItemActive = useCallback(
@@ -342,7 +360,7 @@ export default function Sidebar({
     );
   };
 
-  if (!isGroup && isFinanceReportEnabled(normalizedDealerSlug)) {
+  if (isFinanceReportEnabled(normalizedDealerSlug)) {
     navigationItems.push({
       path: `${basePath}/finance-report`,
       label: "Finance Report",
