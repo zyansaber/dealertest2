@@ -29,6 +29,7 @@ import DealerGroupPortal from "./pages/DealerGroupPortal";
 import DealerGroupDashboard from "./pages/DealerGroupDashboard";
 import DealerGroupInventoryStock from "./pages/DealerGroupInventoryStock";
 import DealerGroupUnsigned from "./pages/DealerGroupUnsigned";
+import DealerGroupPageEntry from "./pages/DealerGroupPageEntry";
 import DealerYard from "./pages/DealerYard";
 import DealerGroupYard from "./pages/DealerGroupYard";
 import InventoryManagement from "./pages/InventoryManagement";
@@ -251,6 +252,38 @@ const AppShell = () => {
             </ProtectedDealerGroupRoute>
           }
         />
+        <Route
+          path="/dealergroup/:dealerSlug/inventory-management"
+          element={
+            <ProtectedDealerGroupRoute>
+              <DealerGroupPageEntry targetPage="inventory-management" />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+        <Route
+          path="/dealergroup/:dealerSlug/show-management"
+          element={
+            <ProtectedDealerGroupRoute>
+              <DealerGroupPageEntry targetPage="show-management" />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+        <Route
+          path="/dealergroup/:dealerSlug/finance-report"
+          element={
+            <ProtectedDealerGroupRoute>
+              <FinanceReport />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+        <Route
+          path="/dealergroup/:dealerSlug/customer-bp-pay"
+          element={
+            <ProtectedDealerGroupRoute>
+              <CustomerBpPayPage />
+            </ProtectedDealerGroupRoute>
+          }
+        />
 
         {/* 带选中dealer的路由 */}
         <Route
@@ -290,6 +323,38 @@ const AppShell = () => {
           element={
             <ProtectedDealerGroupRoute>
               <DealerGroupYard />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+        <Route
+          path="/dealergroup/:dealerSlug/:selectedDealerSlug/inventory-management"
+          element={
+            <ProtectedDealerGroupRoute>
+              <InventoryManagement />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+        <Route
+          path="/dealergroup/:dealerSlug/:selectedDealerSlug/show-management"
+          element={
+            <ProtectedDealerGroupRoute>
+              <DealerGroupPageEntry targetPage="show-management" />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+        <Route
+          path="/dealergroup/:dealerSlug/:selectedDealerSlug/finance-report"
+          element={
+            <ProtectedDealerGroupRoute>
+              <FinanceReport />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+        <Route
+          path="/dealergroup/:dealerSlug/:selectedDealerSlug/customer-bp-pay"
+          element={
+            <ProtectedDealerGroupRoute>
+              <CustomerBpPayPage />
             </ProtectedDealerGroupRoute>
           }
         />
