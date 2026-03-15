@@ -39,7 +39,6 @@ import {
 } from "recharts";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isDealerGroup } from "@/types/dealer";
-import { getRememberedGroupDealerSlug, rememberGroupDealerSlug } from "@/lib/dealerUtils";
 import { PRICE_ENABLED_DEALERS } from "@/constants/dealerSettings";
 
 type PGIRec = {
@@ -323,19 +322,10 @@ export default function DealerGroupYard() {
   }, [dealerConfig, groupSlug, isGroupPortal]);
 
   useEffect(() => {
-    if (rawDealerSlug && rawSelectedDealerSlug) {
-      rememberGroupDealerSlug(rawDealerSlug, rawSelectedDealerSlug);
-    }
-  }, [rawDealerSlug, rawSelectedDealerSlug]);
-
-  useEffect(() => {
     if (!configLoading && isGroupPortal && !rawSelectedDealerSlug) {
-      const rememberedDealer = getRememberedGroupDealerSlug(rawDealerSlug);
-      const preferredDealer = rememberedDealer && includedDealerSlugs.includes(rememberedDealer)
-        ? rememberedDealer
-        : includedDealerSlugs[0];
-      if (preferredDealer) {
-        navigate(`/dealergroup/${rawDealerSlug}/${preferredDealer}/yard`, { replace: true });
+      const firstDealer = includedDealerSlugs[0];
+      if (firstDealer) {
+        navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/yard`, { replace: true });
       }
     }
   }, [configLoading, isGroupPortal, rawSelectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
