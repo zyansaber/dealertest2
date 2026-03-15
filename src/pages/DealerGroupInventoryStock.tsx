@@ -25,7 +25,6 @@ import {
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import { isDealerGroup } from "@/types/dealer";
-import { getRememberedGroupDealerSlug, rememberGroupDealerSlug } from "@/lib/dealerUtils";
 import { ref, update } from "firebase/database";
 
 type AnyMap = Record<string, any>;
@@ -148,19 +147,10 @@ export default function DealerGroupInventoryStock() {
   }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
 
   useEffect(() => {
-    if (rawDealerSlug && selectedDealerSlug) {
-      rememberGroupDealerSlug(rawDealerSlug, selectedDealerSlug);
-    }
-  }, [rawDealerSlug, selectedDealerSlug]);
-
-  useEffect(() => {
     if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !selectedDealerSlug) {
-      const rememberedDealer = getRememberedGroupDealerSlug(rawDealerSlug);
-      const preferredDealer = rememberedDealer && includedDealerSlugs.includes(rememberedDealer)
-        ? rememberedDealer
-        : includedDealerSlugs[0];
-      if (preferredDealer) {
-        navigate(`/dealergroup/${rawDealerSlug}/${preferredDealer}/inventorystock`, { replace: true });
+      const firstDealer = includedDealerSlugs[0];
+      if (firstDealer) {
+        navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/inventorystock`, { replace: true });
       }
     }
   }, [configLoading, dealerConfig, selectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
