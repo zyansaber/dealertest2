@@ -251,30 +251,6 @@ const AppShell = () => {
             </ProtectedDealerGroupRoute>
           }
         />
-        <Route
-          path="/dealergroup/:dealerSlug/inventory-management"
-          element={
-            <ProtectedDealerGroupRoute>
-              <InventoryManagement />
-            </ProtectedDealerGroupRoute>
-          }
-        />
-        <Route
-          path="/dealergroup/:dealerSlug/finance-report"
-          element={
-            <ProtectedDealerGroupRoute>
-              <FinanceReport />
-            </ProtectedDealerGroupRoute>
-          }
-        />
-        <Route
-          path="/dealergroup/:dealerSlug/customer-bp-pay"
-          element={
-            <ProtectedDealerGroupRoute>
-              <CustomerBpPayPage />
-            </ProtectedDealerGroupRoute>
-          }
-        />
 
         {/* 带选中dealer的路由 */}
         <Route
@@ -314,30 +290,6 @@ const AppShell = () => {
           element={
             <ProtectedDealerGroupRoute>
               <DealerGroupYard />
-            </ProtectedDealerGroupRoute>
-          }
-        />
-        <Route
-          path="/dealergroup/:dealerSlug/:selectedDealerSlug/inventory-management"
-          element={
-            <ProtectedDealerGroupRoute>
-              <InventoryManagement />
-            </ProtectedDealerGroupRoute>
-          }
-        />
-        <Route
-          path="/dealergroup/:dealerSlug/:selectedDealerSlug/finance-report"
-          element={
-            <ProtectedDealerGroupRoute>
-              <FinanceReport />
-            </ProtectedDealerGroupRoute>
-          }
-        />
-        <Route
-          path="/dealergroup/:dealerSlug/:selectedDealerSlug/customer-bp-pay"
-          element={
-            <ProtectedDealerGroupRoute>
-              <CustomerBpPayPage />
             </ProtectedDealerGroupRoute>
           }
         />
