@@ -15,6 +15,7 @@ import {
 } from "@/lib/firebase";
 import type { ScheduleItem } from "@/types";
 import { isDealerGroup } from "@/types/dealer";
+import { getRememberedGroupDealerSlug, rememberGroupDealerSlug } from "@/lib/dealerUtils";
 import * as XLSX from "xlsx";
 
 /** ---- 安全工具函数 ---- */
@@ -139,10 +140,19 @@ export default function DealerGroupUnsigned() {
   }, [dealerConfig, includedDealerSlugs, allDealerConfigs]);
 
   useEffect(() => {
+    if (rawDealerSlug && selectedDealerSlug) {
+      rememberGroupDealerSlug(rawDealerSlug, selectedDealerSlug);
+    }
+  }, [rawDealerSlug, selectedDealerSlug]);
+
+  useEffect(() => {
     if (!configLoading && dealerConfig && isDealerGroup(dealerConfig) && !selectedDealerSlug) {
-      const firstDealer = includedDealerSlugs[0];
-      if (firstDealer) {
-        navigate(`/dealergroup/${rawDealerSlug}/${firstDealer}/unsigned`, { replace: true });
+      const rememberedDealer = getRememberedGroupDealerSlug(rawDealerSlug);
+      const preferredDealer = rememberedDealer && includedDealerSlugs.includes(rememberedDealer)
+        ? rememberedDealer
+        : includedDealerSlugs[0];
+      if (preferredDealer) {
+        navigate(`/dealergroup/${rawDealerSlug}/${preferredDealer}/unsigned`, { replace: true });
       }
     }
   }, [configLoading, dealerConfig, selectedDealerSlug, includedDealerSlugs, rawDealerSlug, navigate]);
