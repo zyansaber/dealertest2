@@ -70,65 +70,6 @@ function LineChart({ points, color }: { points: Array<{ label: string; value: nu
   );
 }
 
-type Series = { key: string; color: string; points: Array<{ label: string; value: number }> };
-
-function MultiLineChart({ series }: { series: Series[] }) {
-  if (series.length === 0 || series[0].points.length === 0) return null;
-  const width = 980;
-  const height = 280;
-  const pad = 24;
-  const labels = series[0].points.map((p) => p.label);
-  const values = series.flatMap((s) => s.points.map((p) => p.value));
-  const max = Math.max(1, ...values);
-  const min = Math.min(0, ...values);
-  const span = Math.max(1, max - min);
-
-  const toCoord = (value: number, index: number) => {
-    const x = pad + (index * (width - pad * 2)) / Math.max(1, labels.length - 1);
-    const y = height - pad - ((value - min) / span) * (height - pad * 2);
-    return { x, y };
-  };
-
-  return (
-    <div>
-      <div className="mb-3 flex flex-wrap gap-3 text-xs">
-        {series.map((s) => (
-          <div key={s.key} className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-            <span>{s.key}</span>
-          </div>
-        ))}
-      </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-72 w-full">
-        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="#cbd5e1" />
-        <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke="#cbd5e1" />
-        {series.map((s) => (
-          <polyline
-            key={`line-${s.key}`}
-            fill="none"
-            stroke={s.color}
-            strokeWidth="3"
-            points={s.points.map((p, i) => {
-              const c = toCoord(p.value, i);
-              return `${c.x},${c.y}`;
-            }).join(" ")}
-          />
-        ))}
-        {labels.map((label, i) => {
-          const x = toCoord(0, i).x;
-          return <text key={`label-${label}`} x={x} y={height - 6} textAnchor="middle" fontSize="10" fill="#64748b">{label}</text>;
-        })}
-        {series.map((s) =>
-          s.points.map((p, i) => {
-            const c = toCoord(p.value, i);
-            return <circle key={`${s.key}-${p.label}`} cx={c.x} cy={c.y} r="3" fill={s.color} />;
-          })
-        )}
-      </svg>
-    </div>
-  );
-}
-
 export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: PlanningLang }) {
   const [selectedStatus, setSelectedStatus] = useState<string>("Melbourn Factory");
   const [mode, setMode] = useState<Mode>("customer");
@@ -256,9 +197,9 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       .map(([key, count]) => ({ key, count, ratio: `${((count / total) * 100).toFixed(1)}%` }));
   }, [selectedRows, mode, lang]);
 
-  const leftPortLongtreeMonthlySeries = useMemo(() => {
+  const leftPortLongtreeMonthly = useMemo(() => {
     const from = new Date(new Date().getFullYear() - 1, 5, 1).getTime();
-    const buckets: Record<string, { all: { sum: number; count: number }; customer: { sum: number; count: number }; stock: { sum: number; count: number } }> = {};
+    const buckets: Record<string, { sum: number; count: number }> = {};
 
     filteredByModel.forEach((r) => {
       const m = (name: string, src: "schedule" | "dateTrack") => parseDateToTimestamp(src === "schedule" ? (r.schedule as any)?.[name] : r.dateTrack?.[name]);
@@ -276,35 +217,21 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       const totalDays = ((cw! - pos!) + (al! - cw!) + (fg! - al!) + (lf! - fg!) + (ep! - lf!) + (lp! - ep!)) / 86400000;
       const d = new Date(lp!);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!buckets[key]) buckets[key] = { all: { sum: 0, count: 0 }, customer: { sum: 0, count: 0 }, stock: { sum: 0, count: 0 } };
-      buckets[key].all.sum += totalDays;
-      buckets[key].all.count += 1;
-
-      const target = r.isStock ? buckets[key].stock : buckets[key].customer;
-      target.sum += totalDays;
-      target.count += 1;
+      if (!buckets[key]) buckets[key] = { sum: 0, count: 0 };
+      buckets[key].sum += totalDays;
+      buckets[key].count += 1;
     });
 
-    const months = Object.keys(buckets).sort((a, b) => a.localeCompare(b)).filter((month) => !month.endsWith("-06"));
-    const toPoints = (key: "all" | "customer" | "stock") => months.map((month) => {
-      const entry = buckets[month][key];
-      return { label: month, value: entry.count ? Number((entry.sum / entry.count).toFixed(2)) : 0 };
-    });
+    return Object.entries(buckets)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .filter(([month]) => !month.endsWith("-06"))
+      .map(([month, v]) => ({ label: month, value: v.count ? Number((v.sum / v.count).toFixed(2)) : 0 }));
+  }, [filteredByModel]);
 
-    return {
-      monthly: toPoints("all"),
-      series: [
-        { key: tr(lang, "All", "全部"), color: "#334155", points: toPoints("all") },
-        { key: tr(lang, "Customer", "客户"), color: "#2563eb", points: toPoints("customer") },
-        { key: tr(lang, "Stock", "库存"), color: "#ea580c", points: toPoints("stock") },
-      ],
-    };
-  }, [filteredByModel, lang]);
-
-  const forecastVsSignedSeries = useMemo(() => {
+  const forecastVsSignedMonthlyWithMelbourneDays = useMemo(() => {
     const now = new Date();
     const nowMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const buckets: Record<string, { all: { sum: number; count: number }; customer: { sum: number; count: number }; stock: { sum: number; count: number } }> = {};
+    const buckets: Record<string, { sum: number; count: number }> = {};
 
     filteredByModel.forEach((r) => {
       const forecast = parseDateToTimestamp((r.schedule as any)?.["Forecast Production Date"]);
@@ -313,31 +240,15 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
 
       const d = new Date(forecast);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!buckets[key]) buckets[key] = { all: { sum: 0, count: 0 }, customer: { sum: 0, count: 0 }, stock: { sum: 0, count: 0 } };
-      const days = (forecast - signed) / 86400000 + 25;
-
-      buckets[key].all.sum += days;
-      buckets[key].all.count += 1;
-      const target = r.isStock ? buckets[key].stock : buckets[key].customer;
-      target.sum += days;
-      target.count += 1;
+      if (!buckets[key]) buckets[key] = { sum: 0, count: 0 };
+      buckets[key].sum += (forecast - signed) / 86400000 + 25;
+      buckets[key].count += 1;
     });
 
-    const months = Object.keys(buckets).sort((a, b) => a.localeCompare(b));
-    const toPoints = (key: "all" | "customer" | "stock") => months.map((month) => {
-      const entry = buckets[month][key];
-      return { label: month, value: entry.count ? Number((entry.sum / entry.count).toFixed(2)) : 0 };
-    });
-
-    return {
-      monthly: toPoints("all"),
-      series: [
-        { key: tr(lang, "All", "全部"), color: "#047857", points: toPoints("all") },
-        { key: tr(lang, "Customer", "客户"), color: "#2563eb", points: toPoints("customer") },
-        { key: tr(lang, "Stock", "库存"), color: "#ea580c", points: toPoints("stock") },
-      ],
-    };
-  }, [filteredByModel, lang]);
+    return Object.entries(buckets)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, v]) => ({ label: month, value: v.count ? Number((v.sum / v.count).toFixed(2)) : 0 }));
+  }, [filteredByModel]);
 
   const cardStatuses = [
     "Melbourn Factory",
@@ -434,12 +345,12 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-sm font-semibold">{tr(lang, "Longtree production time trend by Left Port month (from last June)", "按 Left Port 月份的 Longtree 生产时长趋势（去年六月起）")}</div>
-          {leftPortLongtreeMonthlySeries.monthly.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No enough data.", "数据不足。")}</div> : <MultiLineChart series={leftPortLongtreeMonthlySeries.series} />}
+          {leftPortLongtreeMonthly.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No enough data.", "数据不足。")}</div> : <LineChart points={leftPortLongtreeMonthly} color="#334155" />}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-sm font-semibold">{tr(lang, "Monthly avg (Forecast Production Date - Signed Plans Received) + 25 days (Melbourne Factory)", "月均（Forecast Production Date - Signed Plans Received）+25天（墨尔本工厂）")}</div>
-          {forecastVsSignedSeries.monthly.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No rows from current month onward.", "当前月起暂无可用数据。")}</div> : <MultiLineChart series={forecastVsSignedSeries.series} />}
+          {forecastVsSignedMonthlyWithMelbourneDays.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No rows from current month onward.", "当前月起暂无可用数据。")}</div> : <LineChart points={forecastVsSignedMonthlyWithMelbourneDays} color="#047857" />}
         </div>
       </div>
     </>
