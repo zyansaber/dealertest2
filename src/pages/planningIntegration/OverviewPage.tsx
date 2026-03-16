@@ -40,30 +40,55 @@ const normalizeModelRange = (model: string, chassis: string) => {
 };
 
 
-function LineChart({ points, color }: { points: Array<{ label: string; value: number }>; color: string }) {
+type SplitTrendPoint = {
+  label: string;
+  customer: number | null;
+  stock: number | null;
+};
+
+function DualLineChart({ points }: { points: SplitTrendPoint[] }) {
   const width = 980;
   const height = 280;
   const pad = 24;
-  const max = Math.max(1, ...points.map((p) => p.value));
-  const min = Math.min(0, ...points.map((p) => p.value));
+  const values = points.flatMap((p) => [p.customer, p.stock]).filter((v): v is number => v != null);
+  const max = Math.max(1, ...values);
+  const min = Math.min(0, ...values);
   const span = Math.max(1, max - min);
 
-  const coords = points.map((p, i) => {
-    const x = pad + (i * (width - pad * 2)) / Math.max(1, points.length - 1);
-    const y = height - pad - ((p.value - min) / span) * (height - pad * 2);
-    return { ...p, x, y };
-  });
+  const xOf = (i: number) => pad + (i * (width - pad * 2)) / Math.max(1, points.length - 1);
+  const yOf = (value: number) => height - pad - ((value - min) / span) * (height - pad * 2);
+
+  const pathOf = (getValue: (p: SplitTrendPoint) => number | null) => {
+    let path = "";
+    points.forEach((p, i) => {
+      const value = getValue(p);
+      if (value == null) return;
+      path += `${path ? " L" : "M"}${xOf(i)} ${yOf(value)}`;
+    });
+    return path;
+  };
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-72 w-full">
       <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="#cbd5e1" />
       <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke="#cbd5e1" />
-      <polyline fill="none" stroke={color} strokeWidth="3" points={coords.map((c) => `${c.x},${c.y}`).join(" ")} />
-      {coords.map((c) => (
-        <g key={c.label}>
-          <circle cx={c.x} cy={c.y} r="4" fill={color} />
-          <text x={c.x} y={c.y - 10} textAnchor="middle" fontSize="12" fontWeight="700" fill="#0f172a">{c.value.toFixed(1)}</text>
-          <text x={c.x} y={height - 6} textAnchor="middle" fontSize="10" fill="#64748b">{c.label}</text>
+      <path d={pathOf((p) => p.customer)} fill="none" stroke="#2563eb" strokeWidth="3" />
+      <path d={pathOf((p) => p.stock)} fill="none" stroke="#16a34a" strokeWidth="3" />
+      {points.map((point, i) => (
+        <g key={point.label}>
+          <text x={xOf(i)} y={height - 6} textAnchor="middle" fontSize="10" fill="#64748b">{point.label}</text>
+          {point.customer != null ? (
+            <>
+              <circle cx={xOf(i)} cy={yOf(point.customer)} r="4" fill="#2563eb" />
+              <text x={xOf(i)} y={yOf(point.customer) - 10} textAnchor="middle" fontSize="10" fontWeight="700" fill="#1e3a8a">{point.customer.toFixed(1)}</text>
+            </>
+          ) : null}
+          {point.stock != null ? (
+            <>
+              <circle cx={xOf(i)} cy={yOf(point.stock)} r="4" fill="#16a34a" />
+              <text x={xOf(i)} y={yOf(point.stock) - 10} textAnchor="middle" fontSize="10" fontWeight="700" fill="#166534">{point.stock.toFixed(1)}</text>
+            </>
+          ) : null}
         </g>
       ))}
     </svg>
@@ -197,9 +222,10 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       .map(([key, count]) => ({ key, count, ratio: `${((count / total) * 100).toFixed(1)}%` }));
   }, [selectedRows, mode, lang]);
 
-  const leftPortLongtreeMonthly = useMemo(() => {
-    const from = new Date(new Date().getFullYear() - 1, 5, 1).getTime();
-    const buckets: Record<string, { sum: number; count: number }> = {};
+  const fromLastJuneTs = useMemo(() => new Date(new Date().getFullYear() - 1, 5, 1).getTime(), []);
+
+  const leftPortLongtreeMonthly = useMemo<SplitTrendPoint[]>(() => {
+    const buckets: Record<string, { customerSum: number; customerCount: number; stockSum: number; stockCount: number }> = {};
 
     filteredByModel.forEach((r) => {
       const m = (name: string, src: "schedule" | "dateTrack") => parseDateToTimestamp(src === "schedule" ? (r.schedule as any)?.[name] : r.dateTrack?.[name]);
@@ -210,45 +236,61 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       const lf = m("leavingFactory", "dateTrack");
       const ep = m("estLeavngPort", "dateTrack");
       const lp = m("Left Port", "dateTrack");
-
       if ([pos, cw, al, fg, lf, ep, lp].some((x) => x == null)) return;
-      if ((lp as number) < from) return;
+      if ((lp as number) < fromLastJuneTs) return;
 
       const totalDays = ((cw! - pos!) + (al! - cw!) + (fg! - al!) + (lf! - fg!) + (ep! - lf!) + (lp! - ep!)) / 86400000;
       const d = new Date(lp!);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!buckets[key]) buckets[key] = { sum: 0, count: 0 };
-      buckets[key].sum += totalDays;
-      buckets[key].count += 1;
+      if (!buckets[key]) buckets[key] = { customerSum: 0, customerCount: 0, stockSum: 0, stockCount: 0 };
+      if (r.isStock) {
+        buckets[key].stockSum += totalDays;
+        buckets[key].stockCount += 1;
+      } else {
+        buckets[key].customerSum += totalDays;
+        buckets[key].customerCount += 1;
+      }
     });
 
     return Object.entries(buckets)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .filter(([month]) => !month.endsWith("-06"))
-      .map(([month, v]) => ({ label: month, value: v.count ? Number((v.sum / v.count).toFixed(2)) : 0 }));
-  }, [filteredByModel]);
+      .map(([month, v]) => ({
+        label: month,
+        customer: v.customerCount ? Number((v.customerSum / v.customerCount).toFixed(2)) : null,
+        stock: v.stockCount ? Number((v.stockSum / v.stockCount).toFixed(2)) : null,
+      }));
+  }, [filteredByModel, fromLastJuneTs]);
 
-  const forecastVsSignedMonthlyWithMelbourneDays = useMemo(() => {
-    const now = new Date();
-    const nowMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const buckets: Record<string, { sum: number; count: number }> = {};
+  const forecastVsSignedMonthlyWithMelbourneDays = useMemo<SplitTrendPoint[]>(() => {
+    const buckets: Record<string, { customerSum: number; customerCount: number; stockSum: number; stockCount: number }> = {};
 
     filteredByModel.forEach((r) => {
       const forecast = parseDateToTimestamp((r.schedule as any)?.["Forecast Production Date"]);
       const signed = parseDateToTimestamp((r.schedule as any)?.["Signed Plans Received"]);
-      if (forecast == null || signed == null || forecast < nowMonthStart) return;
+      const leftPort = parseDateToTimestamp(r.dateTrack?.["Left Port"]);
+      if (forecast == null || signed == null || leftPort == null || leftPort < fromLastJuneTs) return;
 
-      const d = new Date(forecast);
+      const d = new Date(leftPort);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!buckets[key]) buckets[key] = { sum: 0, count: 0 };
-      buckets[key].sum += (forecast - signed) / 86400000 + 25;
-      buckets[key].count += 1;
+      if (!buckets[key]) buckets[key] = { customerSum: 0, customerCount: 0, stockSum: 0, stockCount: 0 };
+      const metricDays = (forecast - signed) / 86400000 + 25;
+      if (r.isStock) {
+        buckets[key].stockSum += metricDays;
+        buckets[key].stockCount += 1;
+      } else {
+        buckets[key].customerSum += metricDays;
+        buckets[key].customerCount += 1;
+      }
     });
 
     return Object.entries(buckets)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([month, v]) => ({ label: month, value: v.count ? Number((v.sum / v.count).toFixed(2)) : 0 }));
-  }, [filteredByModel]);
+      .map(([month, v]) => ({
+        label: month,
+        customer: v.customerCount ? Number((v.customerSum / v.customerCount).toFixed(2)) : null,
+        stock: v.stockCount ? Number((v.stockSum / v.stockCount).toFixed(2)) : null,
+      }));
+  }, [filteredByModel, fromLastJuneTs]);
 
   const cardStatuses = [
     "Melbourn Factory",
@@ -345,12 +387,64 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-sm font-semibold">{tr(lang, "Longtree production time trend by Left Port month (from last June)", "按 Left Port 月份的 Longtree 生产时长趋势（去年六月起）")}</div>
-          {leftPortLongtreeMonthly.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No enough data.", "数据不足。")}</div> : <LineChart points={leftPortLongtreeMonthly} color="#334155" />}
+          <div className="mb-2 flex items-center gap-4 text-xs">
+            <span className="inline-flex items-center gap-1 text-blue-700"><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600" />customer</span>
+            <span className="inline-flex items-center gap-1 text-green-700"><span className="inline-block h-2.5 w-2.5 rounded-full bg-green-600" />stock</span>
+          </div>
+          {leftPortLongtreeMonthly.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No enough data.", "数据不足。")}</div> : <DualLineChart points={leftPortLongtreeMonthly} />}
+          {leftPortLongtreeMonthly.length > 0 ? (
+            <div className="mt-3 overflow-auto">
+              <table className="min-w-[360px] text-xs">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="px-2 py-1">{tr(lang, "Month", "月份")}</th>
+                    <th className="px-2 py-1">customer</th>
+                    <th className="px-2 py-1">stock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leftPortLongtreeMonthly.map((p) => (
+                    <tr key={`lt-${p.label}`} className="border-t border-slate-100">
+                      <td className="px-2 py-1">{p.label}</td>
+                      <td className="px-2 py-1">{p.customer == null ? "-" : p.customer.toFixed(1)}</td>
+                      <td className="px-2 py-1">{p.stock == null ? "-" : p.stock.toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-sm font-semibold">{tr(lang, "Monthly avg (Forecast Production Date - Signed Plans Received) + 25 days (Melbourne Factory)", "月均（Forecast Production Date - Signed Plans Received）+25天（墨尔本工厂）")}</div>
-          {forecastVsSignedMonthlyWithMelbourneDays.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No rows from current month onward.", "当前月起暂无可用数据。")}</div> : <LineChart points={forecastVsSignedMonthlyWithMelbourneDays} color="#047857" />}
+          <div className="mb-2 flex items-center gap-4 text-xs">
+            <span className="inline-flex items-center gap-1 text-blue-700"><span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600" />customer</span>
+            <span className="inline-flex items-center gap-1 text-green-700"><span className="inline-block h-2.5 w-2.5 rounded-full bg-green-600" />stock</span>
+          </div>
+          {forecastVsSignedMonthlyWithMelbourneDays.length === 0 ? <div className="text-sm text-slate-500">{tr(lang, "No enough data.", "数据不足。")}</div> : <DualLineChart points={forecastVsSignedMonthlyWithMelbourneDays} />}
+          {forecastVsSignedMonthlyWithMelbourneDays.length > 0 ? (
+            <div className="mt-3 overflow-auto">
+              <table className="min-w-[360px] text-xs">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="px-2 py-1">{tr(lang, "Month", "月份")}</th>
+                    <th className="px-2 py-1">customer</th>
+                    <th className="px-2 py-1">stock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {forecastVsSignedMonthlyWithMelbourneDays.map((p) => (
+                    <tr key={`fp-${p.label}`} className="border-t border-slate-100">
+                      <td className="px-2 py-1">{p.label}</td>
+                      <td className="px-2 py-1">{p.customer == null ? "-" : p.customer.toFixed(1)}</td>
+                      <td className="px-2 py-1">{p.stock == null ? "-" : p.stock.toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
       </div>
     </>
