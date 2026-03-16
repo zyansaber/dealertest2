@@ -108,6 +108,7 @@ function OrderList({
   const [yardStockMap, setYardStockMap] = useState<Record<string, any>>({});
   const [schedulingVanOptionsMap, setSchedulingVanOptionsMap] = useState<Record<string, any>>({});
   const [downloadingStockPdf, setDownloadingStockPdf] = useState(false);
+  const [downloadingStockCsv, setDownloadingStockCsv] = useState(false);
   const [activeTab, setActiveTab] = useState<"caravan" | "vehicles">("caravan");
   const [vehicleSearchTerm, setVehicleSearchTerm] = useState("");
   const [filters, setFilters] = useState<FilterOptions>({
@@ -525,6 +526,18 @@ function OrderList({
     return Array.from(merged.values()).sort((a, b) => a.chassis.localeCompare(b.chassis));
   }, [dealerOrders, getDisplayForecastProductionDate, schedulingVanOptionsMap, yardStockMap]);
 
+  const formatAud = useCallback((value: number | string | null | undefined) => {
+    if (value === null || value === undefined || value === "") return "-";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return `AUD ${value}`;
+    return `AUD ${n.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  }, []);
+
+  const getRowItems = useCallback((row: CombinedStockRow) => {
+    if (!row.items || typeof row.items !== "object") return [];
+    return Object.values(row.items) as any[];
+  }, []);
+
   const handleDownloadStockPdf = useCallback(async () => {
     try {
       if (combinedStockRows.length === 0) {
@@ -557,37 +570,88 @@ function OrderList({
         y += wrapped.length * lineHeight;
       };
 
-      writeLine("Stock Vehicles (Orderlist + Yard Inventory)", { bold: true, size: 14 });
-      writeLine(`Total units: ${combinedStockRows.length}`, { size: 10 });
-      y += 6;
+      const tableFontSize = 9;
+      const tableRowHeight = 14;
+      const colPercents = [0.12, 0.25, 0.43, 0.2];
+      const colWidths = colPercents.map((p) => Math.floor(maxTextWidth * p));
+      colWidths[colWidths.length - 1] = maxTextWidth - colWidths.slice(0, -1).reduce((a, b) => a + b, 0);
 
-      combinedStockRows.forEach((row, index) => {
-        ensureSpace(120);
-        doc.setDrawColor(220);
-        doc.line(margin, y, pageWidth - margin, y);
-        y += 10;
+      const drawItemsTable = (items: any[]) => {
+        const headers = ["Item No", "Material Code", "Description", "Price (AUD)"];
+        ensureSpace(tableRowHeight * 2);
+        let x = margin;
+        doc.setFillColor(241, 245, 249);
+        doc.rect(margin, y, maxTextWidth, tableRowHeight, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(tableFontSize);
+        headers.forEach((header, i) => {
+          doc.text(header, x + 4, y + 10);
+          x += colWidths[i];
+        });
+        y += tableRowHeight;
 
-        writeLine(`${index + 1}. ${row.chassis}`, { bold: true, size: 11 });
-        writeLine(`Source: ${row.source}    Dealer: ${row.dealer || "-"}    Customer: ${row.customer || "-"}`);
-        writeLine(`Model: ${row.model || "-"}    Sales Order: ${row.salesOrder || "-"}`);
-        writeLine(`Forecast Melbourne Factory Start Date: ${row.forecastMelbourneFactoryStartDate || "-"}`);
-        writeLine(`Status: ${row.status || "-"}`);
-        writeLine(`Retail Sale Price (incl GST): ${row.retailsaleprice ?? "-"}    Discount (incl GST): ${row.discount ?? "-"}`);
-        writeLine("Items:", { bold: true });
-
-        const items = row.items && typeof row.items === "object" ? Object.values(row.items) : [];
         if (items.length === 0) {
-          writeLine("- (no items)", { indent: 12 });
-        } else {
-          items.forEach((item: any, itemIdx) => {
-            writeLine(
-              `${itemIdx + 1}) itemNo=${item?.itemNo || "-"}, materialCode=${item?.materialCode || "-"}, description=${item?.description || "-"}, price=${item?.price ?? "-"}`,
-              { indent: 12 },
-            );
-          });
+          doc.setFont("helvetica", "normal");
+          doc.text("No items", margin + 4, y + 10);
+          doc.rect(margin, y, maxTextWidth, tableRowHeight);
+          y += tableRowHeight;
+          return;
         }
-        y += 6;
-      });
+
+        items.forEach((item) => {
+          ensureSpace(tableRowHeight + 2);
+          const values = [
+            String(item?.itemNo || "-"),
+            String(item?.materialCode || "-"),
+            String(item?.description || "-"),
+            formatAud(item?.price),
+          ];
+          let cx = margin;
+          doc.setFont("helvetica", "normal");
+          values.forEach((value, i) => {
+            const text = doc.splitTextToSize(value, colWidths[i] - 8);
+            doc.text(text, cx + 4, y + 10);
+            doc.rect(cx, y, colWidths[i], tableRowHeight);
+            cx += colWidths[i];
+          });
+          y += tableRowHeight;
+        });
+      };
+
+      const drawSection = (title: string, rows: CombinedStockRow[], includeProductionFields: boolean) => {
+        writeLine(title, { bold: true, size: 13 });
+        writeLine(`Total units: ${rows.length}`, { size: 10 });
+        y += 4;
+
+        rows.forEach((row, index) => {
+          ensureSpace(130);
+          doc.setDrawColor(220);
+          doc.line(margin, y, pageWidth - margin, y);
+          y += 10;
+
+          writeLine(`${index + 1}. ${row.chassis}`, { bold: true, size: 11 });
+          writeLine(`Dealer: ${row.dealer || "-"}    Customer: ${row.customer || "-"}`);
+          writeLine(`Model: ${row.model || "-"}    Sales Order: ${row.salesOrder || "-"}`);
+          if (includeProductionFields) {
+            writeLine(`Forecast Melbourne Factory Start Date: ${row.forecastMelbourneFactoryStartDate || "-"}`);
+            writeLine(`Status: ${row.status || "-"}`);
+          }
+          writeLine(`Retail Sale Price (incl GST): ${formatAud(row.retailsaleprice)}    Discount (incl GST): ${formatAud(row.discount)}`);
+          writeLine("Items", { bold: true });
+          drawItemsTable(getRowItems(row));
+          y += 8;
+        });
+      };
+
+      const yardInventoryRows = combinedStockRows.filter((row) => row.source === "yardinventory");
+      const upcomingStockRows = combinedStockRows.filter((row) => row.source === "orderlist");
+
+      writeLine("Stock Vehicles Report", { bold: true, size: 15 });
+      writeLine(`Generated: ${new Date().toLocaleString("en-AU")}`, { size: 9 });
+      y += 8;
+      drawSection("Yard Inventory", yardInventoryRows, false);
+      y += 6;
+      drawSection("Upcoming Stock", upcomingStockRows, true);
 
       const today = new Date().toISOString().slice(0, 10);
       doc.save(`stock_combined_${dealerSlug || "dealer"}_${today}.pdf`);
@@ -598,7 +662,97 @@ function OrderList({
     } finally {
       setDownloadingStockPdf(false);
     }
-  }, [combinedStockRows, dealerSlug]);
+  }, [combinedStockRows, dealerSlug, formatAud, getRowItems]);
+
+  const handleDownloadStockCsv = useCallback(() => {
+    try {
+      if (combinedStockRows.length === 0) {
+        toast.error("No stock vehicles to download.");
+        return;
+      }
+
+      setDownloadingStockCsv(true);
+      const headers = [
+        "section",
+        "chassis",
+        "dealer",
+        "customer",
+        "model",
+        "salesOrder",
+        "forecastMelbourneFactoryStartDate",
+        "status",
+        "retailSalePriceInclGST",
+        "discountInclGST",
+        "itemNo",
+        "materialCode",
+        "description",
+        "itemPrice",
+      ];
+
+      const csvEscape = (value: unknown) => {
+        const text = String(value ?? "");
+        return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      };
+
+      const rows = combinedStockRows.flatMap((row) => {
+        const items = getRowItems(row);
+        const section = row.source === "yardinventory" ? "Yard Inventory" : "Upcoming Stock";
+        if (items.length === 0) {
+          return [[
+            section,
+            row.chassis,
+            row.dealer || "",
+            row.customer || "",
+            row.model || "",
+            row.salesOrder || "",
+            row.source === "orderlist" ? row.forecastMelbourneFactoryStartDate || "" : "",
+            row.source === "orderlist" ? row.status || "" : "",
+            formatAud(row.retailsaleprice),
+            formatAud(row.discount),
+            "",
+            "",
+            "",
+            "",
+          ]];
+        }
+
+        return items.map((item) => [
+          section,
+          row.chassis,
+          row.dealer || "",
+          row.customer || "",
+          row.model || "",
+          row.salesOrder || "",
+          row.source === "orderlist" ? row.forecastMelbourneFactoryStartDate || "" : "",
+          row.source === "orderlist" ? row.status || "" : "",
+          formatAud(row.retailsaleprice),
+          formatAud(row.discount),
+          item?.itemNo || "",
+          item?.materialCode || "",
+          item?.description || "",
+          formatAud(item?.price),
+        ]);
+      });
+
+      const content = [headers, ...rows].map((line) => line.map(csvEscape).join(",")).join("\n");
+      const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const today = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `stock_combined_${dealerSlug || "dealer"}_${today}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success("Stock CSV downloaded.");
+    } catch (error) {
+      console.error("Failed to download stock CSV:", error);
+      toast.error("Failed to generate stock CSV.");
+    } finally {
+      setDownloadingStockCsv(false);
+    }
+  }, [combinedStockRows, dealerSlug, formatAud, getRowItems]);
 
   const clearFilters = useCallback(() => {
     setFilters({
@@ -742,10 +896,16 @@ function OrderList({
                 Clear Filters
               </Button>
               {dealerSlug && (
-                <Button variant="outline" onClick={handleDownloadStockPdf} disabled={downloadingStockPdf}>
-                  <FileDown className="w-4 h-4 mr-2" />
-                  {downloadingStockPdf ? "Building PDF..." : `Download Stock PDF (${combinedStockRows.length})`}
-                </Button>
+                <>
+                  <Button variant="outline" onClick={handleDownloadStockPdf} disabled={downloadingStockPdf}>
+                    <FileDown className="w-4 h-4 mr-2" />
+                    {downloadingStockPdf ? "Building PDF..." : `Download Stock PDF (${combinedStockRows.length})`}
+                  </Button>
+                  <Button variant="outline" onClick={handleDownloadStockCsv} disabled={downloadingStockCsv}>
+                    <FileDown className="w-4 h-4 mr-2" />
+                    {downloadingStockCsv ? "Building CSV..." : `Download Stock CSV (${combinedStockRows.length})`}
+                  </Button>
+                </>
               )}
             </div>
           </div>
