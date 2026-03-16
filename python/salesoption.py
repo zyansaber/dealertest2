@@ -1371,11 +1371,6 @@ def main():
         log.info(
             "[dry-run] 仅统计，不写 Firebase：pgirecord=%d, yardstock(special)=%d, handover(依据PGI门店)=%d, schedulingvanoptions=%d",
             len(df_pgirecord), len(df_yard_special), len(df_special_pgi_orders), len(df_scheduling_van_options)
-    # ------- dry-run -------
-    if args.dry_run:
-        log.info(
-            "[dry-run] 仅统计，不写 Firebase：pgirecord=%d, yardstock(special)=%d, handover(依据PGI门店)=%d",
-            len(df_pgirecord), len(df_yard_special), len(df_special_pgi_orders)
         )
         return
 
