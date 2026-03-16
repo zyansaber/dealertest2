@@ -503,49 +503,6 @@ def fetch_vin_map_for_chassis(chassis_list: List[str]) -> pd.DataFrame:
     df["vin_number"] = df["vin_number"].astype("string").str.strip()
     return df.drop_duplicates("SERNR", keep="last").reset_index(drop=True)
 
-def fetch_salesorder_by_chassis(chassis_list: List[str]) -> pd.DataFrame:
-    """
-    通过 chassis(SERNR) 反查销售订单，仅保留销售组织 3120 / 3140。
-    """
-    chs = [c for c in pd.unique(pd.Series(chassis_list).dropna().astype(str).str.strip()) if c]
-    if not chs:
-        return pd.DataFrame(columns=["chassis", "salesOrder"])
-
-    all_rows = []
-    for batch in _chunked(chs, 900):
-        in_list = _sql_list(batch)
-        sql = f'''
-        WITH so_by_chassis AS (
-            SELECT
-                obj."SERNR"   AS "chassis",
-                s."SDAUFNR"   AS "salesOrder",
-                vbak."VKORG"  AS "salesOrg",
-                ROW_NUMBER() OVER (
-                    PARTITION BY obj."SERNR"
-                    ORDER BY s."SDAUFNR" DESC
-                ) AS rn
-            FROM "SAPHANADB"."SER02" s
-            JOIN "SAPHANADB"."OBJK" obj
-              ON s."OBKNR" = obj."OBKNR"
-            JOIN "SAPHANADB"."VBAK" vbak
-              ON vbak."VBELN" = s."SDAUFNR"
-            WHERE s."POSNR" = '000010'
-              AND vbak."VKORG" IN ('3120', '3140')
-              AND obj."SERNR" IN {in_list}
-        )
-        SELECT "chassis", "salesOrder"
-        FROM so_by_chassis
-        WHERE rn = 1
-        '''
-        all_rows.append(hana_query(sql))
-
-    df = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame(columns=["chassis", "salesOrder"])
-    if df.empty:
-        return pd.DataFrame(columns=["chassis", "salesOrder"])
-
-    df["chassis"] = df["chassis"].astype(str).str.strip()
-    df["salesOrder"] = df["salesOrder"].astype("string").str.strip()
-    return df.drop_duplicates("chassis", keep="last").reset_index(drop=True)
 # ---------- Bill-to ----------
 def fetch_billto_name_map(vbelns: List[str]) -> pd.DataFrame:
     vbelns = [v for v in pd.unique(pd.Series(vbelns).dropna().astype(str)) if v]
@@ -742,91 +699,6 @@ def build_so_retail_payload(df_so_items: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
-
-def _normalize_schedule_rows(raw: Any) -> List[Dict[str, Any]]:
-    if raw is None:
-        return []
-    if isinstance(raw, list):
-        return [x for x in raw if isinstance(x, dict)]
-    if not isinstance(raw, dict):
-        return []
-
-    if isinstance(raw.get("data"), list):
-        return [x for x in raw.get("data") if isinstance(x, dict)]
-
-    rows: List[Dict[str, Any]] = []
-    for _, v in raw.items():
-        if not isinstance(v, dict):
-            continue
-        if isinstance(v.get("data"), list):
-            rows.extend([x for x in v.get("data") if isinstance(x, dict)])
-        elif any(k in v for k in ["Chassis", "Dealer", "Regent Production"]):
-            rows.append(v)
-    return rows
-
-def build_schedulingvanoptions_df(df_schedule: pd.DataFrame, df_pgirecord: pd.DataFrame, df_chassis_so: pd.DataFrame) -> pd.DataFrame:
-    if df_schedule is None or df_schedule.empty:
-        return pd.DataFrame(columns=[
-            "chassis", "salesOrder", "dealer", "model", "customer",
-            "from_pgidate", "receivedAt", "wholesalepo", "vin_number",
-            "newVans", "secondVans", "retailsaleprice", "discount", "items"
-        ])
-
-    s = df_schedule.copy()
-    for c in ["Dealer", "Regent Production", "Chassis"]:
-        if c not in s.columns:
-            s[c] = None
-
-    s["Dealer"] = s["Dealer"].astype(str).str.strip()
-    s = s[s["Dealer"].isin(SPECIAL_DEALERS)].copy()
-    s["rp"] = s["Regent Production"].astype(str).str.strip().str.lower()
-    s = s[~s["rp"].isin({"finished", "finish"})].copy()
-
-    s["chassis"] = s["Chassis"].astype(str).str.replace(r"[-\s]", "", regex=True).str.strip()
-    s = s[s["chassis"].astype(bool)].copy()
-
-    pgi = df_pgirecord.copy()
-    for c in ["chassis", "pgidate", "wholesalepo", "vin_number"]:
-        if c not in pgi.columns:
-            pgi[c] = None
-    pgi = pgi[["chassis", "pgidate", "wholesalepo", "vin_number"]].rename(
-        columns={"pgidate": "from_pgidate"}
-    )
-
-    so_map = df_chassis_so.copy() if df_chassis_so is not None else pd.DataFrame(columns=["chassis", "salesOrder"])
-    for c in ["chassis", "salesOrder"]:
-        if c not in so_map.columns:
-            so_map[c] = None
-    so_map["chassis"] = so_map["chassis"].astype(str).str.strip()
-    so_map = so_map[["chassis", "salesOrder"]].drop_duplicates("chassis", keep="last")
-
-    s = s.merge(pgi, how="left", on="chassis")
-    s = s.merge(so_map, how="left", on="chassis")
-
-    customer_col = s.get("Customer")
-    if customer_col is None:
-        customer_col = pd.Series([None] * len(s), index=s.index)
-
-    order_received_col = s.get("Order Received Date")
-    if order_received_col is None:
-        order_received_col = pd.Series([None] * len(s), index=s.index)
-
-    out = pd.DataFrame({
-        "chassis": s["chassis"],
-        "salesOrder": s["salesOrder"].astype("string").str.strip(),
-        "dealer": s["Dealer"].astype(str),
-        "model": s.get("Model"),
-        "customer": customer_col.fillna("Stock").astype(str),
-        "from_pgidate": s["from_pgidate"].apply(lambda x: x if pd.notna(x) else None),
-        "receivedAt": order_received_col.apply(to_iso_utc_z),
-        "wholesalepo": s["wholesalepo"].apply(lambda v: None if pd.isna(v) else float(v)),
-        "vin_number": s["vin_number"].astype("string"),
-        "newVans": None,
-        "secondVans": None,
-    })
-
-    out = out.drop_duplicates(subset=["chassis"], keep="last").reset_index(drop=True)
-    return out
 
 # ---------- builders ----------
 def build_pgirecord_df(ser_pgi: pd.DataFrame, orderlist: pd.DataFrame) -> pd.DataFrame:
@@ -1216,54 +1088,6 @@ def write_handover_special_dealers_only(df: pd.DataFrame, allowed_dealers: Set[s
 
     return total
 
-def write_schedulingvanoptions_special_dealers_only(df: pd.DataFrame, allowed_dealers: Set[str]) -> int:
-    if df is None or df.empty:
-        for dealer in sorted(allowed_dealers):
-            slug = dealer_key_slug(dealer)
-            db.reference(f"schedulingvanoptions/{slug}").set({})
-        return 0
-
-    df2 = df.copy()
-    df2["dealer"] = df2["dealer"].astype(str).str.strip()
-
-    total = 0
-    for dealer in sorted(allowed_dealers):
-        slug = dealer_key_slug(dealer)
-        if not slug:
-            continue
-
-        sub: Dict[str, Any] = {}
-        part = df2[df2["dealer"] == dealer]
-        for _, r in part.iterrows():
-            chassis = sanitize_fb_key((r.get("chassis") or "").strip())
-            if not chassis:
-                continue
-
-            items_payload = r.get("items")
-            if not isinstance(items_payload, dict):
-                items_payload = {}
-
-            sub[chassis] = {
-                "customer":        None if pd.isna(r.get("customer")) else str(r.get("customer")),
-                "dealer":          dealer,
-                "from_pgidate":    r.get("from_pgidate") if pd.notna(r.get("from_pgidate")) else None,
-                "model":           None if pd.isna(r.get("model")) else str(r.get("model")),
-                "newVans":         None if pd.isna(r.get("newVans")) else r.get("newVans"),
-                "receivedAt":      r.get("receivedAt") if pd.notna(r.get("receivedAt")) else None,
-                "secondVans":      None if pd.isna(r.get("secondVans")) else r.get("secondVans"),
-                "vinNumber":       None if pd.isna(r.get("vin_number")) else str(r.get("vin_number")),
-                "wholesalepo":     None if pd.isna(r.get("wholesalepo")) else float(r.get("wholesalepo")),
-                "retailsaleprice": None if pd.isna(r.get("retailsaleprice")) else float(r.get("retailsaleprice")),
-                "discount":        None if pd.isna(r.get("discount")) else float(r.get("discount")),
-                "items":           items_payload,
-                "salesOrder":      None if pd.isna(r.get("salesOrder")) else str(r.get("salesOrder")),
-            }
-
-        db.reference(f"schedulingvanoptions/{slug}").set(sub)
-        total += len(sub)
-
-    return total
-
 # ---------- main ----------
 def main():
     args = parse_args()
@@ -1547,6 +1371,11 @@ def main():
         log.info(
             "[dry-run] 仅统计，不写 Firebase：pgirecord=%d, yardstock(special)=%d, handover(依据PGI门店)=%d, schedulingvanoptions=%d",
             len(df_pgirecord), len(df_yard_special), len(df_special_pgi_orders), len(df_scheduling_van_options)
+    # ------- dry-run -------
+    if args.dry_run:
+        log.info(
+            "[dry-run] 仅统计，不写 Firebase：pgirecord=%d, yardstock(special)=%d, handover(依据PGI门店)=%d",
+            len(df_pgirecord), len(df_yard_special), len(df_special_pgi_orders)
         )
         return
 
