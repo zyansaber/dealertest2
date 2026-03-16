@@ -349,7 +349,12 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [trendMode, setTrendMode] = useState<"week" | "month">("week");
+  const [ratioMode, setRatioMode] = useState<"monthly" | "accumulated">("monthly");
   const [overviewMode, setOverviewMode] = useState<"customer" | "group" | "modelRange">("customer");
+  const ratioDataKey = ratioMode === "monthly" ? "customerPct" : "customerPctAcc";
+  const srcRatioDataKey = ratioMode === "monthly" ? "srcPct" : "srcPctAcc";
+  const srhRatioDataKey = ratioMode === "monthly" ? "srhPct" : "srhPctAcc";
+  const ratioLegendSuffix = ratioMode === "monthly" ? "Month" : "Acc";
   const groupRatioEntries = [
     { key: "overall", label: "Overall" },
     { key: "factory", label: "FACTORY DEALER" },
@@ -932,6 +937,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       dispatched: 0,
       total: 0,
       customerPct: 0,
+      customerPctAcc: 0,
     }));
 
     const addToBucket = (date: Date | null, type: "stock" | "customer" | "dispatched") => {
@@ -968,8 +974,9 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, customerPct };
+      const customerPctAcc = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      const customerPct = bucketTotal ? (bucket.customer / bucketTotal) * 100 : 0;
+      return { ...bucket, customerPct, customerPctAcc };
     });
   }, [dealerOrders, dealerCampervanSchedule, planningBuckets]);
 
@@ -994,6 +1001,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         customer: 0,
         total: 0,
         customerPct: 0,
+        customerPctAcc: 0,
       };
     });
 
@@ -1034,8 +1042,9 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, customerPct };
+      const customerPctAcc = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      const customerPct = bucketTotal ? (bucket.customer / bucketTotal) * 100 : 0;
+      return { ...bucket, customerPct, customerPctAcc };
     });
   }, [dealerCampervanSchedule, dealerOrdersAll, today]);
 
@@ -1051,6 +1060,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         customer: 0,
         total: 0,
         customerPct: 0,
+        customerPctAcc: 0,
       };
     });
 
@@ -1082,8 +1092,9 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, customerPct };
+      const customerPctAcc = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      const customerPct = bucketTotal ? (bucket.customer / bucketTotal) * 100 : 0;
+      return { ...bucket, customerPct, customerPctAcc };
     });
   }, [orderReceivedYearOrders, selectedYear]);
 
@@ -1101,6 +1112,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         total: 0,
         srcPct: 0,
         srhPct: 0,
+        srcPctAcc: 0,
+        srhPctAcc: 0,
       };
       MODEL_RANGE_KEYS.forEach((key) => {
         row[key] = 0;
@@ -1138,8 +1151,10 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       runningSrh += Number(bucket.SRH) || 0;
       return {
         ...bucket,
-        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
-        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+        srcPct: bucketTotal ? ((Number(bucket.SRC) || 0) / bucketTotal) * 100 : 0,
+        srhPct: bucketTotal ? ((Number(bucket.SRH) || 0) / bucketTotal) * 100 : 0,
+        srcPctAcc: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPctAcc: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
       };
     });
   }, [dealerCampervanSchedule, dealerOrders, planningBuckets]);
@@ -1163,6 +1178,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         total: 0,
         srcPct: 0,
         srhPct: 0,
+        srcPctAcc: 0,
+        srhPctAcc: 0,
       };
       MODEL_RANGE_KEYS.forEach((key) => {
         row[key] = 0;
@@ -1197,8 +1214,10 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       runningSrh += Number(bucket.SRH) || 0;
       return {
         ...bucket,
-        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
-        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+        srcPct: bucketTotal ? ((Number(bucket.SRC) || 0) / bucketTotal) * 100 : 0,
+        srhPct: bucketTotal ? ((Number(bucket.SRH) || 0) / bucketTotal) * 100 : 0,
+        srcPctAcc: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPctAcc: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
       };
     });
   }, [dealerCampervanSchedule, dealerOrdersAll, today]);
@@ -1214,6 +1233,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         total: 0,
         srcPct: 0,
         srhPct: 0,
+        srcPctAcc: 0,
+        srhPctAcc: 0,
       };
       MODEL_RANGE_KEYS.forEach((key) => {
         row[key] = 0;
@@ -1248,8 +1269,10 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       runningSrh += Number(bucket.SRH) || 0;
       return {
         ...bucket,
-        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
-        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+        srcPct: bucketTotal ? ((Number(bucket.SRC) || 0) / bucketTotal) * 100 : 0,
+        srhPct: bucketTotal ? ((Number(bucket.SRH) || 0) / bucketTotal) * 100 : 0,
+        srcPctAcc: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPctAcc: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
       };
     });
   }, [orderReceivedYearOrders, selectedYear]);
@@ -3073,9 +3096,35 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
           <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Forecast Delivery Volume (+{FORECAST_DELIVERY_OFFSET_DAYS} days)</CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle>Forecast Delivery Volume (+{FORECAST_DELIVERY_OFFSET_DAYS} days)</CardTitle>
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setRatioMode("monthly")}
+                    className={`rounded-full border px-3 py-1 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
+                      ratioMode === "monthly"
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    }`}
+                  >
+                    Monthly %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRatioMode("accumulated")}
+                    className={`rounded-full border px-3 py-1 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
+                      ratioMode === "accumulated"
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    }`}
+                  >
+                    Accumulated %
+                  </button>
+                </div>
+              </div>
               <p className="text-sm text-muted-foreground">
-                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
+                Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH monthly or accumulated ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
               </p>
               </CardHeader>
               <CardContent>
@@ -3094,14 +3143,14 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                             ...Object.fromEntries(
                               MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
                             ),
-                            srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
-                            srhPct: { label: "SRH % (Acc)", color: "#15803d" },
+                            srcPct: { label: `SRC % (${ratioLegendSuffix})`, color: "#0891b2" },
+                            srhPct: { label: `SRH % (${ratioLegendSuffix})`, color: "#15803d" },
                           }
                         : {
                           stock: { label: "Stock", color: "#3b82f6" },
                           customer: { label: "Customer", color: "#10b981" },
                           dispatched: { label: "Dispatched", color: "#94a3b8" },
-                          customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
+                          customerPct: { label: `Customer % (${ratioLegendSuffix})`, color: "#16a34a" },
                         }
                   }
                   className="h-80"
@@ -3152,8 +3201,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                             {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
                           </Bar>
                         ))}
-                        <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+                        <Line type="monotone" dataKey={srcRatioDataKey} stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+                        <Line type="monotone" dataKey={srhRatioDataKey} stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
                       </>
                     ) : (
                       <>
@@ -3164,7 +3213,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                         </Bar>
                         <Line
                           type="monotone"
-                          dataKey="customerPct"
+                          dataKey={ratioDataKey}
                           stroke="var(--color-customerPct)"
                           yAxisId="pct"
                           strokeWidth={2}
@@ -3172,7 +3221,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                           activeDot={{ r: 4 }}
                         >
                           <LabelList
-                            dataKey="customerPct"
+                            dataKey={ratioDataKey}
                             position="top"
                             formatter={(value: number) => `${value.toFixed(1)}%`}
                           />
@@ -3191,7 +3240,29 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                     <TrendingUp className="h-4 w-4 text-slate-500" />
                     Order Received Trend
                   </CardTitle>
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <div className="flex flex-wrap items-center justify-end gap-2 text-xs font-semibold text-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setRatioMode("monthly")}
+                      className={`rounded-full border px-3 py-1 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
+                        ratioMode === "monthly"
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      Monthly %
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRatioMode("accumulated")}
+                      className={`rounded-full border px-3 py-1 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
+                        ratioMode === "accumulated"
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      Accumulated %
+                    </button>
                     <button
                       type="button"
                       onClick={() => setTrendMode("week")}
@@ -3220,7 +3291,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                   {overviewMode === "group"
                     ? "Weekly or monthly order volume stacked by dealer group."
                     : overviewMode === "modelRange"
-                      ? "Weekly or monthly order volume stacked by model range with SRC/SRH cumulative ratio trend."
+                      ? "Weekly or monthly order volume stacked by model range with SRC/SRH monthly or accumulated ratio trend."
                       : "Weekly or monthly order volume split by customer vs stock."}
                 </p>
               </CardHeader>
@@ -3240,13 +3311,13 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                             ...Object.fromEntries(
                               MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
                             ),
-                            srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
-                            srhPct: { label: "SRH % (Acc)", color: "#15803d" },
+                            srcPct: { label: `SRC % (${ratioLegendSuffix})`, color: "#0891b2" },
+                            srhPct: { label: `SRH % (${ratioLegendSuffix})`, color: "#15803d" },
                           }
                         : {
                           stock: { label: "Stock", color: "#3b82f6" },
                           customer: { label: "Customer", color: "#10b981" },
-                          customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
+                          customerPct: { label: `Customer % (${ratioLegendSuffix})`, color: "#16a34a" },
                         }
                   }
                   className="h-80"
@@ -3309,8 +3380,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                             {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
                           </Bar>
                         ))}
-                        <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+                        <Line type="monotone" dataKey={srcRatioDataKey} stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+                        <Line type="monotone" dataKey={srhRatioDataKey} stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
                       </>
                     ) : (
                       <>
@@ -3320,7 +3391,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                         </Bar>
                         <Line
                           type="monotone"
-                          dataKey="customerPct"
+                          dataKey={ratioDataKey}
                           stroke="var(--color-customerPct)"
                           yAxisId="pct"
                           strokeWidth={2}
@@ -3328,7 +3399,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                           activeDot={{ r: 4 }}
                         >
                           <LabelList
-                            dataKey="customerPct"
+                            dataKey={ratioDataKey}
                             position="top"
                             formatter={(value: number) => `${value.toFixed(1)}%`}
                           />
