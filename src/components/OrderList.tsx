@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Search, Filter, Calendar, User, LogOut } from "lucide-react";
+import { Search, Filter, Calendar, User, LogOut, FileDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,6 +18,8 @@ import {
   clearDeliveryToAssignment,
   sortOrders,
   subscribeToCampervanSchedule,
+  subscribeToYardStock,
+  subscribeToSchedulingVanOptions,
 } from "@/lib/firebase";
 import { formatDateDDMMYYYY } from "@/lib/firebase";
 import type { ScheduleItem, SpecPlan, DateTrack, FilterOptions, CampervanScheduleItem } from "@/types";
@@ -31,6 +33,60 @@ interface OrderListProps {
   deliveryToEnabled?: boolean;
   deliveryToOptions?: string[];
 }
+
+interface CombinedStockRow {
+  chassis: string;
+  source: "orderlist" | "yardinventory";
+  dealer?: string;
+  customer?: string;
+  model?: string;
+  salesOrder?: string;
+  forecastMelbourneFactoryStartDate?: string;
+  status?: string;
+  retailsaleprice?: number | null;
+  discount?: number | null;
+  items?: Record<string, any>;
+}
+
+declare global {
+  interface Window {
+    jspdf?: any;
+    jsPDF?: any;
+  }
+}
+
+const loadScript = (src: string) =>
+  new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
+    if (existing) {
+      if (existing.dataset.loaded === "1") {
+        resolve();
+        return;
+      }
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load script: ${src}`)), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => {
+      script.dataset.loaded = "1";
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    document.body.appendChild(script);
+  });
+
+const ensureJsPdf = async () => {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  if (window.jsPDF) return window.jsPDF;
+  await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  if (window.jsPDF) return window.jsPDF;
+  throw new Error("jsPDF not available after loading");
+};
 
 function OrderList({
   selectedDealer,
@@ -49,6 +105,9 @@ function OrderList({
   const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
   const [deliveryToAssignments, setDeliveryToAssignments] = useState<Record<string, any>>({});
+  const [yardStockMap, setYardStockMap] = useState<Record<string, any>>({});
+  const [schedulingVanOptionsMap, setSchedulingVanOptionsMap] = useState<Record<string, any>>({});
+  const [downloadingStockPdf, setDownloadingStockPdf] = useState(false);
   const [activeTab, setActiveTab] = useState<"caravan" | "vehicles">("caravan");
   const [vehicleSearchTerm, setVehicleSearchTerm] = useState("");
   const [filters, setFilters] = useState<FilterOptions>({
@@ -128,6 +187,26 @@ function OrderList({
       unsubscribe?.();
     };
   }, [showVehiclesTab]);
+
+  useEffect(() => {
+    if (!dealerSlug) {
+      setYardStockMap({});
+      setSchedulingVanOptionsMap({});
+      return;
+    }
+
+    const unsubYard = subscribeToYardStock(dealerSlug, (data) => {
+      setYardStockMap(data || {});
+    });
+    const unsubScheduling = subscribeToSchedulingVanOptions(dealerSlug, (data) => {
+      setSchedulingVanOptionsMap(data || {});
+    });
+
+    return () => {
+      unsubYard?.();
+      unsubScheduling?.();
+    };
+  }, [dealerSlug]);
 
   useEffect(() => {
     if (!deliveryToEnabled) {
@@ -391,6 +470,136 @@ function OrderList({
     return formatDateFromDate(shouldUseMinDate ? minForecastDate : forecastDate);
   }, [addDays, formatDateFromDate, parseFlexibleDate]);
 
+  const combinedStockRows = useMemo<CombinedStockRow[]>(() => {
+    const normalizeChassis = (value?: string) => String(value || "").replace(/[-\s]/g, "").trim().toUpperCase();
+    const isStockType = (customer?: string, type?: string) => {
+      const c = String(customer || "").toLowerCase();
+      const t = String(type || "").toLowerCase();
+      return c.endsWith("stock") || t === "stock";
+    };
+
+    const merged = new Map<string, CombinedStockRow>();
+
+    dealerOrders.forEach((order) => {
+      const rp = String(order["Regent Production"] || "").trim().toLowerCase();
+      if (rp === "finished" || rp === "finish") return;
+      if (!isStockType(order.Customer)) return;
+      const ch = normalizeChassis(order.Chassis);
+      if (!ch) return;
+      const extra = schedulingVanOptionsMap?.[ch] || schedulingVanOptionsMap?.[order.Chassis] || {};
+      merged.set(ch, {
+        chassis: ch,
+        source: "orderlist",
+        dealer: order.Dealer,
+        customer: order.Customer,
+        model: order.Model,
+        salesOrder: extra?.salesOrder,
+        forecastMelbourneFactoryStartDate: getDisplayForecastProductionDate(order),
+        status: order["Regent Production"] || "-",
+        retailsaleprice: typeof extra?.retailsaleprice === "number" ? extra.retailsaleprice : null,
+        discount: typeof extra?.discount === "number" ? extra.discount : null,
+        items: extra?.items && typeof extra.items === "object" ? extra.items : {},
+      });
+    });
+
+    Object.entries(yardStockMap || {}).forEach(([key, payload]: [string, any]) => {
+      const ch = normalizeChassis(key || payload?.chassis || payload?.vinNumber);
+      if (!ch) return;
+      if (!isStockType(payload?.customer, payload?.type)) return;
+      const prev = merged.get(ch);
+      merged.set(ch, {
+        chassis: ch,
+        source: "yardinventory",
+        dealer: payload?.dealer || prev?.dealer,
+        customer: payload?.customer || prev?.customer,
+        model: payload?.model || prev?.model,
+        salesOrder: payload?.salesOrder || prev?.salesOrder,
+        forecastMelbourneFactoryStartDate: payload?.forecastMelbourneFactoryStartDate || prev?.forecastMelbourneFactoryStartDate,
+        status: payload?.status || prev?.status,
+        retailsaleprice: typeof payload?.retailsaleprice === "number" ? payload.retailsaleprice : prev?.retailsaleprice ?? null,
+        discount: typeof payload?.discount === "number" ? payload.discount : prev?.discount ?? null,
+        items: payload?.items && typeof payload.items === "object" ? payload.items : prev?.items || {},
+      });
+    });
+
+    return Array.from(merged.values()).sort((a, b) => a.chassis.localeCompare(b.chassis));
+  }, [dealerOrders, getDisplayForecastProductionDate, schedulingVanOptionsMap, yardStockMap]);
+
+  const handleDownloadStockPdf = useCallback(async () => {
+    try {
+      if (combinedStockRows.length === 0) {
+        toast.error("No stock vehicles to download.");
+        return;
+      }
+
+      setDownloadingStockPdf(true);
+      const JsPDF = await ensureJsPdf();
+      const doc = new JsPDF("p", "pt", "a4");
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const lineHeight = 14;
+      const maxTextWidth = pageWidth - margin * 2;
+
+      let y = margin;
+      const ensureSpace = (need: number) => {
+        if (y + need <= pageHeight - margin) return;
+        doc.addPage();
+        y = margin;
+      };
+      const writeLine = (text: string, options?: { bold?: boolean; indent?: number; size?: number }) => {
+        const indent = options?.indent ?? 0;
+        doc.setFont("helvetica", options?.bold ? "bold" : "normal");
+        doc.setFontSize(options?.size ?? 10);
+        const wrapped = doc.splitTextToSize(text, maxTextWidth - indent);
+        ensureSpace(wrapped.length * lineHeight + 2);
+        doc.text(wrapped, margin + indent, y);
+        y += wrapped.length * lineHeight;
+      };
+
+      writeLine("Stock Vehicles (Orderlist + Yard Inventory)", { bold: true, size: 14 });
+      writeLine(`Total units: ${combinedStockRows.length}`, { size: 10 });
+      y += 6;
+
+      combinedStockRows.forEach((row, index) => {
+        ensureSpace(120);
+        doc.setDrawColor(220);
+        doc.line(margin, y, pageWidth - margin, y);
+        y += 10;
+
+        writeLine(`${index + 1}. ${row.chassis}`, { bold: true, size: 11 });
+        writeLine(`Source: ${row.source}    Dealer: ${row.dealer || "-"}    Customer: ${row.customer || "-"}`);
+        writeLine(`Model: ${row.model || "-"}    Sales Order: ${row.salesOrder || "-"}`);
+        writeLine(`Forecast Melbourne Factory Start Date: ${row.forecastMelbourneFactoryStartDate || "-"}`);
+        writeLine(`Status: ${row.status || "-"}`);
+        writeLine(`Retail Sale Price (incl GST): ${row.retailsaleprice ?? "-"}    Discount (incl GST): ${row.discount ?? "-"}`);
+        writeLine("Items:", { bold: true });
+
+        const items = row.items && typeof row.items === "object" ? Object.values(row.items) : [];
+        if (items.length === 0) {
+          writeLine("- (no items)", { indent: 12 });
+        } else {
+          items.forEach((item: any, itemIdx) => {
+            writeLine(
+              `${itemIdx + 1}) itemNo=${item?.itemNo || "-"}, materialCode=${item?.materialCode || "-"}, description=${item?.description || "-"}, price=${item?.price ?? "-"}`,
+              { indent: 12 },
+            );
+          });
+        }
+        y += 6;
+      });
+
+      const today = new Date().toISOString().slice(0, 10);
+      doc.save(`stock_combined_${dealerSlug || "dealer"}_${today}.pdf`);
+      toast.success("Stock PDF downloaded.");
+    } catch (error) {
+      console.error("Failed to download stock PDF:", error);
+      toast.error("Failed to generate stock PDF.");
+    } finally {
+      setDownloadingStockPdf(false);
+    }
+  }, [combinedStockRows, dealerSlug]);
+
   const clearFilters = useCallback(() => {
     setFilters({
       model: "",
@@ -532,6 +741,12 @@ function OrderList({
               <Button variant="outline" onClick={clearFilters}>
                 Clear Filters
               </Button>
+              {dealerSlug && (
+                <Button variant="outline" onClick={handleDownloadStockPdf} disabled={downloadingStockPdf}>
+                  <FileDown className="w-4 h-4 mr-2" />
+                  {downloadingStockPdf ? "Building PDF..." : `Download Stock PDF (${combinedStockRows.length})`}
+                </Button>
+              )}
             </div>
           </div>
         )}

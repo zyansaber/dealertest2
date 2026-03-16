@@ -27,6 +27,9 @@ Rebuild Firebase to legacy paths & format
         }
    - 保留已有字段：
      customer, dealer, from_pgidate, model, newVans, receivedAt, secondVans, vinNumber, wholesalepo
+9) 新增写入 /schedulingvanoptions/{dealer}/{chassis}：
+   - 数据来源：/schedule 中 5 个门店且 Regent Production 非 finished/finish
+   - 字段：沿用 yardstock 字段 + salesOrder/retailsaleprice/discount/items
 """
 
 from __future__ import annotations
@@ -1321,6 +1324,53 @@ def main():
         df_special_pgi_orders["materialCode"] = None
         df_special_pgi_orders["invoiceNumber"] = None
 
+    # ------- schedulingvanoptions -------
+    try:
+        if not args.skip_hana:
+            firebase_init()
+            schedule_raw = db.reference("schedule").get()
+            schedule_rows = _normalize_schedule_rows(schedule_raw)
+            df_schedule = pd.DataFrame(schedule_rows)
+        else:
+            df_schedule = pd.DataFrame()
+
+        chassis_for_lookup = df_schedule.get("Chassis", pd.Series(dtype="string")).dropna().astype(str).str.replace(r"[-\s]", "", regex=True).tolist()
+        df_chassis_so = fetch_salesorder_by_chassis(chassis_for_lookup)
+        df_scheduling_van_options = build_schedulingvanoptions_df(df_schedule, df_pgirecord, df_chassis_so)
+
+        if not args.skip_hana and not df_scheduling_van_options.empty and "salesOrder" in df_scheduling_van_options.columns:
+            so_list = df_scheduling_van_options["salesOrder"].dropna().astype(str).str.strip()
+            so_list = [x for x in so_list.tolist() if x]
+            df_so_items_scheduling = fetch_salesorder_items_retail_discount(so_list)
+            df_so_payload_scheduling = build_so_retail_payload(df_so_items_scheduling)
+            if not df_so_payload_scheduling.empty:
+                df_scheduling_van_options = df_scheduling_van_options.merge(
+                    df_so_payload_scheduling,
+                    how="left",
+                    left_on="salesOrder",
+                    right_on="salesOrder",
+                )
+            else:
+                df_scheduling_van_options["retailsaleprice"] = None
+                df_scheduling_van_options["discount"] = None
+                df_scheduling_van_options["items"] = None
+        else:
+            df_scheduling_van_options["retailsaleprice"] = None
+            df_scheduling_van_options["discount"] = None
+            df_scheduling_van_options["items"] = None
+    except Exception as e:
+        log.error("构建 schedulingvanoptions 失败：%s（以空表继续）", e)
+        df_scheduling_van_options = pd.DataFrame(columns=[
+            "chassis", "salesOrder", "dealer", "model", "customer",
+            "from_pgidate", "receivedAt", "wholesalepo", "vin_number",
+            "newVans", "secondVans", "retailsaleprice", "discount", "items"
+        ])
+
+    # ------- dry-run -------
+    if args.dry_run:
+        log.info(
+            "[dry-run] 仅统计，不写 Firebase：pgirecord=%d, yardstock(special)=%d, handover(依据PGI门店)=%d, schedulingvanoptions=%d",
+            len(df_pgirecord), len(df_yard_special), len(df_special_pgi_orders), len(df_scheduling_van_options)
     # ------- dry-run -------
     if args.dry_run:
         log.info(
@@ -1338,6 +1388,10 @@ def main():
     log.info("⬆️ 更新 /yardstock（仅 5 门店；不影响其它 dealer） ...")
     n2 = write_yardstock_special_dealers_only(df_yard_special, allowed_dealers=SPECIAL_DEALERS)
     log.info("✅ /yardstock（special dealers）写入 %d 条", n2)
+
+    log.info("⬆️ 更新 /schedulingvanoptions（仅 5 门店；不影响其它 dealer） ...")
+    n4 = write_schedulingvanoptions_special_dealers_only(df_scheduling_van_options, allowed_dealers=SPECIAL_DEALERS)
+    log.info("✅ /schedulingvanoptions（special dealers）写入 %d 条", n4)
 
     try:
         df_handover = build_handover_records(df_special_pgi_orders, df_stock, ol)
