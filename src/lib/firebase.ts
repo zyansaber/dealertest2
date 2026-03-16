@@ -1160,6 +1160,17 @@ export function subscribeToYardStock(
   return () => off(r, "value", handler);
 }
 
+export function subscribeToSchedulingVanOptions(
+  dealerSlug: string,
+  cb: (value: Record<string, any>) => void,
+) {
+  const r = ref(database, `schedulingvanoptions/${dealerSlug}`);
+  const handler = (snap: DataSnapshot) =>
+    cb(snap?.exists() ? (snap.val() ?? {}) : {});
+  onValue(r, handler);
+  return () => off(r, "value", handler);
+}
+
 export function subscribeToYardStockAll(
   cb: (value: Record<string, Record<string, any>>) => void,
 ) {
