@@ -129,7 +129,7 @@ export default function PlanningIntegration() {
             path="/target"
             element={<TargetPage monthsForTargetInput={data.monthsForTargetInput} monthsForDiff={data.monthsForDiff} targets={data.targets} saveSharedTarget={data.saveSharedTarget} monthlyActuals={data.monthlyActuals} currentMonthLabel={data.currentMonthLabel} currentMonthActuals={data.currentMonthActuals} lang={lang} />}
           />
-          <Route path="/report" element={<ReportPage trend={data.trend} granularity={reportGranularity} setGranularity={setReportGranularity} lang={lang} />} />
+          <Route path="/report" element={<ReportPage trend={data.trend} rows={data.rows} granularity={reportGranularity} setGranularity={setReportGranularity} lang={lang} />} />
           <Route path="*" element={<Navigate to="/planningintegration" replace />} />
         </Routes>
       </main>
