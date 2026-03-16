@@ -1487,6 +1487,10 @@ def main():
             df_so_payload = build_so_retail_payload(df_so_items)
 
             if not df_so_payload.empty:
+                # 避免与占位列 merge 后生成 *_x/*_y，导致写库读不到目标字段
+                df_yard_special = df_yard_special.drop(columns=[
+                    "retailsaleprice", "discount", "items"
+                ], errors="ignore")
                 df_yard_special = df_yard_special.merge(
                     df_so_payload,
                     how="left",
@@ -1575,6 +1579,10 @@ def main():
             df_so_items_scheduling = fetch_salesorder_items_retail_discount(so_list)
             df_so_payload_scheduling = build_so_retail_payload(df_so_items_scheduling)
             if not df_so_payload_scheduling.empty:
+                # 避免与占位列 merge 后生成 *_x/*_y，导致 salesOrder/price/discount/items 丢失
+                df_scheduling_van_options = df_scheduling_van_options.drop(columns=[
+                    "retailsaleprice", "discount", "items"
+                ], errors="ignore")
                 df_scheduling_van_options = df_scheduling_van_options.merge(
                     df_so_payload_scheduling,
                     how="left",
