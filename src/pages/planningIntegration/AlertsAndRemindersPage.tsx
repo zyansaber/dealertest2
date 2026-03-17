@@ -25,10 +25,18 @@ type DelayReasonMap = Record<string, string>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const alertRules: AlertRule[] = [
+const defaultAlertRules: AlertRule[] = [
   { id: "po-to-chassis", titleEn: "Longtree Not Started >90 days", titleZh: "Longtree 未开始超过90天", statusEn: "Not Start in Longtree", currentKey: "Purchase Order Sent", nextKey: "chassisWelding", thresholdDays: 90 },
   { id: "chassis-to-assembly", titleEn: "Longtree Chassis Welding >30 days", titleZh: "Longtree 底盘焊接超过30天", statusEn: "Chassis welding in Longtree", currentKey: "chassisWelding", nextKey: "assemblyLine", thresholdDays: 30 },
   { id: "assembly-to-fg", titleEn: "Longtree Assembly Line >25 days", titleZh: "Longtree 总装线超过25天", statusEn: "Assembly line Longtree", currentKey: "assemblyLine", nextKey: "finishGoods", thresholdDays: 25 },
+  { id: "fg-to-leaving", titleEn: "Longtree Finished, not left factory >7 days", titleZh: "Longtree 已完工未出厂超过7天", statusEn: "Finishedin Longtree", currentKey: "finishGoods", nextKey: "leavingFactory", thresholdDays: 7 },
+  { id: "leaving-to-leftport", titleEn: "Longtree Left Factory, stuck at port >10 days", titleZh: "Longtree 出厂滞留港口超过10天", statusEn: "Leaving factory from Longtree", currentKey: "leavingFactory", nextKey: "Left Port", thresholdDays: 10 },
+];
+
+const customerAlertRules: AlertRule[] = [
+  { id: "po-to-chassis", titleEn: "Longtree Not Started >15 days", titleZh: "Longtree 未开始超过15天", statusEn: "Not Start in Longtree", currentKey: "Purchase Order Sent", nextKey: "chassisWelding", thresholdDays: 15 },
+  { id: "chassis-to-assembly", titleEn: "Longtree Chassis Welding >20 days", titleZh: "Longtree 底盘焊接超过20天", statusEn: "Chassis welding in Longtree", currentKey: "chassisWelding", nextKey: "assemblyLine", thresholdDays: 20 },
+  { id: "assembly-to-fg", titleEn: "Longtree Assembly Line >20 days", titleZh: "Longtree 总装线超过20天", statusEn: "Assembly line Longtree", currentKey: "assemblyLine", nextKey: "finishGoods", thresholdDays: 20 },
   { id: "fg-to-leaving", titleEn: "Longtree Finished, not left factory >7 days", titleZh: "Longtree 已完工未出厂超过7天", statusEn: "Finishedin Longtree", currentKey: "finishGoods", nextKey: "leavingFactory", thresholdDays: 7 },
   { id: "leaving-to-leftport", titleEn: "Longtree Left Factory, stuck at port >10 days", titleZh: "Longtree 出厂滞留港口超过10天", statusEn: "Leaving factory from Longtree", currentKey: "leavingFactory", nextKey: "Left Port", thresholdDays: 10 },
 ];
@@ -93,6 +101,11 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
   const [etaMap, setEtaMap] = useState<Record<string, string>>({});
   const [editingEta, setEditingEta] = useState<Record<string, string>>({});
 
+  const alertRules = useMemo(
+    () => (customerTypeFilter === "customer" ? customerAlertRules : defaultAlertRules),
+    [customerTypeFilter],
+  );
+
   useEffect(() => {
     const reasonsRef = ref(database, "planningAlerts/delayReasons");
     const handler = (snap: any) => {
@@ -146,7 +159,7 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
         })
         .filter((x): x is NonNullable<typeof x> => x != null);
     });
-  }, [rows]);
+  }, [rows, alertRules]);
 
   const filteredByTypeAlerts = useMemo(
     () => baseAlerts.filter((item) => customerTypeFilter === "all" || item.type === customerTypeFilter),
@@ -164,7 +177,7 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
       base[item.rule.id] += 1;
     });
     return base;
-  }, [filteredByTypeAlerts]);
+  }, [alertRules, filteredByTypeAlerts]);
 
   const reminders = useMemo(() => {
     const now = Date.now();
