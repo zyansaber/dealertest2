@@ -40,6 +40,18 @@ const columns: Array<{
     key: "Forecast Production Date",
     source: "schedule",
   },
+  {
+    label: "Request Delivery Date",
+    zhLabel: "客户要求交付",
+    key: "Request Delivery Date",
+    source: "schedule",
+  },
+  {
+    label: "Latest Ex-factory Date",
+    zhLabel: "最晚出厂日期",
+    key: "_latestExFactory",
+    source: "schedule",
+  },
   { label: "Chassis", zhLabel: "底盘号", key: "Chassis", source: "schedule" },
   {
     label: "Customer",
@@ -225,6 +237,20 @@ const formatDateMinusDays = (dateText: unknown, days: number) => {
   return formatUtcToDdMmYyyy(dt);
 };
 
+const MS_PER_DAY = 86400000;
+
+const buildLatestExFactoryDate = (requestDeliveryDate: unknown, signedPlansReceived: unknown) => {
+  const requestDate = parseDdMmYyyyToUtc(requestDeliveryDate);
+  if (requestDate) {
+    requestDate.setUTCDate(requestDate.getUTCDate() - 70);
+    return requestDate;
+  }
+  const signedDate = parseDdMmYyyyToUtc(signedPlansReceived);
+  if (!signedDate) return null;
+  signedDate.setUTCDate(signedDate.getUTCDate() + 140);
+  return signedDate;
+};
+
 const isWithinNext30Days = (dateText: unknown, minusDays = 40) => {
   const dt = parseDdMmYyyyToUtc(dateText);
   if (!dt) return false;
@@ -338,11 +364,24 @@ export default function SchedulePage({
             ? null
             : Math.max(0, Math.floor((end - posTs) / 86400000));
         const currentStatus = (phaseCardMap[last] ?? last) || "-";
+        const latestExFactoryDate = buildLatestExFactoryDate(
+          (r.schedule as any)?.["Request Delivery Date"],
+          (r.schedule as any)?.["Signed Plans Received"],
+        );
+        const latestExFactoryTs = latestExFactoryDate?.getTime() ?? null;
+        const agingToLatestExFactory =
+          latestExFactoryTs == null
+            ? null
+            : Math.floor((Date.now() - latestExFactoryTs) / MS_PER_DAY);
         return {
           ...r,
           currentStatus,
           aging: agingNum == null ? "-" : String(agingNum),
           agingNum,
+          latestExFactoryDate: latestExFactoryDate
+            ? formatUtcToDdMmYyyy(latestExFactoryDate)
+            : "",
+          agingToLatestExFactory,
         };
       }),
     [rows],
@@ -360,6 +399,26 @@ export default function SchedulePage({
       return orderType === orderTypeTab;
     });
   }, [enriched, groupFilter, orderTypeTab]);
+
+  const latestExFactoryAgingBuckets = useMemo(() => {
+    const bucketConfig = [
+      { key: "0", label: "<=0", min: Number.NEGATIVE_INFINITY, max: 0 },
+      { key: "30", label: "1-30", min: 1, max: 30 },
+      { key: "70", label: "31-70", min: 31, max: 70 },
+      { key: "90", label: "71-90", min: 71, max: 90 },
+      { key: "120", label: "91-120", min: 91, max: 120 },
+      { key: "120+", label: "120+", min: 121, max: Number.POSITIVE_INFINITY },
+    ];
+    const counts = bucketConfig.map((cfg) => ({ ...cfg, count: 0 }));
+    filtered.forEach((row) => {
+      const agingValue = row.agingToLatestExFactory;
+      if (typeof agingValue !== "number" || Number.isNaN(agingValue)) return;
+      const bucket = counts.find((cfg) => agingValue >= cfg.min && agingValue <= cfg.max);
+      if (bucket) bucket.count += 1;
+    });
+    const max = Math.max(1, ...counts.map((item) => item.count));
+    return { counts, max };
+  }, [filtered]);
 
   const groupCards = useMemo(() => {
     const mk = (k: keyof typeof statusGroup) => ({
@@ -695,6 +754,29 @@ export default function SchedulePage({
             </div>
           </div>
 
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 text-sm font-semibold text-slate-700">
+              {tr(lang, "Aging bar chart (vs Latest Ex-factory Date)", "Aging柱状图（按最晚出厂日期）")}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {latestExFactoryAgingBuckets.counts.map((bucket) => {
+                const widthPct = Math.round((bucket.count / latestExFactoryAgingBuckets.max) * 100);
+                return (
+                  <div key={bucket.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-xs font-semibold text-slate-600">{bucket.label}</div>
+                    <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full rounded-full bg-sky-500"
+                        style={{ width: `${widthPct}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 text-lg font-bold text-slate-900">{bucket.count}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <div
               ref={top}
@@ -704,7 +786,7 @@ export default function SchedulePage({
                   bottom.current.scrollLeft = top.current.scrollLeft;
               }}
             >
-              <div style={{ width: 2600, height: 1 }} />
+              <div style={{ width: 2850, height: 1 }} />
             </div>
             <div
               ref={bottom}
@@ -714,7 +796,7 @@ export default function SchedulePage({
                   top.current.scrollLeft = bottom.current.scrollLeft;
               }}
             >
-              <table className="min-w-[2600px] divide-y divide-slate-200 text-sm">
+              <table className="min-w-[2850px] divide-y divide-slate-200 text-sm">
                 <thead className="sticky top-0 bg-slate-100">
                   <tr>
                     {columns.map((c) => (
@@ -762,6 +844,21 @@ export default function SchedulePage({
                               </span>
                             </td>
                           );
+                        }
+
+                        if (c.key === "Request Delivery Date") {
+                          return (
+                            <td
+                              key={`${r.chassis}-${c.key}-${i}`}
+                              className={`whitespace-nowrap px-3 py-2.5 ${c.className ?? ""}`}
+                            >
+                              {String(v ?? "").trim()}
+                            </td>
+                          );
+                        }
+
+                        if (c.key === "_latestExFactory") {
+                          v = r.latestExFactoryDate;
                         }
 
                         const chassisKey = normalize(r.chassis);
