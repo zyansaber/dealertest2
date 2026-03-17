@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, useParams } from "react-router-dom";
-import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Minus, FileX, CircleDot, TrendingUp, Boxes, ChevronDown, ChevronUp, Download, Maximize2 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, LabelList, Line, XAxis, YAxis } from "recharts";
 import * as XLSX from "xlsx";
 
@@ -349,6 +349,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [trendMode, setTrendMode] = useState<"week" | "month">("week");
+  const [ratioMode, setRatioMode] = useState<"monthly" | "accumulated">("monthly");
   const [overviewMode, setOverviewMode] = useState<"customer" | "group" | "modelRange">("customer");
   const groupRatioEntries = [
     { key: "overall", label: "Overall" },
@@ -382,6 +383,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
     monthLabel: string;
     records: IncomingChassisDetail[];
   } | null>(null);
+  const [chartDialog, setChartDialog] = useState<"forecast" | "trend" | null>(null);
 
   useEffect(() => {
     const scheduleOptions = { includeNoChassis: true, includeNoCustomer: true, includeFinished: true };
@@ -931,7 +933,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       customer: 0,
       dispatched: 0,
       total: 0,
-      customerPct: 0,
+      customerPctMonthly: 0,
+      customerPctAccumulated: 0,
     }));
 
     const addToBucket = (date: Date | null, type: "stock" | "customer" | "dispatched") => {
@@ -968,8 +971,9 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, customerPct };
+      const customerPctMonthly = bucketTotal ? (bucket.customer / bucketTotal) * 100 : 0;
+      const customerPctAccumulated = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      return { ...bucket, customerPctMonthly, customerPctAccumulated };
     });
   }, [dealerOrders, dealerCampervanSchedule, planningBuckets]);
 
@@ -993,7 +997,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         stock: 0,
         customer: 0,
         total: 0,
-        customerPct: 0,
+        customerPctMonthly: 0,
+        customerPctAccumulated: 0,
       };
     });
 
@@ -1034,8 +1039,9 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, customerPct };
+      const customerPctMonthly = bucketTotal ? (bucket.customer / bucketTotal) * 100 : 0;
+      const customerPctAccumulated = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      return { ...bucket, customerPctMonthly, customerPctAccumulated };
     });
   }, [dealerCampervanSchedule, dealerOrdersAll, today]);
 
@@ -1050,7 +1056,8 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         stock: 0,
         customer: 0,
         total: 0,
-        customerPct: 0,
+        customerPctMonthly: 0,
+        customerPctAccumulated: 0,
       };
     });
 
@@ -1082,8 +1089,9 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       const bucketTotal = bucket.customer + bucket.stock;
       runningCustomer += bucket.customer;
       runningTotal += bucketTotal;
-      const customerPct = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
-      return { ...bucket, customerPct };
+      const customerPctMonthly = bucketTotal ? (bucket.customer / bucketTotal) * 100 : 0;
+      const customerPctAccumulated = runningTotal ? (runningCustomer / runningTotal) * 100 : 0;
+      return { ...bucket, customerPctMonthly, customerPctAccumulated };
     });
   }, [orderReceivedYearOrders, selectedYear]);
 
@@ -1099,8 +1107,10 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         start: bucket.start,
         end: bucket.end,
         total: 0,
-        srcPct: 0,
-        srhPct: 0,
+        srcPctMonthly: 0,
+        srhPctMonthly: 0,
+        srcPctAccumulated: 0,
+        srhPctAccumulated: 0,
       };
       MODEL_RANGE_KEYS.forEach((key) => {
         row[key] = 0;
@@ -1136,10 +1146,14 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       runningTotal += bucketTotal;
       runningSrc += Number(bucket.SRC) || 0;
       runningSrh += Number(bucket.SRH) || 0;
+      const srcPctMonthly = bucketTotal ? ((Number(bucket.SRC) || 0) / bucketTotal) * 100 : 0;
+      const srhPctMonthly = bucketTotal ? ((Number(bucket.SRH) || 0) / bucketTotal) * 100 : 0;
       return {
         ...bucket,
-        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
-        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+        srcPctMonthly,
+        srhPctMonthly,
+        srcPctAccumulated: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPctAccumulated: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
       };
     });
   }, [dealerCampervanSchedule, dealerOrders, planningBuckets]);
@@ -1161,8 +1175,10 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         weekStart,
         label: weekStart.toLocaleDateString("en-AU", { month: "short", day: "numeric" }),
         total: 0,
-        srcPct: 0,
-        srhPct: 0,
+        srcPctMonthly: 0,
+        srhPctMonthly: 0,
+        srcPctAccumulated: 0,
+        srhPctAccumulated: 0,
       };
       MODEL_RANGE_KEYS.forEach((key) => {
         row[key] = 0;
@@ -1195,10 +1211,14 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       runningTotal += bucketTotal;
       runningSrc += Number(bucket.SRC) || 0;
       runningSrh += Number(bucket.SRH) || 0;
+      const srcPctMonthly = bucketTotal ? ((Number(bucket.SRC) || 0) / bucketTotal) * 100 : 0;
+      const srhPctMonthly = bucketTotal ? ((Number(bucket.SRH) || 0) / bucketTotal) * 100 : 0;
       return {
         ...bucket,
-        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
-        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+        srcPctMonthly,
+        srhPctMonthly,
+        srcPctAccumulated: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPctAccumulated: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
       };
     });
   }, [dealerCampervanSchedule, dealerOrdersAll, today]);
@@ -1212,8 +1232,10 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
         start,
         end: startOfMonth(addMonths(start, 1)),
         total: 0,
-        srcPct: 0,
-        srhPct: 0,
+        srcPctMonthly: 0,
+        srhPctMonthly: 0,
+        srcPctAccumulated: 0,
+        srhPctAccumulated: 0,
       };
       MODEL_RANGE_KEYS.forEach((key) => {
         row[key] = 0;
@@ -1246,10 +1268,14 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       runningTotal += bucketTotal;
       runningSrc += Number(bucket.SRC) || 0;
       runningSrh += Number(bucket.SRH) || 0;
+      const srcPctMonthly = bucketTotal ? ((Number(bucket.SRC) || 0) / bucketTotal) * 100 : 0;
+      const srhPctMonthly = bucketTotal ? ((Number(bucket.SRH) || 0) / bucketTotal) * 100 : 0;
       return {
         ...bucket,
-        srcPct: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
-        srhPct: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
+        srcPctMonthly,
+        srhPctMonthly,
+        srcPctAccumulated: runningTotal ? (runningSrc / runningTotal) * 100 : 0,
+        srhPctAccumulated: runningTotal ? (runningSrh / runningTotal) * 100 : 0,
       };
     });
   }, [orderReceivedYearOrders, selectedYear]);
@@ -2512,6 +2538,218 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
     );
   };
 
+
+  const customerPctKey = ratioMode === "monthly" ? "customerPctMonthly" : "customerPctAccumulated";
+  const srcPctKey = ratioMode === "monthly" ? "srcPctMonthly" : "srcPctAccumulated";
+  const srhPctKey = ratioMode === "monthly" ? "srhPctMonthly" : "srhPctAccumulated";
+  const ratioLabelSuffix = ratioMode === "monthly" ? "Monthly" : "Acc";
+
+  const renderForecastChart = (chartClassName: string) => (
+    <ChartContainer
+      config={
+        overviewMode === "group"
+          ? {
+              factory: { label: "Factory Dealer", color: "#0ea5e9" },
+              greenRv: { label: "Green RV", color: "#22c55e" },
+              newZealand: { label: "New Zealand", color: "#a855f7" },
+              jv: { label: "JV", color: "#f59e0b" },
+              external: { label: "External Dealers", color: "#64748b" },
+            }
+          : overviewMode === "modelRange"
+            ? {
+                ...Object.fromEntries(
+                  MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
+                ),
+                [srcPctKey]: { label: `SRC % (${ratioLabelSuffix})`, color: "#0891b2" },
+                [srhPctKey]: { label: `SRH % (${ratioLabelSuffix})`, color: "#15803d" },
+              }
+            : {
+              stock: { label: "Stock", color: "#3b82f6" },
+              customer: { label: "Customer", color: "#10b981" },
+              dispatched: { label: "Dispatched", color: "#94a3b8" },
+              [customerPctKey]: { label: `Customer % (${ratioLabelSuffix})`, color: "#16a34a" },
+            }
+      }
+      className={chartClassName}
+    >
+      <ComposedChart
+        data={overviewMode === "group" ? orderVolumeByMonthGroup : overviewMode === "modelRange" ? orderVolumeByMonthModelRange : orderVolumeByMonth}
+        margin={{ top: 20, left: 16, right: 16, bottom: 12 }}
+        barCategoryGap="20%"
+        barGap={4}
+      >
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
+        {overviewMode !== "group" && (
+          <YAxis
+            yAxisId="pct"
+            orientation="right"
+            tickFormatter={(value) => `${value}%`}
+            domain={[0, 100]}
+            tickLine={false}
+            axisLine={false}
+            width={40}
+            tickMargin={8}
+          />
+        )}
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <ChartLegend content={<ChartLegendContent />} />
+        {overviewMode === "group" ? (
+          <>
+            <Bar dataKey="factory" fill="var(--color-factory)" radius={[0, 0, 0, 0]} stackId="production" />
+            <Bar dataKey="greenRv" fill="var(--color-greenRv)" radius={[0, 0, 0, 0]} stackId="production" />
+            <Bar dataKey="newZealand" fill="var(--color-newZealand)" radius={[0, 0, 0, 0]} stackId="production" />
+            <Bar dataKey="jv" fill="var(--color-jv)" radius={[0, 0, 0, 0]} stackId="production" />
+            <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="production">
+              <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+            </Bar>
+          </>
+        ) : overviewMode === "modelRange" ? (
+          <>
+            {MODEL_RANGE_KEYS.map((key, idx) => (
+              <Bar
+                key={`forecast-model-${key}`}
+                dataKey={key}
+                fill={`var(--color-${key})`}
+                radius={idx === MODEL_RANGE_KEYS.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                stackId="production"
+              >
+                {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
+              </Bar>
+            ))}
+            <Line type="monotone" dataKey={srcPctKey} stroke={`var(--color-${srcPctKey})`} yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey={srhPctKey} stroke={`var(--color-${srhPctKey})`} yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+          </>
+        ) : (
+          <>
+            <Bar dataKey="dispatched" fill="var(--color-dispatched)" radius={[0, 0, 0, 0]} stackId="production" />
+            <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="production" />
+            <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="production">
+              <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+            </Bar>
+            <Line type="monotone" dataKey={customerPctKey} stroke={`var(--color-${customerPctKey})`} yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+          </>
+        )}
+      </ComposedChart>
+    </ChartContainer>
+  );
+
+  const renderOrderTrendChart = (chartClassName: string) => (
+    <ChartContainer
+      config={
+        overviewMode === "group"
+          ? {
+              factory: { label: "Factory Dealer", color: "#0ea5e9" },
+              greenRv: { label: "Green RV", color: "#22c55e" },
+              newZealand: { label: "New Zealand", color: "#a855f7" },
+              jv: { label: "JV", color: "#f59e0b" },
+              external: { label: "External Dealers", color: "#64748b" },
+            }
+          : overviewMode === "modelRange"
+            ? {
+                ...Object.fromEntries(
+                  MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
+                ),
+                [srcPctKey]: { label: `SRC % (${ratioLabelSuffix})`, color: "#0891b2" },
+                [srhPctKey]: { label: `SRH % (${ratioLabelSuffix})`, color: "#15803d" },
+              }
+            : {
+              stock: { label: "Stock", color: "#3b82f6" },
+              customer: { label: "Customer", color: "#10b981" },
+              [customerPctKey]: { label: `Customer % (${ratioLabelSuffix})`, color: "#16a34a" },
+            }
+      }
+      className={chartClassName}
+    >
+      <ComposedChart
+        data={
+          overviewMode === "group"
+            ? trendMode === "week"
+              ? weeklyOrderTrendGroup
+              : monthlyOrderTrendGroup
+            : overviewMode === "modelRange"
+              ? trendMode === "week"
+                ? weeklyOrderTrendModelRange
+                : monthlyOrderTrendModelRange
+              : trendMode === "week"
+                ? weeklyOrderTrend
+                : monthlyOrderTrend
+        }
+        margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
+        barCategoryGap="20%"
+        barGap={4}
+      >
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
+        {overviewMode !== "group" && (
+          <YAxis
+            yAxisId="pct"
+            orientation="right"
+            tickFormatter={(value) => `${value}%`}
+            domain={[0, 100]}
+            tickLine={false}
+            axisLine={false}
+            width={40}
+            tickMargin={8}
+          />
+        )}
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <ChartLegend content={<ChartLegendContent />} />
+        {overviewMode === "group" ? (
+          <>
+            <Bar dataKey="factory" fill="var(--color-factory)" radius={[0, 0, 0, 0]} stackId="trend" />
+            <Bar dataKey="greenRv" fill="var(--color-greenRv)" radius={[0, 0, 0, 0]} stackId="trend" />
+            <Bar dataKey="newZealand" fill="var(--color-newZealand)" radius={[0, 0, 0, 0]} stackId="trend" />
+            <Bar dataKey="jv" fill="var(--color-jv)" radius={[0, 0, 0, 0]} stackId="trend" />
+            <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="trend">
+              <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+            </Bar>
+          </>
+        ) : overviewMode === "modelRange" ? (
+          <>
+            {MODEL_RANGE_KEYS.map((key, idx) => (
+              <Bar
+                key={`trend-model-${key}`}
+                dataKey={key}
+                fill={`var(--color-${key})`}
+                radius={idx === MODEL_RANGE_KEYS.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                stackId="trend"
+              >
+                {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
+              </Bar>
+            ))}
+            <Line type="monotone" dataKey={srcPctKey} stroke={`var(--color-${srcPctKey})`} yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey={srhPctKey} stroke={`var(--color-${srhPctKey})`} yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
+          </>
+        ) : (
+          <>
+            <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="trend" />
+            <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="trend">
+              <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
+            </Bar>
+            <Line
+              type="monotone"
+              dataKey={customerPctKey}
+              stroke={`var(--color-${customerPctKey})`}
+              yAxisId="pct"
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              activeDot={{ r: 4 }}
+            >
+              <LabelList
+                dataKey={customerPctKey}
+                position="top"
+                formatter={(value: number) => `${value.toFixed(1)}%`}
+              />
+            </Line>
+          </>
+        )}
+      </ComposedChart>
+    </ChartContainer>
+  );
+
   return (
     <div className="flex min-h-screen">
       {!hideSidebar && (isGlobalView ? (
@@ -3073,124 +3311,52 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
           <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Forecast Delivery Volume (+{FORECAST_DELIVERY_OFFSET_DAYS} days)</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle>Forecast Delivery Volume (+{FORECAST_DELIVERY_OFFSET_DAYS} days)</CardTitle>
+                <div className="flex items-center gap-2">
+                  {overviewMode !== "group" && (
+                    <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setRatioMode("monthly")}
+                        className={`rounded-full px-2 py-0.5 transition ${ratioMode === "monthly" ? "bg-slate-900 text-white" : "hover:bg-slate-100"}`}
+                      >
+                        Monthly %
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRatioMode("accumulated")}
+                        className={`rounded-full px-2 py-0.5 transition ${ratioMode === "accumulated" ? "bg-slate-900 text-white" : "hover:bg-slate-100"}`}
+                      >
+                        Acc %
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setChartDialog("forecast")}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    Popout
+                  </button>
+                </div>
+              </div>
               <p className="text-sm text-muted-foreground">
                 Next {PLANNING_MONTHS} months, {overviewMode === "group" ? "stacked by dealer group." : overviewMode === "modelRange" ? "stacked by model range with SRC/SRH cumulative ratio trend." : "stacked by customer vs stock (schedule + campervan)."}
               </p>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={
-                    overviewMode === "group"
-                      ? {
-                          factory: { label: "Factory Dealer", color: "#0ea5e9" },
-                          greenRv: { label: "Green RV", color: "#22c55e" },
-                          newZealand: { label: "New Zealand", color: "#a855f7" },
-                          jv: { label: "JV", color: "#f59e0b" },
-                          external: { label: "External Dealers", color: "#64748b" },
-                        }
-                      : overviewMode === "modelRange"
-                        ? {
-                            ...Object.fromEntries(
-                              MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
-                            ),
-                            srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
-                            srhPct: { label: "SRH % (Acc)", color: "#15803d" },
-                          }
-                        : {
-                          stock: { label: "Stock", color: "#3b82f6" },
-                          customer: { label: "Customer", color: "#10b981" },
-                          dispatched: { label: "Dispatched", color: "#94a3b8" },
-                          customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
-                        }
-                  }
-                  className="h-80"
-                >
-                  <ComposedChart
-                    data={overviewMode === "group" ? orderVolumeByMonthGroup : overviewMode === "modelRange" ? orderVolumeByMonthModelRange : orderVolumeByMonth}
-                    margin={{ top: 20, left: 16, right: 16, bottom: 12 }}
-                    barCategoryGap="20%"
-                    barGap={4}
-                  >
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    {overviewMode !== "group" && (
-                      <YAxis
-                        yAxisId="pct"
-                        orientation="right"
-                        tickFormatter={(value) => `${value}%`}
-                        domain={[0, 100]}
-                        tickLine={false}
-                        axisLine={false}
-                        width={40}
-                        tickMargin={8}
-                      />
-                    )}
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    {overviewMode === "group" ? (
-                      <>
-                        <Bar dataKey="factory" fill="var(--color-factory)" radius={[0, 0, 0, 0]} stackId="production" />
-                        <Bar dataKey="greenRv" fill="var(--color-greenRv)" radius={[0, 0, 0, 0]} stackId="production" />
-                        <Bar dataKey="newZealand" fill="var(--color-newZealand)" radius={[0, 0, 0, 0]} stackId="production" />
-                        <Bar dataKey="jv" fill="var(--color-jv)" radius={[0, 0, 0, 0]} stackId="production" />
-                        <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="production">
-                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
-                        </Bar>
-                      </>
-                    ) : overviewMode === "modelRange" ? (
-                      <>
-                        {MODEL_RANGE_KEYS.map((key, idx) => (
-                          <Bar
-                            key={`forecast-model-${key}`}
-                            dataKey={key}
-                            fill={`var(--color-${key})`}
-                            radius={idx === MODEL_RANGE_KEYS.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
-                            stackId="production"
-                          >
-                            {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
-                          </Bar>
-                        ))}
-                        <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                      </>
-                    ) : (
-                      <>
-                        <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="production" />
-                        <Bar dataKey="customer" fill="var(--color-customer)" radius={[0, 0, 0, 0]} stackId="production" />
-                        <Bar dataKey="dispatched" fill="var(--color-dispatched)" radius={[6, 6, 0, 0]} stackId="production">
-                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
-                        </Bar>
-                        <Line
-                          type="monotone"
-                          dataKey="customerPct"
-                          stroke="var(--color-customerPct)"
-                          yAxisId="pct"
-                          strokeWidth={2}
-                          dot={{ r: 3 }}
-                          activeDot={{ r: 4 }}
-                        >
-                          <LabelList
-                            dataKey="customerPct"
-                            position="top"
-                            formatter={(value: number) => `${value.toFixed(1)}%`}
-                          />
-                        </Line>
-                      </>
-                    )}
-                  </ComposedChart>
-                </ChartContainer>
-              </CardContent>
-            </Card>
+            </CardHeader>
+            <CardContent>{renderForecastChart("h-80")}</CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-slate-500" />
-                    Order Received Trend
-                  </CardTitle>
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-slate-500" />
+                  Order Received Trend
+                </CardTitle>
+                <div className="flex items-center gap-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
                     <button
                       type="button"
@@ -3215,131 +3381,45 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
                       Month
                     </button>
                   </div>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {overviewMode === "group"
-                    ? "Weekly or monthly order volume stacked by dealer group."
-                    : overviewMode === "modelRange"
-                      ? "Weekly or monthly order volume stacked by model range with SRC/SRH cumulative ratio trend."
-                      : "Weekly or monthly order volume split by customer vs stock."}
-                </p>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={
-                    overviewMode === "group"
-                      ? {
-                          factory: { label: "Factory Dealer", color: "#0ea5e9" },
-                          greenRv: { label: "Green RV", color: "#22c55e" },
-                          newZealand: { label: "New Zealand", color: "#a855f7" },
-                          jv: { label: "JV", color: "#f59e0b" },
-                          external: { label: "External Dealers", color: "#64748b" },
-                        }
-                      : overviewMode === "modelRange"
-                        ? {
-                            ...Object.fromEntries(
-                              MODEL_RANGE_KEYS.map((key) => [key, { label: key, color: MODEL_RANGE_CHART_COLORS[key] }])
-                            ),
-                            srcPct: { label: "SRC % (Acc)", color: "#0891b2" },
-                            srhPct: { label: "SRH % (Acc)", color: "#15803d" },
-                          }
-                        : {
-                          stock: { label: "Stock", color: "#3b82f6" },
-                          customer: { label: "Customer", color: "#10b981" },
-                          customerPct: { label: "Customer % (Acc)", color: "#16a34a" },
-                        }
-                  }
-                  className="h-80"
-                >
-                  <ComposedChart
-                    data={
-                      overviewMode === "group"
-                        ? trendMode === "week"
-                          ? weeklyOrderTrendGroup
-                          : monthlyOrderTrendGroup
-                        : overviewMode === "modelRange"
-                          ? trendMode === "week"
-                            ? weeklyOrderTrendModelRange
-                            : monthlyOrderTrendModelRange
-                          : trendMode === "week"
-                            ? weeklyOrderTrend
-                            : monthlyOrderTrend
-                    }
-                    margin={{ top: 16, left: 16, right: 16, bottom: 12 }}
-                    barCategoryGap="20%"
-                    barGap={4}
+                  {overviewMode !== "group" && (
+                    <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setRatioMode("monthly")}
+                        className={`rounded-full px-2 py-0.5 transition ${ratioMode === "monthly" ? "bg-slate-900 text-white" : "hover:bg-slate-100"}`}
+                      >
+                        Monthly %
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRatioMode("accumulated")}
+                        className={`rounded-full px-2 py-0.5 transition ${ratioMode === "accumulated" ? "bg-slate-900 text-white" : "hover:bg-slate-100"}`}
+                      >
+                        Acc %
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setChartDialog("trend")}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
                   >
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
-                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tickMargin={8} />
-                    {overviewMode !== "group" && (
-                      <YAxis
-                        yAxisId="pct"
-                        orientation="right"
-                        tickFormatter={(value) => `${value}%`}
-                        domain={[0, 100]}
-                        tickLine={false}
-                        axisLine={false}
-                        width={40}
-                        tickMargin={8}
-                      />
-                    )}
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    {overviewMode === "group" ? (
-                      <>
-                        <Bar dataKey="factory" fill="var(--color-factory)" radius={[0, 0, 0, 0]} stackId="trend" />
-                        <Bar dataKey="greenRv" fill="var(--color-greenRv)" radius={[0, 0, 0, 0]} stackId="trend" />
-                        <Bar dataKey="newZealand" fill="var(--color-newZealand)" radius={[0, 0, 0, 0]} stackId="trend" />
-                        <Bar dataKey="jv" fill="var(--color-jv)" radius={[0, 0, 0, 0]} stackId="trend" />
-                        <Bar dataKey="external" fill="var(--color-external)" radius={[6, 6, 0, 0]} stackId="trend">
-                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
-                        </Bar>
-                      </>
-                    ) : overviewMode === "modelRange" ? (
-                      <>
-                        {MODEL_RANGE_KEYS.map((key, idx) => (
-                          <Bar
-                            key={`trend-model-${key}`}
-                            dataKey={key}
-                            fill={`var(--color-${key})`}
-                            radius={idx === MODEL_RANGE_KEYS.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
-                            stackId="trend"
-                          >
-                            {idx === MODEL_RANGE_KEYS.length - 1 ? <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" /> : null}
-                          </Bar>
-                        ))}
-                        <Line type="monotone" dataKey="srcPct" stroke="var(--color-srcPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                        <Line type="monotone" dataKey="srhPct" stroke="var(--color-srhPct)" yAxisId="pct" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 4 }} />
-                      </>
-                    ) : (
-                      <>
-                        <Bar dataKey="stock" fill="var(--color-stock)" radius={[0, 0, 0, 0]} stackId="trend" />
-                        <Bar dataKey="customer" fill="var(--color-customer)" radius={[6, 6, 0, 0]} stackId="trend">
-                          <LabelList dataKey="total" position="top" offset={8} fill="#0f172a" />
-                        </Bar>
-                        <Line
-                          type="monotone"
-                          dataKey="customerPct"
-                          stroke="var(--color-customerPct)"
-                          yAxisId="pct"
-                          strokeWidth={2}
-                          dot={{ r: 3 }}
-                          activeDot={{ r: 4 }}
-                        >
-                          <LabelList
-                            dataKey="customerPct"
-                            position="top"
-                            formatter={(value: number) => `${value.toFixed(1)}%`}
-                          />
-                        </Line>
-                      </>
-                    )}
-                  </ComposedChart>
-                </ChartContainer>
-              </CardContent>
-            </Card>
-          </div>
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    Popout
+                  </button>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {overviewMode === "group"
+                  ? "Weekly or monthly order volume stacked by dealer group."
+                  : overviewMode === "modelRange"
+                    ? "Weekly or monthly order volume stacked by model range with SRC/SRH cumulative ratio trend."
+                    : "Weekly or monthly order volume split by customer vs stock."}
+              </p>
+            </CardHeader>
+            <CardContent>{renderOrderTrendChart("h-80")}</CardContent>
+          </Card>
+        </div>
 
           <Card>
             <CardHeader>
@@ -3599,6 +3679,22 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
           </div>
         </div>
       </main>
+
+      <Dialog open={Boolean(chartDialog)} onOpenChange={(open) => !open && setChartDialog(null)}>
+        <DialogContent className="max-w-[95vw] w-[1200px]">
+          <DialogHeader>
+            <DialogTitle>
+              {chartDialog === "forecast" ? `Forecast Delivery Volume (+${FORECAST_DELIVERY_OFFSET_DAYS} days)` : "Order Received Trend"}
+            </DialogTitle>
+            <DialogDescription>
+              {chartDialog === "forecast"
+                ? `Next ${PLANNING_MONTHS} months detailed view.`
+                : `Detailed ${trendMode === "week" ? "weekly" : "monthly"} trend view.`}
+            </DialogDescription>
+          </DialogHeader>
+          {chartDialog === "forecast" ? renderForecastChart("h-[70vh]") : renderOrderTrendChart("h-[70vh]")}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(incomingDetailDialog)} onOpenChange={(open) => !open && setIncomingDetailDialog(null)}>
         <DialogContent className="max-w-3xl">
