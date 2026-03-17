@@ -198,9 +198,6 @@ const normalize = (value: unknown) =>
     .trim()
     .toUpperCase();
 
-const isStockCustomer = (customer?: string) =>
-  /stock$/i.test(String(customer ?? "").trim());
-
 const parseDdMmYyyyToUtc = (dateText: unknown) => {
   const raw = String(dateText || "").trim();
   if (!raw) return null;
@@ -270,12 +267,12 @@ export default function SchedulePage({
   const top = useRef<HTMLDivElement | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
 
+  const [agingFilter, setAgingFilter] = useState<
+    "all" | "0-30" | "31-60" | "61-90" | "90+"
+  >("all");
   const [groupFilter, setGroupFilter] = useState<
     keyof typeof statusGroup | "all"
   >("all");
-  const [orderTypeTab, setOrderTypeTab] = useState<"stock" | "customer" | "all">(
-    "customer",
-  );
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState<"caravan" | "motorised">(
     "caravan",
@@ -356,12 +353,32 @@ export default function SchedulePage({
         !statusGroup[groupFilter].includes(r.currentStatus as any)
       )
         return false;
-      const isStock = isStockCustomer(r.schedule?.Customer);
-      if (orderTypeTab === "stock") return isStock;
-      if (orderTypeTab === "customer") return !isStock;
-      return true;
+      if (agingFilter === "all") return true;
+      if (r.agingNum == null) return false;
+      if (agingFilter === "0-30") return r.agingNum <= 30;
+      if (agingFilter === "31-60") return r.agingNum >= 31 && r.agingNum <= 60;
+      if (agingFilter === "61-90") return r.agingNum >= 61 && r.agingNum <= 90;
+      return r.agingNum > 90;
     });
-  }, [enriched, groupFilter, orderTypeTab]);
+  }, [enriched, groupFilter, agingFilter]);
+
+  const noLeftPort = useMemo(
+    () =>
+      enriched.filter((r) => !parseDateToTimestamp(r.dateTrack?.["Left Port"])),
+    [enriched],
+  );
+  const buckets = useMemo(() => {
+    const b = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
+    noLeftPort.forEach((r) => {
+      const d = r.agingNum;
+      if (d == null) return;
+      if (d <= 30) b["0-30"] += 1;
+      else if (d <= 60) b["31-60"] += 1;
+      else if (d <= 90) b["61-90"] += 1;
+      else b["90+"] += 1;
+    });
+    return b;
+  }, [noLeftPort]);
 
   const groupCards = useMemo(() => {
     const mk = (k: keyof typeof statusGroup) => ({
@@ -378,6 +395,7 @@ export default function SchedulePage({
     ];
   }, [enriched]);
 
+  const max = Math.max(1, ...Object.values(buckets));
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pagedRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -627,37 +645,34 @@ export default function SchedulePage({
             ))}
           </div>
 
-          <div className="mb-4 inline-flex rounded-lg border border-slate-300 bg-slate-50 p-1 text-sm">
-            <button
-              type="button"
-              onClick={() => {
-                setOrderTypeTab("stock");
-                setPage(1);
-              }}
-              className={`rounded-md px-3 py-1.5 ${orderTypeTab === "stock" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
-            >
-              {tr(lang, "Stock", "管理订单")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOrderTypeTab("customer");
-                setPage(1);
-              }}
-              className={`rounded-md px-3 py-1.5 ${orderTypeTab === "customer" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
-            >
-              {tr(lang, "Customer", "客户订单")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOrderTypeTab("all");
-                setPage(1);
-              }}
-              className={`rounded-md px-3 py-1.5 ${orderTypeTab === "all" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
-            >
-              {tr(lang, "All", "所有")}
-            </button>
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-2 text-sm font-semibold">
+              {tr(
+                lang,
+                "Aging bar chart (no Left Port yet) — click to filter",
+                "滞留分布图（尚未 Left Port）— 点击筛选",
+              )}
+            </div>
+            {Object.entries(buckets).map(([k, v]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  setAgingFilter((prev) => (prev === k ? "all" : (k as any)));
+                  setPage(1);
+                }}
+                className={`mb-2 flex w-full items-center gap-3 rounded px-1 py-1 text-left ${agingFilter === k ? "bg-slate-100" : ""}`}
+              >
+                <div className="w-20 text-xs">{k}</div>
+                <div className="h-4 flex-1 rounded bg-slate-100">
+                  <div
+                    className="h-4 rounded bg-slate-700"
+                    style={{ width: `${(v / max) * 100}%` }}
+                  />
+                </div>
+                <div className="w-8 text-right text-sm">{v}</div>
+              </button>
+            ))}
           </div>
 
           <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
