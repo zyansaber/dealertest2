@@ -1459,3 +1459,90 @@ export function subscribeToHandoverAll(
   onValue(r, handler);
   return () => off(r, "value", handler);
 }
+
+const normalizePlanningChassis = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
+export type ProductionPlanningRow = {
+  chassis: string;
+  plannedChassisWelding: string;
+  plannedFinishgoods: string;
+  forecastProductionDate: string;
+  requestDeliveryDate: string;
+  customer: string;
+  dealer: string;
+  model: string;
+  orderReceivedDate: string;
+  sourceFile: string;
+};
+
+export async function buildScheduleLookupByChassis() {
+  const [scheduleSnap, schedule2024Snap] = await Promise.all([
+    get(ref(database, "schedule")),
+    get(ref(database, "2024schedule")),
+  ]);
+
+  const combined = [
+    ...parseScheduleSnapshot(scheduleSnap, {
+      includeNoChassis: true,
+      includeNoCustomer: true,
+      includeFinished: true,
+    }),
+    ...parseScheduleSnapshot(schedule2024Snap, {
+      includeNoChassis: true,
+      includeNoCustomer: true,
+      includeFinished: true,
+    }),
+  ];
+
+  const index: Record<string, ScheduleItem> = {};
+  combined.forEach((item) => {
+    const key = normalizePlanningChassis(item?.Chassis);
+    if (key) {
+      index[key] = item;
+    }
+  });
+  return index;
+}
+
+export async function saveProductionPlanningUpload(params: {
+  month: string;
+  rows: ProductionPlanningRow[];
+  files: [File, File];
+}) {
+  const now = new Date();
+  const timestamp = now.toISOString();
+  const uploadId = `${now.getTime()}`;
+  const folder = `production-planning/${params.month}/${uploadId}`;
+
+  const uploadedFiles = await Promise.all(
+    params.files.map(async (file, idx) => {
+      const ext = file.name.split(".").pop() || "xlsx";
+      const fileRef = storageRef(storage, `${folder}/file${idx + 1}.${ext}`);
+      await uploadBytes(fileRef, file, {
+        contentType: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = await getDownloadURL(fileRef);
+      return {
+        fileName: file.name,
+        size: file.size,
+        type: file.type || null,
+        downloadUrl: url,
+      };
+    }),
+  );
+
+  const uploadRef = ref(database, `productionPlanningUploads/${params.month}/${uploadId}`);
+  await set(uploadRef, {
+    month: params.month,
+    uploadedAt: timestamp,
+    rowCount: params.rows.length,
+    files: uploadedFiles,
+    rows: params.rows,
+  });
+
+  return { uploadId, uploadedAt: timestamp };
+}

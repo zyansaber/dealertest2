@@ -43,6 +43,7 @@ import OverallDashboardAdmin from "./pages/OverallDashboardAdmin";
 import TargetAndHighlight from "./pages/TargetAndHighlight";
 import OverallDashboardHub from "@/pages/OverallDashboardHub";
 import PlanningIntegration from "@/pages/PlanningIntegration";
+import UploadProductionPlanning from "@/pages/UploadProductionPlanning";
 
 const queryClient = new QueryClient();
 
@@ -176,6 +177,15 @@ const AppShell = () => {
         />
 
         <Route
+          path="/dealer/:dealerSlug/upload-production-planning"
+          element={
+            <ProtectedDealerRoute>
+              <UploadProductionPlanning />
+            </ProtectedDealerRoute>
+          }
+        />
+
+        <Route
           path="/dealer/:dealerSlug/show-management"
           element={
             <ProtectedDealerRoute>
@@ -260,6 +270,15 @@ const AppShell = () => {
             </ProtectedDealerGroupRoute>
           }
         />
+
+        <Route
+          path="/dealergroup/:dealerSlug/upload-production-planning"
+          element={
+            <ProtectedDealerGroupRoute>
+              <UploadProductionPlanning />
+            </ProtectedDealerGroupRoute>
+          }
+        />
         <Route
           path="/dealergroup/:dealerSlug/show-management"
           element={
@@ -331,6 +350,15 @@ const AppShell = () => {
           element={
             <ProtectedDealerGroupRoute>
               <InventoryManagement />
+            </ProtectedDealerGroupRoute>
+          }
+        />
+
+        <Route
+          path="/dealergroup/:dealerSlug/:selectedDealerSlug/upload-production-planning"
+          element={
+            <ProtectedDealerGroupRoute>
+              <UploadProductionPlanning />
             </ProtectedDealerGroupRoute>
           }
         />
