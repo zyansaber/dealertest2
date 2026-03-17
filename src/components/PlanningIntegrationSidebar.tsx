@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Search, Target } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Languages, LogOut, Search, Target, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { off, onValue, ref } from "firebase/database";
@@ -18,7 +18,8 @@ type PlanningTabPath =
   | "/planningintegration/target"
   | "/planningintegration/report"
   | "/planningintegration/australia-factory-calendar"
-  | "/planningintegration/smart-scheduling";
+  | "/planningintegration/smart-scheduling"
+  | "/planningintegration/upload-schedule-bilingual";
 
 
 
@@ -75,6 +76,7 @@ export default function PlanningIntegrationSidebar({ collapsed, onToggle, lang, 
     { path: "/planningintegration/target", label: tr(lang, "target", "目标"), icon: Target },
     { path: "/planningintegration/report", label: tr(lang, "report", "报表"), icon: BarChart3 },
     { path: "/planningintegration/smart-scheduling", label: tr(lang, "Intelligent Scheduling", "智能排产"), icon: BarChart3 },
+    { path: "/planningintegration/upload-schedule-bilingual", label: tr(lang, "Upload Scheduling EN/CN", "上传排产中英文"), icon: Upload },
   ];
 
   return (
