@@ -326,20 +326,16 @@ export default function SchedulePage({
           );
           if (ts != null) last = m.key;
         });
-        const posTs = parseDateToTimestamp(
-          (r.schedule as any)?.["Purchase Order Sent"],
-        );
-        const leftTs = parseDateToTimestamp(r.dateTrack?.["Left Port"]);
-        const end = leftTs ?? Date.now();
+        const latestFactoryTs = parseDateToTimestamp(r.dateTrack?.leavingFactory);
         const agingNum =
-          posTs == null
+          latestFactoryTs == null
             ? null
-            : Math.max(0, Math.floor((end - posTs) / 86400000));
+            : Math.floor((Date.now() - latestFactoryTs) / 86400000);
         const currentStatus = (phaseCardMap[last] ?? last) || "-";
         return {
           ...r,
           currentStatus,
-          aging: agingNum == null ? "-" : String(agingNum),
+          aging: agingNum == null ? "-" : `${agingNum >= 0 ? "+" : ""}${agingNum}`,
           agingNum,
         };
       }),
@@ -364,7 +360,11 @@ export default function SchedulePage({
 
   const noLeftPort = useMemo(
     () =>
-      enriched.filter((r) => !parseDateToTimestamp(r.dateTrack?.["Left Port"])),
+      enriched.filter(
+        (r) =>
+          !parseDateToTimestamp(r.dateTrack?.["Left Port"]) &&
+          parseDateToTimestamp(r.dateTrack?.leavingFactory) != null,
+      ),
     [enriched],
   );
   const buckets = useMemo(() => {
@@ -372,9 +372,10 @@ export default function SchedulePage({
     noLeftPort.forEach((r) => {
       const d = r.agingNum;
       if (d == null) return;
-      if (d <= 30) b["0-30"] += 1;
-      else if (d <= 60) b["31-60"] += 1;
-      else if (d <= 90) b["61-90"] += 1;
+      const agingForBucket = Math.max(0, d);
+      if (agingForBucket <= 30) b["0-30"] += 1;
+      else if (agingForBucket <= 60) b["31-60"] += 1;
+      else if (agingForBucket <= 90) b["61-90"] += 1;
       else b["90+"] += 1;
     });
     return b;
@@ -649,8 +650,8 @@ export default function SchedulePage({
             <div className="mb-2 text-sm font-semibold">
               {tr(
                 lang,
-                "Aging bar chart (no Left Port yet) — click to filter",
-                "滞留分布图（尚未 Left Port）— 点击筛选",
+                "Aging bar chart (based on latest factory date, no Left Port yet) — click to filter",
+                "滞留分布图（按最晚出厂日期，尚未 Left Port）— 点击筛选",
               )}
             </div>
             {Object.entries(buckets).map(([k, v]) => (
@@ -661,7 +662,7 @@ export default function SchedulePage({
                   setAgingFilter((prev) => (prev === k ? "all" : (k as any)));
                   setPage(1);
                 }}
-                className={`mb-2 flex w-full items-center gap-3 rounded px-1 py-1 text-left ${agingFilter === k ? "bg-slate-100" : ""}`}
+                className={`mb-2 flex w-full cursor-pointer items-center gap-3 rounded px-1 py-1 text-left transition hover:bg-slate-50 ${agingFilter === k ? "bg-slate-100" : ""}`}
               >
                 <div className="w-20 text-xs">{k}</div>
                 <div className="h-4 flex-1 rounded bg-slate-100">
@@ -776,12 +777,20 @@ export default function SchedulePage({
                           c.key === "Chassis" &&
                           approvedChangeChassisSet.has(chassisKey);
 
+                        const isAgingCell = c.key === "_aging" && typeof r.agingNum === "number";
+                        const valueClass =
+                          isAgingCell && r.agingNum >= 0
+                            ? "text-rose-600 font-semibold"
+                            : isAgingCell
+                              ? "text-emerald-600 font-semibold"
+                              : undefined;
+
                         return (
                           <td
                             key={`${r.chassis}-${c.key}-${i}`}
                             className={`whitespace-nowrap px-3 py-2.5 ${c.className ?? ""}`}
                           >
-                            {displayValue(v)}
+                            <span className={valueClass}>{displayValue(v)}</span>
                             {hasApprovedChange ? (
                               <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">
                                 {tr(lang, "change", "改")}
