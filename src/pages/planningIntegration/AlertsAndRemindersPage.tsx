@@ -7,6 +7,7 @@ import { database } from "@/lib/firebase";
 
 import type { PlanningLang } from "./i18n";
 import { statusText, tr } from "./i18n";
+import { getPlanningOrderType, planningOrderTypeLabel, type PlanningOrderType } from "./orderType";
 import type { Row } from "./types";
 import { displayValue, formatDate, parseDateToTimestamp } from "./utils";
 
@@ -68,11 +69,6 @@ const formatEtaInput = (raw: string) => {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 };
 
-const getCustomerType = (row: Row): "stock" | "customer" => {
-  const customer = String(row.schedule?.Customer ?? "").trim().toLowerCase();
-  return customer.endsWith("stock") ? "stock" : "customer";
-};
-
 const getLastStatus = (row: Row) => {
   if (parseDateToTimestamp(row.dateTrack?.["Received in Melbourne"]) != null) return "Melbourn Factory";
   if (parseDateToTimestamp(row.dateTrack?.melbournePortDate) != null) return "Melbourn Port";
@@ -91,7 +87,7 @@ const getLastStatus = (row: Row) => {
 export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; lang: PlanningLang }) {
   const [tab, setTab] = useState<"alerts" | "reminders">("alerts");
   const [selectedRule, setSelectedRule] = useState<string>("all");
-  const [customerTypeFilter, setCustomerTypeFilter] = useState<"all" | "stock" | "customer">("all");
+  const [customerTypeFilter, setCustomerTypeFilter] = useState<"all" | PlanningOrderType>("all");
   const [delayReasonMap, setDelayReasonMap] = useState<DelayReasonMap>({});
   const [editingReason, setEditingReason] = useState<Record<string, string>>({});
   const [etaMap, setEtaMap] = useState<Record<string, string>>({});
@@ -123,7 +119,7 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
     const now = Date.now();
     return rows.flatMap((row) => {
       const status = getLastStatus(row);
-      const type = getCustomerType(row);
+      const type = getPlanningOrderType(row.schedule?.Customer);
 
       return alertRules
         .filter((rule) => status === rule.statusEn || (rule.id === "leaving-to-leftport" && status === "waiting in port"))
@@ -213,7 +209,7 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
           customer: displayValue(row.schedule?.Customer),
           dealer: displayValue(row.schedule?.Dealer),
           model: displayValue(row.schedule?.Model),
-          type: getCustomerType(row),
+          type: getPlanningOrderType(row.schedule?.Customer),
           requestTs,
           latestLeftFactoryTs,
           overdueDays,
@@ -301,10 +297,11 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
 
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-600">{tr(lang, "Type", "类型")}</span>
-            <select value={customerTypeFilter} onChange={(e) => setCustomerTypeFilter(e.target.value as "all" | "stock" | "customer")} className="rounded-lg border border-slate-300 px-2 py-1 text-sm">
+            <select value={customerTypeFilter} onChange={(e) => setCustomerTypeFilter(e.target.value as "all" | PlanningOrderType) } className="rounded-lg border border-slate-300 px-2 py-1 text-sm">
               <option value="all">{tr(lang, "All", "全部")}</option>
-              <option value="stock">{tr(lang, "Stock", "管理订单")}</option>
-              <option value="customer">{tr(lang, "Customer", "客户订单")}</option>
+              <option value="stock">{planningOrderTypeLabel(lang, "stock")}</option>
+              <option value="customer">{planningOrderTypeLabel(lang, "customer")}</option>
+              <option value="prototype">{planningOrderTypeLabel(lang, "prototype")}</option>
             </select>
           </div>
         </div>
@@ -355,14 +352,14 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
                   ) : (
                     alerts.map((item) => {
                       const value = editingReason[item.reasonKey] ?? delayReasonMap[item.reasonKey] ?? "";
-                      const customerRowClass = item.type === "customer" ? "bg-amber-50/60" : "";
+                      const customerRowClass = item.type === "customer" ? "bg-amber-50/60" : item.type === "prototype" ? "bg-fuchsia-50/60" : "";
                       return (
                         <tr key={item.reasonKey} className={`border-t border-slate-100 align-top ${customerRowClass}`}>
                           <td className="px-3 py-2 font-medium">{item.chassis}</td>
                           <td className="px-3 py-2">{statusText(lang, item.status)}</td>
                           <td className="px-3 py-2 text-rose-600">{item.days}{tr(lang, " days", "天")}</td>
                           <td className="px-3 py-2">&gt;{item.rule.thresholdDays}{tr(lang, " days", "天")}</td>
-                          <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${item.type === "customer" ? "bg-amber-200/70 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{item.type === "stock" ? tr(lang, "Stock", "管理订单") : tr(lang, "Customer", "客户订单")}</span></td>
+                          <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${item.type === "customer" ? "bg-amber-200/70 text-amber-800" : item.type === "prototype" ? "bg-fuchsia-100 text-fuchsia-800" : "bg-emerald-100 text-emerald-800"}`}>{planningOrderTypeLabel(lang, item.type)}</span></td>
                           <td className="px-3 py-2">{item.customer}</td>
                           <td className="px-3 py-2">{item.dealer}</td>
                           <td className="px-3 py-2">{item.model}</td>
@@ -408,13 +405,13 @@ export default function AlertsAndRemindersPage({ rows, lang }: { rows: Row[]; la
                     </tr>
                   ) : (
                     reminders.flatMap((item) => {
-                      const customerRowClass = item.type === "customer" ? "bg-amber-50/60" : "";
+                      const customerRowClass = item.type === "customer" ? "bg-amber-50/60" : item.type === "prototype" ? "bg-fuchsia-50/60" : "";
                       const etaValue = editingEta[item.chassis] ?? item.eta;
 
                       const mainRow = (
                         <tr key={`${item.chassis}-${item.requestTs}`} className={`border-t border-slate-100 ${customerRowClass}`}>
                           <td className="px-3 py-2 font-medium">{item.chassis}</td>
-                          <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${item.type === "customer" ? "bg-amber-200/70 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{item.type === "stock" ? tr(lang, "Stock", "管理订单") : tr(lang, "Customer", "客户订单")}</span></td>
+                          <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${item.type === "customer" ? "bg-amber-200/70 text-amber-800" : item.type === "prototype" ? "bg-fuchsia-100 text-fuchsia-800" : "bg-emerald-100 text-emerald-800"}`}>{planningOrderTypeLabel(lang, item.type)}</span></td>
                           <td className="px-3 py-2">{item.customer}</td>
                           <td className="px-3 py-2">{item.dealer}</td>
                           <td className="px-3 py-2">{item.model}</td>

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getModelRange } from "@/lib/targetHighlight";
 import type { PlanningLang } from "./i18n";
 import { tr } from "./i18n";
+import { getPlanningOrderType, isPlanningCustomerOrder, planningOrderTypeLabel } from "./orderType";
 import { milestoneSequence, phaseCardMap } from "./types";
 import { parseDateToTimestamp } from "./utils";
 import type { Row } from "./types";
@@ -187,13 +188,13 @@ export default function SmartSchedulingPage({ rows, lang }: { rows: Row[]; lang:
       const chassis = String((r.schedule as any)?.Chassis ?? "").trim();
       const customer = String((r.schedule as any)?.Customer ?? "").trim();
       const dealer = String((r.schedule as any)?.Dealer ?? "").trim();
-      const isStock = customer.toLowerCase().endsWith("stock");
+      const orderType = getPlanningOrderType(customer);
 
       return {
         status,
         modelRange: normalizeModelRange(model, chassis),
-        customerTypeLabel: isStock ? tr(lang, "Stock", "库存") : tr(lang, "Customer Order", "客户订单"),
-        isCustomerOrder: !isStock,
+        customerTypeLabel: planningOrderTypeLabel(lang, orderType),
+        isCustomerOrder: isPlanningCustomerOrder(orderType),
         group: resolveDealerGroup(dealer),
       };
     });
