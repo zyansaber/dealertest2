@@ -302,6 +302,7 @@ export default function SchedulePage({
     "customer",
   );
   const [page, setPage] = useState(1);
+  const [selectedAgingBucket, setSelectedAgingBucket] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"caravan" | "motorised">(
     "caravan",
   );
@@ -354,15 +355,6 @@ export default function SchedulePage({
           );
           if (ts != null) last = m.key;
         });
-        const posTs = parseDateToTimestamp(
-          (r.schedule as any)?.["Purchase Order Sent"],
-        );
-        const leftTs = parseDateToTimestamp(r.dateTrack?.["Left Port"]);
-        const end = leftTs ?? Date.now();
-        const agingNum =
-          posTs == null
-            ? null
-            : Math.max(0, Math.floor((end - posTs) / 86400000));
         const currentStatus = (phaseCardMap[last] ?? last) || "-";
         const latestExFactoryDate = buildLatestExFactoryDate(
           (r.schedule as any)?.["Request Delivery Date"],
@@ -376,8 +368,6 @@ export default function SchedulePage({
         return {
           ...r,
           currentStatus,
-          aging: agingNum == null ? "-" : String(agingNum),
-          agingNum,
           latestExFactoryDate: latestExFactoryDate
             ? formatUtcToDdMmYyyy(latestExFactoryDate)
             : "",
@@ -420,6 +410,23 @@ export default function SchedulePage({
     return { counts, max };
   }, [filtered]);
 
+  const ageFilteredRows = useMemo(() => {
+    if (!selectedAgingBucket) return filtered;
+    const bucket = latestExFactoryAgingBuckets.counts.find(
+      (item) => item.key === selectedAgingBucket,
+    );
+    if (!bucket) return filtered;
+    return filtered.filter((row) => {
+      const value = row.agingToLatestExFactory;
+      return (
+        typeof value === "number" &&
+        !Number.isNaN(value) &&
+        value >= bucket.min &&
+        value <= bucket.max
+      );
+    });
+  }, [filtered, latestExFactoryAgingBuckets.counts, selectedAgingBucket]);
+
   const groupCards = useMemo(() => {
     const mk = (k: keyof typeof statusGroup) => ({
       key: k,
@@ -435,8 +442,8 @@ export default function SchedulePage({
     ];
   }, [enriched]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pagedRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(ageFilteredRows.length / PAGE_SIZE));
+  const pagedRows = ageFilteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const searchedVehicleOrders = useMemo(() => {
     const q = vehicleSearchTerm.trim().toLowerCase();
@@ -729,7 +736,7 @@ export default function SchedulePage({
 
           <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
             <div>
-              {tr(lang, "Filtered rows", "筛选后行数")}: {filtered.length}
+              {tr(lang, "Filtered rows", "筛选后行数")}: {ageFilteredRows.length}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -761,8 +768,19 @@ export default function SchedulePage({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {latestExFactoryAgingBuckets.counts.map((bucket) => {
                 const widthPct = Math.round((bucket.count / latestExFactoryAgingBuckets.max) * 100);
+                const active = selectedAgingBucket === bucket.key;
                 return (
-                  <div key={bucket.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAgingBucket((prev) =>
+                        prev === bucket.key ? null : bucket.key,
+                      );
+                      setPage(1);
+                    }}
+                    className={`rounded-lg border p-3 text-left transition ${active ? "border-slate-900 bg-slate-100" : "border-slate-200 bg-slate-50"}`}
+                  >
                     <div className="text-xs font-semibold text-slate-600">{bucket.label}</div>
                     <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
                       <div
@@ -771,7 +789,7 @@ export default function SchedulePage({
                       />
                     </div>
                     <div className="mt-2 text-lg font-bold text-slate-900">{bucket.count}</div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -818,7 +836,14 @@ export default function SchedulePage({
                       {columns.map((c) => {
                         let v: unknown;
                         if (c.key === "_status") v = r.currentStatus;
-                        else if (c.key === "_aging") v = r.aging;
+                        else if (c.key === "_aging") {
+                          const agingValue = r.agingToLatestExFactory;
+                          v =
+                            typeof agingValue === "number" &&
+                            !Number.isNaN(agingValue)
+                              ? agingValue
+                              : "-";
+                        }
                         else if (c.key === "_wfo")
                           v = Number.isFinite(
                             Number(waitingOrderPrices[r.chassis]),
@@ -859,6 +884,28 @@ export default function SchedulePage({
 
                         if (c.key === "_latestExFactory") {
                           v = r.latestExFactoryDate;
+                        }
+
+                        if (c.key === "_aging") {
+                          const agingValue =
+                            typeof r.agingToLatestExFactory === "number" &&
+                            !Number.isNaN(r.agingToLatestExFactory)
+                              ? r.agingToLatestExFactory
+                              : null;
+                          const agingText =
+                            agingValue == null
+                              ? "-"
+                              : agingValue >= 0
+                                ? `+${agingValue}`
+                                : String(agingValue);
+                          return (
+                            <td
+                              key={`${r.chassis}-${c.key}-${i}`}
+                              className={`whitespace-nowrap px-3 py-2.5 font-semibold ${agingValue == null ? "text-slate-500" : agingValue >= 0 ? "text-rose-600" : "text-emerald-600"}`}
+                            >
+                              {agingText}
+                            </td>
+                          );
                         }
 
                         const chassisKey = normalize(r.chassis);
