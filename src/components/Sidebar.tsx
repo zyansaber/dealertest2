@@ -184,6 +184,8 @@ export default function Sidebar({
         ? 'show-management'
         : path.includes('/inventory-management')
         ? 'inventory-management'
+        : path.includes('/upload-production-planning')
+        ? 'upload-production-planning'
         : path.includes('/finance-report')
         ? 'finance-report'
         : path.includes('/customer-bp-pay')
@@ -309,6 +311,7 @@ export default function Sidebar({
     const path = location.pathname;
     if (path.includes('/show-management')) return 'show-management';
     if (path.includes('/inventory-management')) return 'inventory-management';
+    if (path.includes('/upload-production-planning')) return 'upload-production-planning';
     if (path.includes('/finance-report')) return 'finance-report';
     if (path.includes('/customer-bp-pay')) return 'customer-bp-pay';
     if (path.includes('/inventorystock')) return 'inventorystock';
@@ -358,6 +361,12 @@ export default function Sidebar({
     end: true
   });
   navigationItems.splice(5, 0, {
+    path: `${basePath}/upload-production-planning`,
+    label: "上传排产",
+    icon: ClipboardList,
+    end: true
+  });
+  navigationItems.splice(6, 0, {
     path: `${basePath}/show-management`,
     label: "Show Management",
     icon: ClipboardList,
@@ -384,7 +393,7 @@ export default function Sidebar({
   });
 
   if (isFinanceReportEnabled(normalizedDealerSlug)) {
-    navigationItems.splice(6, 0, {
+    navigationItems.splice(7, 0, {
       path: `${basePath}/customer-bp-pay`,
       label: "Customer BP & Pay",
       icon: DollarSign,
