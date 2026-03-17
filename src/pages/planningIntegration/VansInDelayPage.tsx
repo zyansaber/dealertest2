@@ -7,6 +7,7 @@ import { parseDateToTimestamp } from "./utils";
 import type { Row } from "./types";
 import type { PlanningLang } from "./i18n";
 import { tr } from "./i18n";
+import { getPlanningOrderType, planningOrderTypeLabel } from "./orderType";
 
 const focusRanges = ["SRH", "SRC", "SRT", "SRP"];
 
@@ -71,7 +72,7 @@ export default function VansInDelayPage({ rows, lang }: { rows: Row[]; lang: Pla
           dealer,
           modelRange,
           finished,
-          isStock: customer.toLowerCase().endsWith("stock"),
+          orderType: getPlanningOrderType(customer),
         };
       }),
     [rows]
@@ -83,7 +84,8 @@ export default function VansInDelayPage({ rows, lang }: { rows: Row[]; lang: Pla
     () =>
       focusRanges.map((range) => {
         const delayedInRange = delayedRows.filter((r) => r.modelRange === range);
-        const customerCount = delayedInRange.filter((r) => !r.isStock).length;
+        const customerCount = delayedInRange.filter((r) => r.orderType === "customer").length;
+        const prototypeCount = delayedInRange.filter((r) => r.orderType === "prototype").length;
 
         const dealerCount: Record<string, number> = {};
         delayedInRange.forEach((r) => {
@@ -106,6 +108,7 @@ export default function VansInDelayPage({ rows, lang }: { rows: Row[]; lang: Pla
           range,
           delayed: delayedInRange.length,
           customerCount,
+          prototypeCount,
           top5Dealers,
           melbourneFactory,
           longtreeFactory,
@@ -142,14 +145,18 @@ export default function VansInDelayPage({ rows, lang }: { rows: Row[]; lang: Pla
           <div key={r.range} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 text-lg font-semibold text-slate-900">{r.range}</div>
 
-            <div className="mb-4 grid gap-3 md:grid-cols-2">
+            <div className="mb-4 grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
                 <div className="text-xs font-semibold uppercase tracking-wide text-rose-700">{tr(lang, "Delay Qty", "延误数量")}</div>
                 <div className="mt-1 text-3xl font-bold text-rose-900">{r.delayed}</div>
               </div>
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">{tr(lang, "Customer Qty (non-stock)", "客户数量（非 stock）")}</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">{tr(lang, "Customer Qty", "客户订单数量")}</div>
                 <div className="mt-1 text-3xl font-bold text-blue-900">{r.customerCount}</div>
+              </div>
+              <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-700">{planningOrderTypeLabel(lang, "prototype")}</div>
+                <div className="mt-1 text-3xl font-bold text-fuchsia-900">{r.prototypeCount}</div>
               </div>
             </div>
 

@@ -7,6 +7,7 @@ import { parseDateToTimestamp } from "./utils";
 import type { Row } from "./types";
 import type { PlanningLang } from "./i18n";
 import { metricText, statusText, tr } from "./i18n";
+import { getPlanningOrderType, planningOrderTypeLabel } from "./orderType";
 
 type Mode = "customer" | "group" | "modelRange";
 
@@ -131,10 +132,10 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
         const rawChassis = String((r.schedule as any)?.Chassis ?? "");
         const modelRange = normalizeModelRange(rawModel, rawChassis);
         const customer = String((r.schedule as any)?.Customer ?? "").trim();
-        const isStock = customer.toLowerCase().endsWith("stock");
+        const orderType = getPlanningOrderType(customer);
         const dealer = String((r.schedule as any)?.Dealer ?? "").trim();
         const group = resolveDealerGroup(dealer);
-        return { ...r, status, finished, modelRange, isStock, group };
+        return { ...r, status, finished, modelRange, orderType, group };
       }),
     [rows]
   );
@@ -218,12 +219,14 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
 
   const analysisRows = useMemo(() => {
     if (mode === "customer") {
-      const customer = selectedRows.filter((r) => !r.isStock).length;
-      const stock = selectedRows.filter((r) => r.isStock).length;
-      const total = Math.max(1, customer + stock);
+      const customer = selectedRows.filter((r) => r.orderType === "customer").length;
+      const stock = selectedRows.filter((r) => r.orderType === "stock").length;
+      const prototype = selectedRows.filter((r) => r.orderType === "prototype").length;
+      const total = Math.max(1, customer + stock + prototype);
       return [
-        { key: tr(lang, "Customer", "客户"), count: customer, ratio: `${((customer / total) * 100).toFixed(1)}%` },
-        { key: tr(lang, "Stock", "库存"), count: stock, ratio: `${((stock / total) * 100).toFixed(1)}%` },
+        { key: planningOrderTypeLabel(lang, "customer"), count: customer, ratio: `${((customer / total) * 100).toFixed(1)}%` },
+        { key: planningOrderTypeLabel(lang, "stock"), count: stock, ratio: `${((stock / total) * 100).toFixed(1)}%` },
+        { key: planningOrderTypeLabel(lang, "prototype"), count: prototype, ratio: `${((prototype / total) * 100).toFixed(1)}%` },
       ];
     }
 
@@ -241,7 +244,7 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
 
   const leftPortLongtreeMonthlySeries = useMemo(() => {
     const from = new Date(new Date().getFullYear() - 1, 5, 1).getTime();
-    const buckets: Record<string, { all: { sum: number; count: number }; customer: { sum: number; count: number }; stock: { sum: number; count: number } }> = {};
+    const buckets: Record<string, { all: { sum: number; count: number }; customer: { sum: number; count: number }; stock: { sum: number; count: number }; prototype: { sum: number; count: number } }> = {};
 
     filteredByModel.forEach((r) => {
       const m = (name: string, src: "schedule" | "dateTrack") => parseDateToTimestamp(src === "schedule" ? (r.schedule as any)?.[name] : r.dateTrack?.[name]);
@@ -259,17 +262,17 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       const totalDays = ((cw! - pos!) + (al! - cw!) + (fg! - al!) + (lf! - fg!) + (ep! - lf!) + (lp! - ep!)) / 86400000;
       const d = new Date(lp!);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!buckets[key]) buckets[key] = { all: { sum: 0, count: 0 }, customer: { sum: 0, count: 0 }, stock: { sum: 0, count: 0 } };
+      if (!buckets[key]) buckets[key] = { all: { sum: 0, count: 0 }, customer: { sum: 0, count: 0 }, stock: { sum: 0, count: 0 }, prototype: { sum: 0, count: 0 } };
       buckets[key].all.sum += totalDays;
       buckets[key].all.count += 1;
 
-      const target = r.isStock ? buckets[key].stock : buckets[key].customer;
+      const target = buckets[key][r.orderType];
       target.sum += totalDays;
       target.count += 1;
     });
 
     const months = Object.keys(buckets).sort((a, b) => a.localeCompare(b)).filter((month) => !month.endsWith("-06"));
-    const toPoints = (key: "all" | "customer" | "stock") => months.map((month) => {
+    const toPoints = (key: "all" | "customer" | "stock" | "prototype") => months.map((month) => {
       const entry = buckets[month][key];
       return { label: month, value: entry.count ? Number((entry.sum / entry.count).toFixed(2)) : 0 };
     });
@@ -278,8 +281,9 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       monthly: toPoints("all"),
       series: [
         { key: tr(lang, "All", "全部"), color: "#334155", points: toPoints("all") },
-        { key: tr(lang, "Customer", "客户"), color: "#2563eb", points: toPoints("customer") },
-        { key: tr(lang, "Stock", "库存"), color: "#ea580c", points: toPoints("stock") },
+        { key: planningOrderTypeLabel(lang, "customer"), color: "#2563eb", points: toPoints("customer") },
+        { key: planningOrderTypeLabel(lang, "stock"), color: "#ea580c", points: toPoints("stock") },
+        { key: planningOrderTypeLabel(lang, "prototype"), color: "#a21caf", points: toPoints("prototype") },
       ],
     };
   }, [filteredByModel, lang]);
@@ -287,7 +291,7 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
   const forecastVsSignedSeries = useMemo(() => {
     const now = new Date();
     const nowMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const buckets: Record<string, { all: { sum: number; count: number }; customer: { sum: number; count: number }; stock: { sum: number; count: number } }> = {};
+    const buckets: Record<string, { all: { sum: number; count: number }; customer: { sum: number; count: number }; stock: { sum: number; count: number }; prototype: { sum: number; count: number } }> = {};
 
     filteredByModel.forEach((r) => {
       const forecast = parseDateToTimestamp((r.schedule as any)?.["Forecast Production Date"]);
@@ -296,18 +300,18 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
 
       const d = new Date(forecast);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!buckets[key]) buckets[key] = { all: { sum: 0, count: 0 }, customer: { sum: 0, count: 0 }, stock: { sum: 0, count: 0 } };
+      if (!buckets[key]) buckets[key] = { all: { sum: 0, count: 0 }, customer: { sum: 0, count: 0 }, stock: { sum: 0, count: 0 }, prototype: { sum: 0, count: 0 } };
       const days = (forecast - signed) / 86400000 + 25;
 
       buckets[key].all.sum += days;
       buckets[key].all.count += 1;
-      const target = r.isStock ? buckets[key].stock : buckets[key].customer;
+      const target = buckets[key][r.orderType];
       target.sum += days;
       target.count += 1;
     });
 
     const months = Object.keys(buckets).sort((a, b) => a.localeCompare(b)).slice(0, 7);
-    const toPoints = (key: "all" | "customer" | "stock") => months.map((month) => {
+    const toPoints = (key: "all" | "customer" | "stock" | "prototype") => months.map((month) => {
       const entry = buckets[month][key];
       return { label: month, value: entry.count ? Number((entry.sum / entry.count).toFixed(2)) : 0 };
     });
@@ -316,8 +320,9 @@ export default function OverviewPage({ rows, lang }: { rows: Row[]; lang: Planni
       monthly: toPoints("all"),
       series: [
         { key: tr(lang, "All", "全部"), color: "#047857", points: toPoints("all") },
-        { key: tr(lang, "Customer", "客户"), color: "#2563eb", points: toPoints("customer") },
-        { key: tr(lang, "Stock", "库存"), color: "#ea580c", points: toPoints("stock") },
+        { key: planningOrderTypeLabel(lang, "customer"), color: "#2563eb", points: toPoints("customer") },
+        { key: planningOrderTypeLabel(lang, "stock"), color: "#ea580c", points: toPoints("stock") },
+        { key: planningOrderTypeLabel(lang, "prototype"), color: "#a21caf", points: toPoints("prototype") },
       ],
     };
   }, [filteredByModel, lang]);
