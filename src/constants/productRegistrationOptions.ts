@@ -156,6 +156,7 @@ export const DEALERSHIP_PURCHASED_FROM: Option[] = [
   { label: "Great Ocean Road RV & Caravans - Warrnambool", value: "204025" },
   { label: "Snowy River Head Office", value: "3110" },
   { label: "Mandurah Caravan & RV Centre", value: "200994" },
+  { label: "Bundaberg", value: "3138" },
 ];
 
 export const DEALERSHIP_PURCHASED_FROM_NEWGEN: Option[] = [
@@ -196,6 +197,7 @@ export const DEALERSHIP_PURCHASED_FROM_SNOWY: Option[] = [
   { label: "Destiny RV - South Australia", value: "503257" },
   { label: "Snowy River Wangaratta", value: "504620" },
   { label: "Newgen Caravan - Newcastle", value: "3133" },
+  { label: "Bundaberg", value: "3138" },
 ];
 
 export const DEALERSHIP_PURCHASED_FROM_REGENT: Option[] = [
