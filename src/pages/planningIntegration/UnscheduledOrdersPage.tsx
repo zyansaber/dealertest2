@@ -33,6 +33,8 @@ type UnscheduledRow = {
   requestDeliveryDate: string;
   latestExFactoryDate: string;
   recommendedWelding: string;
+  recommendedWeldingTs: number | null;
+  highlightRecommendedWelding: boolean;
   orderType: PlanningOrderType;
 };
 
@@ -76,6 +78,30 @@ const buildLatestExFactoryDate = (requestDeliveryDate: unknown, signedPlansRecei
   if (!signedDate) return null;
   signedDate.setUTCDate(signedDate.getUTCDate() + 140);
   return signedDate;
+};
+
+const buildRecommendedWelding = (requestDeliveryDate: string, signedOff: string) => {
+  const requestDate = parseDdMmYyyyToUtc(requestDeliveryDate);
+  if (requestDate) {
+    requestDate.setUTCDate(requestDate.getUTCDate() - 125);
+    return {
+      text: formatUtcToDdMmYyyy(requestDate),
+      ts: requestDate.getTime(),
+      highlight: true,
+    };
+  }
+
+  const signedTs = parseDateToTimestamp(signedOff);
+  if (signedTs != null) {
+    const nextTs = plusDays(signedTs, 15);
+    return {
+      text: formatDate(nextTs),
+      ts: nextTs,
+      highlight: false,
+    };
+  }
+
+  return { text: "", ts: null, highlight: false };
 };
 
 const isSrvSrmModel = (model: string) => {
@@ -161,10 +187,9 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       const customer = String(row?.Customer ?? "").trim();
       const signedOff = String(row?.["Signed Plans Received"] ?? "").trim();
       if (isNoSignedOff(signedOff)) return;
-      const signedTs = parseDateToTimestamp(signedOff);
-      const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
       const requestDeliveryDate = String(row?.["Request Delivery Date"] ?? "").trim();
       const latestExFactoryDate = buildLatestExFactoryDate(requestDeliveryDate, signedOff);
+      const recommended = buildRecommendedWelding(requestDeliveryDate, signedOff);
 
       out.push({
         source: "trailer",
@@ -175,7 +200,9 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         signedOff,
         requestDeliveryDate,
         latestExFactoryDate: latestExFactoryDate ? formatUtcToDdMmYyyy(latestExFactoryDate) : "",
-        recommendedWelding,
+        recommendedWelding: recommended.text,
+        recommendedWeldingTs: recommended.ts,
+        highlightRecommendedWelding: recommended.highlight,
         orderType: getPlanningOrderType(customer),
       });
     });
@@ -187,10 +214,9 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       const customer = String(row?.customer ?? "").trim();
       const signedOff = String(row?.signedOrderReceived ?? "").trim();
       if (isNoSignedOff(signedOff)) return;
-      const signedTs = parseDateToTimestamp(signedOff);
-      const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
       const requestDeliveryDate = String(row?.vehiclePlannedEta ?? "").trim();
       const latestExFactoryDate = buildLatestExFactoryDate(requestDeliveryDate, signedOff);
+      const recommended = buildRecommendedWelding(requestDeliveryDate, signedOff);
 
       out.push({
         source: "campervan",
@@ -201,12 +227,21 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         signedOff,
         requestDeliveryDate,
         latestExFactoryDate: latestExFactoryDate ? formatUtcToDdMmYyyy(latestExFactoryDate) : "",
-        recommendedWelding,
+        recommendedWelding: recommended.text,
+        recommendedWeldingTs: recommended.ts,
+        highlightRecommendedWelding: recommended.highlight,
         orderType: getPlanningOrderType(customer),
       });
     });
 
-    return out.sort((a, b) => a.chassis.localeCompare(b.chassis));
+    return out.sort((a, b) => {
+      if (a.recommendedWeldingTs != null && b.recommendedWeldingTs != null) {
+        return a.recommendedWeldingTs - b.recommendedWeldingTs || a.chassis.localeCompare(b.chassis);
+      }
+      if (a.recommendedWeldingTs != null) return -1;
+      if (b.recommendedWeldingTs != null) return 1;
+      return a.chassis.localeCompare(b.chassis);
+    });
   }, [scheduleRows, campervanRows, uploadedChassisSet]);
 
   const filteredRows = useMemo(() => {
@@ -277,7 +312,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
                   <td className="whitespace-nowrap px-3 py-2">{row.signedOff || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.requestDeliveryDate || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.latestExFactoryDate || "-"}</td>
-                  <td className="whitespace-nowrap px-3 py-2">{row.recommendedWelding || "-"}</td>
+                  <td className={`whitespace-nowrap px-3 py-2 ${row.highlightRecommendedWelding ? "font-semibold text-rose-600" : ""}`}>{row.recommendedWelding || "-"}</td>
                 </tr>
               ))}
               {filteredRows.length === 0 ? (
