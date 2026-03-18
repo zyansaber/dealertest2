@@ -5,6 +5,7 @@ import { database } from "@/lib/firebase";
 import type { CampervanScheduleItem, ScheduleItem } from "@/types";
 import type { PlanningLang } from "./i18n";
 import { tr } from "./i18n";
+import { getPlanningOrderType, planningOrderTypeLabel, type PlanningOrderType } from "./orderType";
 import { formatDate, parseDateToTimestamp } from "./utils";
 
 type UploadRow = {
@@ -20,6 +21,8 @@ type MonthlyUpload = {
 
 type UploadCollection = Record<string, MonthlyUpload>;
 
+type OrderFilter = "all" | "stock" | "customer";
+
 type UnscheduledRow = {
   source: "trailer" | "campervan";
   chassis: string;
@@ -28,6 +31,7 @@ type UnscheduledRow = {
   model: string;
   signedOff: string;
   recommendedWelding: string;
+  orderType: PlanningOrderType;
 };
 
 const normalizeChassis = (value: unknown) => String(value ?? "").trim().toUpperCase();
@@ -46,6 +50,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
   const [scheduleRows, setScheduleRows] = useState<ScheduleItem[]>([]);
   const [campervanRows, setCampervanRows] = useState<CampervanScheduleItem[]>([]);
   const [allUploads, setAllUploads] = useState<UploadCollection>({});
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
 
   useEffect(() => {
     const scheduleRef = ref(database, "schedule");
@@ -112,6 +117,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       const regentProduction = String(regentProductionRaw ?? "").trim();
       if (!(regentProductionRaw == null || regentProduction === "")) return;
 
+      const customer = String(row?.Customer ?? "").trim();
       const signedOff = String(row?.["Signed Plans Received"] ?? "").trim();
       const signedTs = parseDateToTimestamp(signedOff);
       const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
@@ -119,11 +125,12 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       out.push({
         source: "trailer",
         chassis,
-        customer: String(row?.Customer ?? "").trim(),
+        customer,
         dealer: String(row?.Dealer ?? "").trim(),
         model: String(row?.Model ?? "").trim(),
         signedOff,
         recommendedWelding,
+        orderType: getPlanningOrderType(customer),
       });
     });
 
@@ -131,6 +138,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       const chassis = normalizeChassis(row?.chassisNumber ?? row?.vinNumber);
       if (!chassis || uploadedChassisSet.has(chassis)) return;
 
+      const customer = String(row?.customer ?? "").trim();
       const signedOff = String(row?.signedOrderReceived ?? "").trim();
       const signedTs = parseDateToTimestamp(signedOff);
       const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
@@ -138,16 +146,22 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       out.push({
         source: "campervan",
         chassis,
-        customer: String(row?.customer ?? "").trim(),
+        customer,
         dealer: String(row?.dealer ?? "").trim(),
         model: String(row?.model ?? row?.vehicle ?? "").trim(),
         signedOff,
         recommendedWelding,
+        orderType: getPlanningOrderType(customer),
       });
     });
 
     return out.sort((a, b) => a.chassis.localeCompare(b.chassis));
   }, [scheduleRows, campervanRows, uploadedChassisSet]);
+
+  const filteredRows = useMemo(() => {
+    if (orderFilter === "all") return unscheduledRows;
+    return unscheduledRows.filter((row) => row.orderType === orderFilter);
+  }, [orderFilter, unscheduledRows]);
 
   return (
     <div className="space-y-6">
@@ -167,8 +181,25 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
           {tr(lang, "Uploaded months compared", "已比对上传月份数")}: <span className="font-semibold text-slate-900">{Object.keys(allUploads).length}</span>
         </p>
         <p className="mt-2 text-sm text-slate-600">
-          {tr(lang, "Unscheduled count", "未排产数量")}: <span className="font-semibold text-slate-900">{unscheduledRows.length}</span>
+          {tr(lang, "Unscheduled count", "未排产数量")}: <span className="font-semibold text-slate-900">{filteredRows.length}</span>
         </p>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {([
+            ["all", tr(lang, "All", "全部")],
+            ["stock", tr(lang, "Stock", "管理订单")],
+            ["customer", tr(lang, "Customer", "客户订单")],
+          ] as Array<[OrderFilter, string]>).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setOrderFilter(key)}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition ${orderFilter === key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -176,16 +207,17 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
           <table className="min-w-full text-sm">
             <thead className="bg-slate-100 text-left text-slate-700">
               <tr>
-                {["Source", "Chassis", "Customer", "Dealer", "Model", "Signed off", "Recommended Planned chassisWelding"].map((h) => (
+                {["Source", "Chassis", "Order Type", "Customer", "Dealer", "Model", "Signed off", "Recommended Planned chassisWelding"].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {unscheduledRows.map((row) => (
+              {filteredRows.map((row) => (
                 <tr key={`${row.source}-${row.chassis}`} className="border-t border-slate-100">
                   <td className="whitespace-nowrap px-3 py-2">{row.source === "trailer" ? tr(lang, "Trailer", "拖挂式") : tr(lang, "Campervan", "自行式")}</td>
                   <td className="whitespace-nowrap px-3 py-2 font-medium">{row.chassis}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{planningOrderTypeLabel(lang, row.orderType)}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.customer || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.dealer || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.model || "-"}</td>
@@ -193,10 +225,10 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
                   <td className="whitespace-nowrap px-3 py-2">{row.recommendedWelding || "-"}</td>
                 </tr>
               ))}
-              {unscheduledRows.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
-                    {tr(lang, "No unscheduled orders.", "没有未排产新订单。")}
+                  <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
+                    {tr(lang, "No unscheduled orders for this filter.", "当前筛选下没有未排产新订单。")}
                   </td>
                 </tr>
               ) : null}
