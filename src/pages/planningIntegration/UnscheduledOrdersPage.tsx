@@ -42,6 +42,8 @@ const plusDays = (dateTs: number, days: number) => {
   return d.getTime();
 };
 
+const isNoSignedOff = (value: string) => value.trim().toUpperCase() === "NO";
+
 interface UnscheduledOrdersPageProps {
   lang: PlanningLang;
 }
@@ -119,6 +121,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
 
       const customer = String(row?.Customer ?? "").trim();
       const signedOff = String(row?.["Signed Plans Received"] ?? "").trim();
+      if (isNoSignedOff(signedOff)) return;
       const signedTs = parseDateToTimestamp(signedOff);
       const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
 
@@ -140,6 +143,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
 
       const customer = String(row?.customer ?? "").trim();
       const signedOff = String(row?.signedOrderReceived ?? "").trim();
+      if (isNoSignedOff(signedOff)) return;
       const signedTs = parseDateToTimestamp(signedOff);
       const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
 
