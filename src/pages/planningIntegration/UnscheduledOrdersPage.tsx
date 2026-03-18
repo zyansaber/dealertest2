@@ -18,6 +18,8 @@ type MonthlyUpload = {
   zh?: UploadRow[];
 };
 
+type UploadCollection = Record<string, MonthlyUpload>;
+
 type UnscheduledRow = {
   source: "trailer" | "campervan";
   chassis: string;
@@ -41,18 +43,14 @@ interface UnscheduledOrdersPageProps {
 }
 
 export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPageProps) {
-  const [month, setMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
   const [scheduleRows, setScheduleRows] = useState<ScheduleItem[]>([]);
   const [campervanRows, setCampervanRows] = useState<CampervanScheduleItem[]>([]);
-  const [monthlyUpload, setMonthlyUpload] = useState<MonthlyUpload>({});
+  const [allUploads, setAllUploads] = useState<UploadCollection>({});
 
   useEffect(() => {
     const scheduleRef = ref(database, "schedule");
     const campervanRef = ref(database, "campervanSchedule");
-    const uploadRef = ref(database, `planningTargets/uploadedScheduleBilingual/${month}`);
+    const uploadRootRef = ref(database, "planningTargets/uploadedScheduleBilingual");
 
     const scheduleHandler = (snapshot: any) => {
       const raw = snapshot.val() || {};
@@ -71,19 +69,19 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
     };
 
     const uploadHandler = (snapshot: any) => {
-      setMonthlyUpload((snapshot.val() as MonthlyUpload) || {});
+      setAllUploads((snapshot.val() as UploadCollection) || {});
     };
 
     onValue(scheduleRef, scheduleHandler);
     onValue(campervanRef, campervanHandler);
-    onValue(uploadRef, uploadHandler);
+    onValue(uploadRootRef, uploadHandler);
 
     return () => {
       off(scheduleRef, "value", scheduleHandler);
       off(campervanRef, "value", campervanHandler);
-      off(uploadRef, "value", uploadHandler);
+      off(uploadRootRef, "value", uploadHandler);
     };
-  }, [month]);
+  }, []);
 
   const uploadedChassisSet = useMemo(() => {
     const set = new Set<string>();
@@ -93,11 +91,15 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         if (ch) set.add(ch);
       });
     };
-    collect(monthlyUpload.rows);
-    collect(monthlyUpload.en);
-    collect(monthlyUpload.zh);
+
+    Object.values(allUploads).forEach((upload) => {
+      collect(upload?.rows);
+      collect(upload?.en);
+      collect(upload?.zh);
+    });
+
     return set;
-  }, [monthlyUpload]);
+  }, [allUploads]);
 
   const unscheduledRows = useMemo<UnscheduledRow[]>(() => {
     const out: UnscheduledRow[] = [];
@@ -108,8 +110,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
 
       const regentProductionRaw = row?.["Regent Production"];
       const regentProduction = String(regentProductionRaw ?? "").trim();
-      const shouldShow = regentProductionRaw == null || regentProduction === "";
-      if (!shouldShow) return;
+      if (!(regentProductionRaw == null || regentProduction === "")) return;
 
       const signedOff = String(row?.["Signed Plans Received"] ?? "").trim();
       const signedTs = parseDateToTimestamp(signedOff);
@@ -155,17 +156,16 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         <p className="mt-1 text-sm text-slate-600">
           {tr(
             lang,
-            "Show chassis from trailer/campervan schedule but not in uploaded planning for selected month. Recommended Planned chassisWelding = Signed off + 15 days.",
-            "显示在拖挂式/自行式排产中，但不在该月上传排产中的 chassis。推荐 Planned chassisWelding = Signed off + 15 天。"
+            "Show chassis from trailer/campervan schedule but not in any uploaded planning month. Trailer rows only appear when Regent Production is blank or missing. Recommended Planned chassisWelding = Signed off + 15 days.",
+            "显示在拖挂式/自行式排产中，但不在任何已上传月份排产里的 chassis。拖挂式只有在 Regent Production 为空白或不存在时才显示。推荐 Planned chassisWelding = Signed off + 15 天。"
           )}
         </p>
       </header>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <label className="text-sm font-medium text-slate-700">
-          {tr(lang, "Month", "月份")}
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="mt-1 w-full max-w-xs rounded-md border border-slate-300 px-3 py-2" />
-        </label>
+        <p className="text-sm text-slate-600">
+          {tr(lang, "Uploaded months compared", "已比对上传月份数")}: <span className="font-semibold text-slate-900">{Object.keys(allUploads).length}</span>
+        </p>
         <p className="mt-2 text-sm text-slate-600">
           {tr(lang, "Unscheduled count", "未排产数量")}: <span className="font-semibold text-slate-900">{unscheduledRows.length}</span>
         </p>
@@ -196,7 +196,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
               {unscheduledRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
-                    {tr(lang, "No unscheduled orders for this month.", "该月份没有未排产订单。")}
+                    {tr(lang, "No unscheduled orders.", "没有未排产新订单。")}
                   </td>
                 </tr>
               ) : null}
