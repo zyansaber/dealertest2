@@ -21,7 +21,7 @@ type MonthlyUpload = {
 
 type UploadCollection = Record<string, MonthlyUpload>;
 
-type OrderFilter = "all" | "stock" | "customer";
+type OrderFilter = "all" | "stock" | "customer" | "srv-srm";
 
 type UnscheduledRow = {
   source: "trailer" | "campervan";
@@ -30,11 +30,14 @@ type UnscheduledRow = {
   dealer: string;
   model: string;
   signedOff: string;
+  requestDeliveryDate: string;
+  latestExFactoryDate: string;
   recommendedWelding: string;
   orderType: PlanningOrderType;
 };
 
 const normalizeChassis = (value: unknown) => String(value ?? "").trim().toUpperCase();
+const normalizeText = (value: unknown) => String(value ?? "").trim().toUpperCase();
 
 const plusDays = (dateTs: number, days: number) => {
   const d = new Date(dateTs);
@@ -43,6 +46,42 @@ const plusDays = (dateTs: number, days: number) => {
 };
 
 const isNoSignedOff = (value: string) => value.trim().toUpperCase() === "NO";
+
+const parseDdMmYyyyToUtc = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  const [ddRaw, mmRaw, yyyyRaw] = text.split("/");
+  const dd = Number(ddRaw);
+  const mm = Number(mmRaw);
+  const yyyy = Number(yyyyRaw);
+  if (!dd || !mm || !yyyy) return null;
+  const dt = new Date(Date.UTC(yyyy, mm - 1, dd));
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+};
+
+const formatUtcToDdMmYyyy = (dt: Date) => {
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getUTCFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+const buildLatestExFactoryDate = (requestDeliveryDate: unknown, signedPlansReceived: unknown) => {
+  const requestDate = parseDdMmYyyyToUtc(requestDeliveryDate);
+  if (requestDate) {
+    requestDate.setUTCDate(requestDate.getUTCDate() - 70);
+    return requestDate;
+  }
+  const signedDate = parseDdMmYyyyToUtc(signedPlansReceived);
+  if (!signedDate) return null;
+  signedDate.setUTCDate(signedDate.getUTCDate() + 140);
+  return signedDate;
+};
+
+const isSrvSrmModel = (model: string) => {
+  const text = normalizeText(model);
+  return text.includes("SRV") || text.includes("SRM");
+};
 
 interface UnscheduledOrdersPageProps {
   lang: PlanningLang;
@@ -124,6 +163,8 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       if (isNoSignedOff(signedOff)) return;
       const signedTs = parseDateToTimestamp(signedOff);
       const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
+      const requestDeliveryDate = String(row?.["Request Delivery Date"] ?? "").trim();
+      const latestExFactoryDate = buildLatestExFactoryDate(requestDeliveryDate, signedOff);
 
       out.push({
         source: "trailer",
@@ -132,6 +173,8 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         dealer: String(row?.Dealer ?? "").trim(),
         model: String(row?.Model ?? "").trim(),
         signedOff,
+        requestDeliveryDate,
+        latestExFactoryDate: latestExFactoryDate ? formatUtcToDdMmYyyy(latestExFactoryDate) : "",
         recommendedWelding,
         orderType: getPlanningOrderType(customer),
       });
@@ -146,6 +189,8 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
       if (isNoSignedOff(signedOff)) return;
       const signedTs = parseDateToTimestamp(signedOff);
       const recommendedWelding = signedTs != null ? formatDate(plusDays(signedTs, 15)) : "";
+      const requestDeliveryDate = String(row?.vehiclePlannedEta ?? "").trim();
+      const latestExFactoryDate = buildLatestExFactoryDate(requestDeliveryDate, signedOff);
 
       out.push({
         source: "campervan",
@@ -154,6 +199,8 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         dealer: String(row?.dealer ?? "").trim(),
         model: String(row?.model ?? row?.vehicle ?? "").trim(),
         signedOff,
+        requestDeliveryDate,
+        latestExFactoryDate: latestExFactoryDate ? formatUtcToDdMmYyyy(latestExFactoryDate) : "",
         recommendedWelding,
         orderType: getPlanningOrderType(customer),
       });
@@ -164,7 +211,8 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
 
   const filteredRows = useMemo(() => {
     if (orderFilter === "all") return unscheduledRows;
-    return unscheduledRows.filter((row) => row.orderType === orderFilter);
+    if (orderFilter === "srv-srm") return unscheduledRows.filter((row) => isSrvSrmModel(row.model));
+    return unscheduledRows.filter((row) => row.orderType === orderFilter && !isSrvSrmModel(row.model));
   }, [orderFilter, unscheduledRows]);
 
   return (
@@ -193,6 +241,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
             ["all", tr(lang, "All", "全部")],
             ["stock", tr(lang, "Stock", "管理订单")],
             ["customer", tr(lang, "Customer", "客户订单")],
+            ["srv-srm", "SRV / SRM"],
           ] as Array<[OrderFilter, string]>).map(([key, label]) => (
             <button
               key={key}
@@ -211,7 +260,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
           <table className="min-w-full text-sm">
             <thead className="bg-slate-100 text-left text-slate-700">
               <tr>
-                {["Source", "Chassis", "Order Type", "Customer", "Dealer", "Model", "Signed off", "Recommended Planned chassisWelding"].map((h) => (
+                {["Source", "Chassis", "Order Type", "Customer", "Dealer", "Model", "Signed off", "Request Delivery Date", "Latest Ex Factory Date", "Recommended Planned chassisWelding"].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>
                 ))}
               </tr>
@@ -226,12 +275,14 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
                   <td className="whitespace-nowrap px-3 py-2">{row.dealer || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.model || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.signedOff || "-"}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{row.requestDeliveryDate || "-"}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{row.latestExFactoryDate || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.recommendedWelding || "-"}</td>
                 </tr>
               ))}
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={10} className="px-3 py-8 text-center text-slate-500">
                     {tr(lang, "No unscheduled orders for this filter.", "当前筛选下没有未排产新订单。")}
                   </td>
                 </tr>
