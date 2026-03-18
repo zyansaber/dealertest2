@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { off, onValue, ref } from "firebase/database";
+import { get, off, onValue, ref, set } from "firebase/database";
+import { toast } from "sonner";
 
-import { database } from "@/lib/firebase";
+import { database, subscribeToSpecPlan } from "@/lib/firebase";
 import type { CampervanScheduleItem, ScheduleItem } from "@/types";
 import type { PlanningLang } from "./i18n";
 import { tr } from "./i18n";
@@ -11,6 +12,8 @@ import { formatDate, parseDateToTimestamp } from "./utils";
 type UploadRow = {
   chassis?: string;
   Chassis?: string;
+  plannedChassisWelding?: string;
+  plannedFinishgoods?: string;
 };
 
 type MonthlyUpload = {
@@ -109,6 +112,31 @@ const isSrvSrmModel = (model: string) => {
   return text.includes("SRV") || text.includes("SRM");
 };
 
+const buildSpecPlanMaps = (raw: unknown) => {
+  const specByChassis: Record<string, string> = {};
+  const planByChassis: Record<string, string> = {};
+
+  const put = (chassisRaw: unknown, payload: any) => {
+    const chassis = normalizeChassis(chassisRaw);
+    if (!chassis || !payload || typeof payload !== "object") return;
+    if (typeof payload.spec === "string" && payload.spec.trim()) specByChassis[chassis] = payload.spec;
+    if (typeof payload.plan === "string" && payload.plan.trim()) planByChassis[chassis] = payload.plan;
+  };
+
+  if (Array.isArray(raw)) {
+    raw.forEach((item) => put((item as any)?.Chassis ?? (item as any)?.chassis, item));
+    return { specByChassis, planByChassis };
+  }
+
+  if (raw && typeof raw === "object") {
+    Object.entries(raw as Record<string, any>).forEach(([key, value]) => {
+      if (value && typeof value === "object") put((value as any)?.Chassis ?? key, value);
+    });
+  }
+
+  return { specByChassis, planByChassis };
+};
+
 interface UnscheduledOrdersPageProps {
   lang: PlanningLang;
 }
@@ -117,7 +145,14 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
   const [scheduleRows, setScheduleRows] = useState<ScheduleItem[]>([]);
   const [campervanRows, setCampervanRows] = useState<CampervanScheduleItem[]>([]);
   const [allUploads, setAllUploads] = useState<UploadCollection>({});
+  const [specByChassis, setSpecByChassis] = useState<Record<string, string>>({});
+  const [planByChassis, setPlanByChassis] = useState<Record<string, string>>({});
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [savingChassis, setSavingChassis] = useState<string | null>(null);
 
   useEffect(() => {
     const scheduleRef = ref(database, "schedule");
@@ -147,11 +182,17 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
     onValue(scheduleRef, scheduleHandler);
     onValue(campervanRef, campervanHandler);
     onValue(uploadRootRef, uploadHandler);
+    const unsubSpecPlan = subscribeToSpecPlan((data) => {
+      const maps = buildSpecPlanMaps(data);
+      setSpecByChassis(maps.specByChassis);
+      setPlanByChassis(maps.planByChassis);
+    });
 
     return () => {
       off(scheduleRef, "value", scheduleHandler);
       off(campervanRef, "value", campervanHandler);
       off(uploadRootRef, "value", uploadHandler);
+      unsubSpecPlan?.();
     };
   }, []);
 
@@ -250,6 +291,46 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
     return unscheduledRows.filter((row) => row.orderType === orderFilter && !isSrvSrmModel(row.model));
   }, [orderFilter, unscheduledRows]);
 
+  const openUrl = (url?: string) => {
+    if (!url) return;
+    window.open(url, "_blank");
+  };
+
+  const addToPlanning = async (row: UnscheduledRow) => {
+    try {
+      setSavingChassis(row.chassis);
+      const targetRef = ref(database, `planningTargets/uploadedScheduleBilingual/${selectedMonth}`);
+      const snap = await get(targetRef);
+      const current = (snap.val() as MonthlyUpload | null) || {};
+      const existingRows = Array.isArray(current.rows) ? current.rows : [];
+      const exists = existingRows.some((item) => normalizeChassis(item?.chassis ?? item?.Chassis) === row.chassis);
+      if (exists) {
+        toast.error(tr(lang, "This chassis is already in the selected planning month.", "这个 chassis 已经在所选排产月份里。"));
+        return;
+      }
+
+      const nextRows: UploadRow[] = [
+        ...existingRows,
+        {
+          chassis: row.chassis,
+          plannedChassisWelding: row.recommendedWelding,
+          plannedFinishgoods: "",
+        },
+      ];
+
+      await set(targetRef, {
+        ...current,
+        rows: nextRows,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.success(tr(lang, "Added to planning successfully.", "已成功加入排产。"));
+    } catch {
+      toast.error(tr(lang, "Failed to add to planning.", "加入排产失败。"));
+    } finally {
+      setSavingChassis(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header>
@@ -270,6 +351,12 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         <p className="mt-2 text-sm text-slate-600">
           {tr(lang, "Unscheduled count", "未排产数量")}: <span className="font-semibold text-slate-900">{filteredRows.length}</span>
         </p>
+        <div className="mt-3 max-w-xs">
+          <label className="text-sm font-medium text-slate-700">
+            {tr(lang, "Planning month for add", "加入排产的月份")}
+            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" />
+          </label>
+        </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           {([
@@ -295,7 +382,7 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
           <table className="min-w-full text-sm">
             <thead className="bg-slate-100 text-left text-slate-700">
               <tr>
-                {["Source", "Chassis", "Order Type", "Customer", "Dealer", "Model", "Signed off", "Request Delivery Date", "Latest Ex Factory Date", "Recommended Planned chassisWelding"].map((h) => (
+                {["Source", "Chassis", "Order Type", "Customer", "Dealer", "Model", "Signed off", "Request Delivery Date", "Latest Ex Factory Date", "Recommended Planned chassisWelding", "Spec", "Plan", "Add to planning"].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>
                 ))}
               </tr>
@@ -313,11 +400,14 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
                   <td className="whitespace-nowrap px-3 py-2">{row.requestDeliveryDate || "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2">{row.latestExFactoryDate || "-"}</td>
                   <td className={`whitespace-nowrap px-3 py-2 ${row.highlightRecommendedWelding ? "font-semibold text-rose-600" : ""}`}>{row.recommendedWelding || "-"}</td>
+                  <td className="whitespace-nowrap px-3 py-2"><button type="button" onClick={() => openUrl(specByChassis[row.chassis])} disabled={!specByChassis[row.chassis]} className="rounded border px-2 py-1 disabled:opacity-40">{tr(lang, "Download", "下载")}</button></td>
+                  <td className="whitespace-nowrap px-3 py-2"><button type="button" onClick={() => openUrl(planByChassis[row.chassis])} disabled={!planByChassis[row.chassis]} className="rounded border px-2 py-1 disabled:opacity-40">{tr(lang, "Download", "下载")}</button></td>
+                  <td className="whitespace-nowrap px-3 py-2"><button type="button" onClick={() => addToPlanning(row)} disabled={savingChassis === row.chassis} className="rounded bg-slate-900 px-3 py-1 text-white hover:bg-slate-800 disabled:opacity-50">{savingChassis === row.chassis ? tr(lang, "Adding...", "加入中...") : tr(lang, "Add", "加入排产")}</button></td>
                 </tr>
               ))}
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={13} className="px-3 py-8 text-center text-slate-500">
                     {tr(lang, "No unscheduled orders for this filter.", "当前筛选下没有未排产新订单。")}
                   </td>
                 </tr>
