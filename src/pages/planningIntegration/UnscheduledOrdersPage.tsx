@@ -257,8 +257,8 @@ export default function UnscheduledOrdersPage({ lang }: UnscheduledOrdersPagePro
         <p className="mt-1 text-sm text-slate-600">
           {tr(
             lang,
-            "Show chassis from trailer/campervan schedule but not in any uploaded planning month. Trailer rows only appear when Regent Production is blank or missing. Recommended Planned chassisWelding = Signed off + 15 days.",
-            "显示在拖挂式/自行式排产中，但不在任何已上传月份排产里的 chassis。拖挂式只有在 Regent Production 为空白或不存在时才显示。推荐 Planned chassisWelding = Signed off + 15 天。"
+            "Show chassis from trailer/campervan schedule but not in any uploaded planning month. Trailer rows only appear when Regent Production is blank or missing. Recommended Planned chassisWelding = Request Delivery Date - 125 days; if Request Delivery Date is empty, fallback to Signed off + 15 days.",
+            "显示在拖挂式/自行式排产中，但不在任何已上传月份排产里的 chassis。拖挂式只有在 Regent Production 为空白或不存在时才显示。推荐 Planned chassisWelding = Request Delivery Date - 125 天；如果没有 Request Delivery Date，则回退为 Signed off + 15 天。"
           )}
         </p>
       </header>
