@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Sidebar from "@/components/Sidebar";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -46,6 +47,15 @@ const productionSortOrder: Record<string, number> = {
   "Not Started": 6,
   "": 7,
 };
+
+const NZ_FACTORY_INVENTORY_WARNING_SLUGS = new Set([
+  "christchurch",
+  "cmg-campers",
+  "marsden-point",
+]);
+
+const NZ_FACTORY_INVENTORY_WARNING =
+  "Please communicate with Sales and only choose factory inventory after confirming Snowy Stock can support the New Zealand-specific configuration.";
 
 const EXCLUDE_KEYS = new Set([
   "ordered", "order", "orderdate", "orderDate", "orderby", "orderBy",
@@ -176,6 +186,8 @@ export default function DealerGroupInventoryStock() {
     if (dealerConfig?.name) return dealerConfig.name;
     return prettifyDealerName(dealerSlug);
   }, [dealerConfig, dealerSlug, selectedDealerSlug, allDealerConfigs]);
+
+  const showNzFactoryInventoryWarning = NZ_FACTORY_INVENTORY_WARNING_SLUGS.has(currentDealerSlug);
 
   useEffect(() => {
     setLoading(true);
@@ -501,6 +513,15 @@ export default function DealerGroupInventoryStock() {
               <Button variant="outline" onClick={exportCSV}>Export CSV</Button>
             </div>
           </div>
+
+          {showNzFactoryInventoryWarning && (
+            <Alert className="border-amber-300 bg-amber-50 text-amber-950 shadow-sm">
+              <AlertTitle className="text-base font-semibold">Important New Zealand configuration reminder</AlertTitle>
+              <AlertDescription className="text-sm leading-6">
+                {NZ_FACTORY_INVENTORY_WARNING}
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-sm font-medium text-slate-700 mr-2">Filter by Model Range:</span>

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import emailjs from "emailjs-com";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // ✅ Firebase 写回所需
 import { ref, update } from "firebase/database";
@@ -47,6 +48,15 @@ const productionSortOrder: Record<string, number> = {
 };
 
 // stockorder 中不展示/不参与动态列的字段
+const NZ_FACTORY_INVENTORY_WARNING_SLUGS = new Set([
+  "christchurch",
+  "cmg-campers",
+  "marsden-point",
+]);
+
+const NZ_FACTORY_INVENTORY_WARNING =
+  "Please communicate with Sales and only choose factory inventory after confirming Snowy Stock can support the New Zealand-specific configuration.";
+
 const EXCLUDE_KEYS = new Set([
   "ordered", "order", "orderdate", "orderDate", "orderby", "orderBy",
   "orderedat", "orderedAt", "orderedby", "orderedBy",
@@ -117,6 +127,8 @@ export default function InventoryStockPage() {
       ? fromOrder
       : prettifyDealerName(dealerSlug);
   }, [dealerOrders, dealerSlug]);
+
+  const showNzFactoryInventoryWarning = NZ_FACTORY_INVENTORY_WARNING_SLUGS.has(dealerSlug);
 
   useEffect(() => {
     setLoading(true);
@@ -547,6 +559,15 @@ export default function InventoryStockPage() {
               </SelectContent>
             </Select>
           </div>
+
+          {showNzFactoryInventoryWarning && (
+            <Alert className="border-amber-300 bg-amber-50 text-amber-950 shadow-sm">
+              <AlertTitle className="text-base font-semibold">Important New Zealand configuration reminder</AlertTitle>
+              <AlertDescription className="text-sm leading-6">
+                {NZ_FACTORY_INVENTORY_WARNING}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* 表格：动态列 = stockorder 的"原始字段名" */}
           <div className="rounded-xl border bg-white overflow-auto">
