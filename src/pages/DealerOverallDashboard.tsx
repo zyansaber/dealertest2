@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import {
   subscribeDealerConfig,
   subscribeAllDealerConfigs,
+  subscribeOverallDashboardDealerGroups,
   subscribeToCampervanSchedule,
   subscribeToDealerStateMapping,
   subscribeToHandover,
@@ -28,15 +29,18 @@ import { isDealerGroup } from "@/types/dealer";
 const PLANNING_MONTHS = 8;
 const FORECAST_DELIVERY_OFFSET_DAYS = 20;
 const monthFormatter = new Intl.DateTimeFormat("en-AU", { month: "short", year: "numeric" });
-const FACTORY_DEALER_NAMES = ["Frankston", "Launceston", "ST James", "Traralgon", "Geelong"];
 const FACTORY_DEALER_TOTAL_SLUG = "factory-dealer-total";
-const GREEN_RV_NAMES = ["Green Show", "Slacks Creek", "Forest Glen"];
 const GREEN_RV_TOTAL_SLUG = "green-rv-total";
-const NEW_ZEALAND_NAMES = ["Christchurch", "CMG Campers", "Marsden Point"];
 const NEW_ZEALAND_TOTAL_SLUG = "new-zealand-total";
-const JV_NAMES = ["Heatherbrae", "Gympie", "Toowoomba", "Bundaberg", "Townsville"];
 const JV_TOTAL_SLUG = "jv-total";
 const EXTERNAL_TOTAL_SLUG = "external-total";
+const DEFAULT_OVERALL_DASHBOARD_GROUPS = {
+  factory: ["Frankston", "Launceston", "ST James", "Traralgon", "Geelong"],
+  greenRv: ["Green Show", "Slacks Creek", "Forest Glen"],
+  newZealand: ["Christchurch", "CMG Campers", "Marsden Point"],
+  jv: ["Heatherbrae", "Gympie", "Toowoomba", "Bundaberg", "Townsville"],
+  external: [] as string[],
+};
 const EMPTY_SLUGS: string[] = [];
 const ALLOWED_MODEL_RANGES = new Set(["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB"]);
 const MODEL_RANGE_KEYS = ["SRC", "SRH", "SRL", "SRP", "SRS", "SRT", "SRV", "NGC", "NGB", "OTHER"] as const;
@@ -345,6 +349,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
   const [campervanSchedule, setCampervanSchedule] = useState<CampervanScheduleItem[]>([]);
   const [dealerConfig, setDealerConfig] = useState<any>(null);
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
+  const [overallDashboardGroups, setOverallDashboardGroups] = useState(DEFAULT_OVERALL_DASHBOARD_GROUPS);
   const [loading, setLoading] = useState(true);
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
@@ -429,6 +434,24 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
       };
     }
   }, [isGlobalView]);
+  useEffect(() => {
+    if (!isGlobalView) return;
+
+    const unsubGroups = subscribeOverallDashboardDealerGroups((data) => {
+      setOverallDashboardGroups({
+        factory: Array.isArray(data?.factory) && data.factory.length > 0 ? data.factory : DEFAULT_OVERALL_DASHBOARD_GROUPS.factory,
+        greenRv: Array.isArray(data?.greenRv) && data.greenRv.length > 0 ? data.greenRv : DEFAULT_OVERALL_DASHBOARD_GROUPS.greenRv,
+        newZealand: Array.isArray(data?.newZealand) && data.newZealand.length > 0 ? data.newZealand : DEFAULT_OVERALL_DASHBOARD_GROUPS.newZealand,
+        jv: Array.isArray(data?.jv) && data.jv.length > 0 ? data.jv : DEFAULT_OVERALL_DASHBOARD_GROUPS.jv,
+        external: Array.isArray(data?.external) ? data.external : DEFAULT_OVERALL_DASHBOARD_GROUPS.external,
+      });
+    });
+
+    return () => {
+      unsubGroups?.();
+    };
+  }, [isGlobalView]);
+
 
   const buildDealerSlugs = useMemo(
     () => (names: string[]) => {
@@ -457,14 +480,14 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
     [dealerConfigs]
   );
 
-  const factoryDealerSlugs = useMemo(() => buildDealerSlugs(FACTORY_DEALER_NAMES), [buildDealerSlugs]);
-  const greenRvSlugs = useMemo(() => buildDealerSlugs(GREEN_RV_NAMES), [buildDealerSlugs]);
-  const newZealandSlugs = useMemo(() => buildDealerSlugs(NEW_ZEALAND_NAMES), [buildDealerSlugs]);
-  const jvSlugs = useMemo(() => buildDealerSlugs(JV_NAMES), [buildDealerSlugs]);
-  const factoryDealerOptions = useMemo(() => buildDealerOptions(FACTORY_DEALER_NAMES), [buildDealerOptions]);
-  const greenRvOptions = useMemo(() => buildDealerOptions(GREEN_RV_NAMES), [buildDealerOptions]);
-  const newZealandOptions = useMemo(() => buildDealerOptions(NEW_ZEALAND_NAMES), [buildDealerOptions]);
-  const jvOptions = useMemo(() => buildDealerOptions(JV_NAMES), [buildDealerOptions]);
+  const factoryDealerSlugs = useMemo(() => buildDealerSlugs(overallDashboardGroups.factory), [buildDealerSlugs]);
+  const greenRvSlugs = useMemo(() => buildDealerSlugs(overallDashboardGroups.greenRv), [buildDealerSlugs]);
+  const newZealandSlugs = useMemo(() => buildDealerSlugs(overallDashboardGroups.newZealand), [buildDealerSlugs]);
+  const jvSlugs = useMemo(() => buildDealerSlugs(overallDashboardGroups.jv), [buildDealerSlugs]);
+  const factoryDealerOptions = useMemo(() => buildDealerOptions(overallDashboardGroups.factory), [buildDealerOptions]);
+  const greenRvOptions = useMemo(() => buildDealerOptions(overallDashboardGroups.greenRv), [buildDealerOptions]);
+  const newZealandOptions = useMemo(() => buildDealerOptions(overallDashboardGroups.newZealand), [buildDealerOptions]);
+  const jvOptions = useMemo(() => buildDealerOptions(overallDashboardGroups.jv), [buildDealerOptions]);
 
   const dealerOptions = useMemo(() => {
     const optionBySlug = new Map<string, { slug: string; name: string }>();
@@ -512,13 +535,18 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
   }, [dealerConfigs, dealerStateMappings]);
 
   const externalOptions = useMemo(() => {
+    const explicitExternal = new Set(buildDealerSlugs(overallDashboardGroups.external));
+    if (explicitExternal.size > 0) {
+      return dealerOptions.filter((dealer) => explicitExternal.has(dealer.slug) || explicitExternal.has(slugifyDealerName(dealer.name)));
+    }
+
     const excludedNames = new Set(
-      [...FACTORY_DEALER_NAMES, ...GREEN_RV_NAMES, ...NEW_ZEALAND_NAMES, ...JV_NAMES].map((name) =>
+      [...overallDashboardGroups.factory, ...overallDashboardGroups.greenRv, ...overallDashboardGroups.newZealand, ...overallDashboardGroups.jv].map((name) =>
         slugifyDealerName(name)
       )
     );
     return dealerOptions.filter((dealer) => !excludedNames.has(slugifyDealerName(dealer.name)));
-  }, [dealerOptions]);
+  }, [buildDealerSlugs, dealerOptions, overallDashboardGroups]);
 
   const externalSlugs = useMemo(() => externalOptions.map((dealer) => dealer.slug), [externalOptions]);
 
@@ -2794,31 +2822,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
               )}
             </div>
             <div>
-            <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Dashboard Pages</p>
-              <div className="mt-2 space-y-1">
-                {[
-                  { to: "/overall-dashboard", label: "Overview", end: true },
-                  { to: "/overall-dashboard/admin", label: "Target Setup" },
-                  { to: "/overall-dashboard/target-and-highlight", label: "Target and Highlight" },
-                ].map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={Boolean(item.end)}
-                    className={({ isActive }) =>
-                      `block rounded-lg px-3 py-2 text-sm font-medium transition ${
-                        isActive ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-800 hover:text-white"
-                      }`
-                    }
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-
-              <div className="mt-3 space-y-1">
+              <div className="space-y-1">
                 <button
                   type="button"
                   onClick={() => setSelectedDealerSlug(null)}
