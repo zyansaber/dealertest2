@@ -349,6 +349,7 @@ export default function DealerOverallDashboard({ hideSidebar = false }: { hideSi
   const [campervanSchedule, setCampervanSchedule] = useState<CampervanScheduleItem[]>([]);
   const [dealerConfig, setDealerConfig] = useState<any>(null);
   const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
+  const [overallDashboardGroups, setOverallDashboardGroups] = useState(DEFAULT_OVERALL_DASHBOARD_GROUPS);
   const [loading, setLoading] = useState(true);
   const [configLoading, setConfigLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
