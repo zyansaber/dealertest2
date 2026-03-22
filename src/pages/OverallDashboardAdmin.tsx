@@ -10,8 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  setOverallDashboardDealerGroups,
   setOverallDashboardTierPlannerConfig,
   setTargetHighlightConfig,
+  subscribeAllDealerConfigs,
+  subscribeOverallDashboardDealerGroups,
   subscribeOverallDashboardTierPlannerConfig,
   subscribeTargetHighlightConfig,
   subscribeToHandoverAll,
@@ -19,11 +22,30 @@ import {
   subscribeToSchedule2024,
   subscribeToCampervanSchedule,
   subscribeToYardStockAll,
+  type OverallDashboardDealerGroupConfig,
   type OverallDashboardTierPlannerConfig,
   type TierRuleConfig,
 } from "@/lib/firebase";
 import { TARGET_MODEL_RANGES, toPercentValue } from "@/lib/targetHighlight";
 import type { CampervanScheduleItem, ScheduleItem } from "@/types";
+
+const DEFAULT_DEALER_GROUPS: Omit<OverallDashboardDealerGroupConfig, "updatedAt"> = {
+  factory: ["Frankston", "Launceston", "ST James", "Traralgon", "Geelong"],
+  greenRv: ["Green Show", "Slacks Creek", "Forest Glen"],
+  newZealand: ["Christchurch", "CMG Campers", "Marsden Point"],
+  jv: ["Heatherbrae", "Gympie", "Toowoomba", "Bundaberg", "Townsville"],
+  external: [],
+  dealers: [],
+};
+
+const DEALER_GROUP_LABELS: Array<{ key: keyof Omit<OverallDashboardDealerGroupConfig, "updatedAt">; label: string }> = [
+  { key: "factory", label: "Factory Dealer" },
+  { key: "greenRv", label: "Green RV" },
+  { key: "newZealand", label: "New Zealand" },
+  { key: "jv", label: "JV" },
+  { key: "external", label: "Other / Total Dealer List" },
+  { key: "dealers", label: "Sidebar Dealers" },
+];
 
 const TIERS = ["tier1", "tier2", "tier3", "tier4"] as const;
 const UNASSIGNED_TIER = "__unassigned__";
@@ -182,6 +204,10 @@ export default function OverallDashboardAdmin() {
   });
   const [savingTier, setSavingTier] = useState(false);
   const [factoryDealerFilter, setFactoryDealerFilter] = useState<string>("all");
+  const [dealerConfigs, setDealerConfigs] = useState<Record<string, any>>({});
+  const [dealerGroupConfig, setDealerGroupConfig] =
+    useState<Omit<OverallDashboardDealerGroupConfig, "updatedAt">>(DEFAULT_DEALER_GROUPS);
+  const [savingDealerGroups, setSavingDealerGroups] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeTargetHighlightConfig((data) => {
@@ -189,6 +215,25 @@ export default function OverallDashboardAdmin() {
       setFocusRanges((data?.focusModelRanges || []).filter(Boolean));
     });
     return () => unsub?.();
+  }, []);
+
+  useEffect(() => {
+    const unsubConfigs = subscribeAllDealerConfigs((data) => setDealerConfigs(data || {}));
+    const unsubDealerGroups = subscribeOverallDashboardDealerGroups((data) => {
+      setDealerGroupConfig({
+        factory: Array.isArray(data?.factory) ? data.factory : DEFAULT_DEALER_GROUPS.factory,
+        greenRv: Array.isArray(data?.greenRv) ? data.greenRv : DEFAULT_DEALER_GROUPS.greenRv,
+        newZealand: Array.isArray(data?.newZealand) ? data.newZealand : DEFAULT_DEALER_GROUPS.newZealand,
+        jv: Array.isArray(data?.jv) ? data.jv : DEFAULT_DEALER_GROUPS.jv,
+        external: Array.isArray(data?.external) ? data.external : DEFAULT_DEALER_GROUPS.external,
+        dealers: Array.isArray(data?.dealers) ? data.dealers : DEFAULT_DEALER_GROUPS.dealers,
+      });
+    });
+
+    return () => {
+      unsubConfigs?.();
+      unsubDealerGroups?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -585,12 +630,118 @@ export default function OverallDashboardAdmin() {
     }
   };
 
+  const availableDealerOptions = useMemo(
+    () =>
+      Object.entries(dealerConfigs || {})
+        .filter(([, config]) => !config?.isGroup)
+        .map(([slug, config]) => ({ slug, name: toStr(config?.name) || slug }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [dealerConfigs]
+  );
+
+  const groupedDealerSlugs = useMemo(() => {
+    const used = new Set<string>();
+    DEALER_GROUP_LABELS.forEach(({ key }) => {
+      (dealerGroupConfig[key] || []).forEach((slug) => used.add(normalizeDealerSlug(slug)));
+    });
+    return used;
+  }, [dealerGroupConfig]);
+
+  const handleToggleDealerGroupMember = (
+    groupKey: keyof Omit<OverallDashboardDealerGroupConfig, "updatedAt">,
+    dealerSlug: string,
+    enabled: boolean
+  ) => {
+    const normalized = normalizeDealerSlug(dealerSlug);
+    setDealerGroupConfig((prev) => ({
+      ...prev,
+      [groupKey]: enabled
+        ? Array.from(new Set([...(prev[groupKey] || []).map(normalizeDealerSlug), normalized]))
+        : (prev[groupKey] || []).map(normalizeDealerSlug).filter((slug) => slug !== normalized),
+    }));
+  };
+
+  const handleSaveDealerGroups = async () => {
+    setSavingDealerGroups(true);
+    try {
+      await setOverallDashboardDealerGroups({
+        factory: (dealerGroupConfig.factory || []).map(normalizeDealerSlug),
+        greenRv: (dealerGroupConfig.greenRv || []).map(normalizeDealerSlug),
+        newZealand: (dealerGroupConfig.newZealand || []).map(normalizeDealerSlug),
+        jv: (dealerGroupConfig.jv || []).map(normalizeDealerSlug),
+        external: (dealerGroupConfig.external || []).map(normalizeDealerSlug),
+        dealers: (dealerGroupConfig.dealers || []).map(normalizeDealerSlug),
+      });
+      toast.success("Dealer group settings saved to Firebase.");
+    } catch (error) {
+      console.error("Failed to save dealer group settings:", error);
+      toast.error("Failed to save dealer group settings.");
+    } finally {
+      setSavingDealerGroups(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-7xl space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Overall Dashboard Admin</h1>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Overall Dashboard Dealer Groups</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-md border bg-amber-50 p-3 text-sm text-amber-900">
+              控制 overall-dashboard/overview 里各个聚合分组显示哪些 dealer。保存后会直接写入 Firebase。
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {DEALER_GROUP_LABELS.map(({ key, label }) => {
+                const selected = new Set((dealerGroupConfig[key] || []).map(normalizeDealerSlug));
+                return (
+                  <div key={key} className="rounded-lg border bg-white p-4">
+                    <div className="mb-3">
+                      <h3 className="font-semibold text-slate-900">{label}</h3>
+                      <p className="text-xs text-slate-500">Selected: {selected.size}</p>
+                    </div>
+                    <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                      {availableDealerOptions.map((dealer) => {
+                        const normalizedSlug = normalizeDealerSlug(dealer.slug);
+                        const checked = selected.has(normalizedSlug);
+                        const assignedElsewhere = groupedDealerSlugs.has(normalizedSlug) && !checked;
+                        return (
+                          <label
+                            key={`${key}-${dealer.slug}`}
+                            className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
+                              checked ? "border-emerald-300 bg-emerald-50" : "border-slate-200"
+                            }`}
+                          >
+                            <div>
+                              <div className="font-medium text-slate-800">{dealer.name}</div>
+                              <div className="text-xs text-slate-500">{dealer.slug}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {assignedElsewhere ? <Badge variant="secondary">Used in another group</Badge> : null}
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(next) => handleToggleDealerGroupMember(key, dealer.slug, Boolean(next))}
+                              />
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <Button onClick={handleSaveDealerGroups} disabled={savingDealerGroups}>
+              {savingDealerGroups ? "Saving..." : "Save Dealer Group Config"}
+            </Button>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
