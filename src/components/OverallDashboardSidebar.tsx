@@ -2,8 +2,8 @@ import { NavLink, useLocation } from "react-router-dom";
 
 const links = [
   { to: "/overall-dashboard/overview", label: "Overview" },
-  { to: "/overall-dashboard?tab=admin", label: "Dealer Groups" },
-  { to: "/overall-dashboard?tab=target", label: "Target & Highlight" },
+  { to: "/overall-dashboard?tab=admin", label: "Target Setup" },
+  { to: "/overall-dashboard?tab=target", label: "Target and Highlight" },
   { to: "/overall-dashboard?tab=state", label: "Dealer State" },
 ];
 
@@ -11,7 +11,7 @@ export default function OverallDashboardSidebar() {
   const location = useLocation();
 
   return (
-    <aside className="w-72 shrink-0 bg-slate-950 text-slate-100 p-5 min-h-screen">
+    <aside className="w-72 bg-slate-950 text-slate-100 p-5 min-h-screen">
       <h2 className="text-lg font-semibold">Overall Dashboard</h2>
       <p className="mt-1 text-xs text-slate-400">Quick navigation</p>
       <div className="mt-5 space-y-2">
