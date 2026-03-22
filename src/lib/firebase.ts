@@ -211,6 +211,40 @@ export const subscribeToSchedule2024 = (
   } = {},
 ) => subscribeToSchedulePath("2024schedule", callback, options);
 
+
+export type OverallDashboardDealerGroupConfig = {
+  factory: string[];
+  greenRv: string[];
+  newZealand: string[];
+  jv: string[];
+  external: string[];
+  dealers: string[];
+  updatedAt?: string;
+};
+
+const OVERALL_DASHBOARD_DEALER_GROUPS_PATH = "overallDashboard/dealerGroups";
+
+export const subscribeOverallDashboardDealerGroups = (
+  callback: (data: OverallDashboardDealerGroupConfig | null) => void,
+) => {
+  const groupsRef = ref(database, OVERALL_DASHBOARD_DEALER_GROUPS_PATH);
+
+  const handler = (snapshot: DataSnapshot) => {
+    callback((snapshot.val() as OverallDashboardDealerGroupConfig | null) || null);
+  };
+
+  onValue(groupsRef, handler);
+  return () => off(groupsRef, "value", handler);
+};
+
+export const setOverallDashboardDealerGroups = async (
+  config: Omit<OverallDashboardDealerGroupConfig, "updatedAt">,
+) => {
+  await set(ref(database, OVERALL_DASHBOARD_DEALER_GROUPS_PATH), {
+    ...config,
+    updatedAt: new Date().toISOString(),
+  });
+};
 export const subscribeToDealerStateMapping = (
   callback: (data: Record<string, any> | any[]) => void,
 ) => {
