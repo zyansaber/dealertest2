@@ -9,7 +9,6 @@ import {
   update,
   get,
   remove,
-  push,
   DataSnapshot,
 } from "firebase/database";
 import {
@@ -212,56 +211,6 @@ export const subscribeToSchedule2024 = (
   } = {},
 ) => subscribeToSchedulePath("2024schedule", callback, options);
 
-
-
-export type OverallDashboardStockComment = {
-  id: string;
-  scopeKey: string;
-  dealerSlug?: string | null;
-  dealerName?: string | null;
-  comment: string;
-  createdAt: string;
-};
-
-const OVERALL_DASHBOARD_STOCK_COMMENTS_PATH = "overallDashboard/stockComments";
-
-export const subscribeOverallDashboardStockComments = (
-  scopeKey: string,
-  callback: (data: OverallDashboardStockComment[]) => void,
-) => {
-  const commentsRef = ref(database, `${OVERALL_DASHBOARD_STOCK_COMMENTS_PATH}/${scopeKey}`);
-
-  const handler = (snapshot: DataSnapshot) => {
-    const raw = snapshot.val();
-    const list = raw
-      ? Object.entries(raw)
-          .map(([id, value]) => ({ id, ...(value as Omit<OverallDashboardStockComment, "id">) }))
-          .filter((item) => item && typeof item.comment === "string")
-          .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
-      : [];
-    callback(list);
-  };
-
-  onValue(commentsRef, handler);
-  return () => off(commentsRef, "value", handler);
-};
-
-export const addOverallDashboardStockComment = async (payload: {
-  scopeKey: string;
-  dealerSlug?: string | null;
-  dealerName?: string | null;
-  comment: string;
-}) => {
-  const commentsRef = ref(database, `${OVERALL_DASHBOARD_STOCK_COMMENTS_PATH}/${payload.scopeKey}`);
-  const newRef = push(commentsRef);
-  await set(newRef, {
-    scopeKey: payload.scopeKey,
-    dealerSlug: payload.dealerSlug ?? null,
-    dealerName: payload.dealerName ?? null,
-    comment: payload.comment.trim(),
-    createdAt: new Date().toISOString(),
-  });
-};
 
 export type OverallDashboardDealerGroupConfig = {
   factory: string[];
