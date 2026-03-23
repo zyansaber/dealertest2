@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import type { Row } from "./types";
 import { displayValue, parseDateToTimestamp } from "./utils";
 import { milestoneSequence, phaseCardMap } from "./types";
@@ -165,6 +167,22 @@ const statusClass: Record<string, string> = {
   "waiting in port": "bg-pink-100",
   "On the sea": "bg-cyan-100",
   "Melbourn Port": "bg-lime-100",
+};
+
+
+const exportWorkbook = (sheetName: string, rows: Record<string, unknown>[], filename: string) => {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const colWidths = Object.keys(rows[0] || {}).map((key) => ({
+    wch: Math.max(
+      String(key).length,
+      ...rows.map((row) => String(row[key] ?? "").length),
+      12,
+    ),
+  }));
+  ws["!cols"] = colWidths;
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, filename);
 };
 
 const PAGE_SIZE = 80;
@@ -481,6 +499,62 @@ export default function SchedulePage({
       });
   }, [campervanOrders, vehicleSearchTerm]);
 
+  const exportCaravanExcel = () => {
+    const exportRows = ageFilteredRows.map((r) => {
+      const chassisKey = normalize(r.chassis);
+      return columns.reduce<Record<string, unknown>>((acc, c) => {
+        const label = lang === "zh" ? c.zhLabel : c.label;
+        if (c.key === "_status") acc[label] = statusText(lang, displayValue(r.currentStatus));
+        else if (c.key === "_aging") {
+          const agingValue = typeof r.agingToLatestExFactory === "number" && !Number.isNaN(r.agingToLatestExFactory)
+            ? r.agingToLatestExFactory
+            : null;
+          acc[label] = agingValue == null ? "-" : agingValue >= 0 ? `+${agingValue}` : String(agingValue);
+        } else if (c.key === "_wfo") {
+          acc[label] = Number.isFinite(Number(waitingOrderPrices[r.chassis])) ? `AUD ${waitingOrderPrices[r.chassis]}` : "-";
+        } else if (c.key === "_latestExFactory") {
+          acc[label] = r.latestExFactoryDate || "-";
+        } else if (c.key === "Chassis") {
+          const chassisValue = displayValue((r.schedule as any)?.[c.key]);
+          acc[label] = approvedChangeChassisSet.has(chassisKey) ? `${chassisValue} (${tr(lang, "change", "改")})` : chassisValue;
+        } else {
+          const raw = c.source === "schedule" ? (r.schedule as any)?.[c.key] : r.dateTrack?.[c.key];
+          acc[label] = displayValue(raw);
+        }
+        return acc;
+      }, {});
+    });
+
+    exportWorkbook(
+      "schedule",
+      exportRows,
+      `planning_schedule_${orderTypeTab}_${groupFilter}_${selectedAgingBucket ?? "all"}.xlsx`,
+    );
+  };
+
+  const exportMotorisedExcel = () => {
+    const exportRows = searchedVehicleOrders.map((order) => ({
+      [tr(lang, "Forecast Production Date", "预测生产日期")]: String(order.forecastProductionDate || "-"),
+      [tr(lang, "Latest Shipment Date", "最晚发货日期")]: formatDateMinusDays(order.forecastProductionDate, 40),
+      [tr(lang, "Chassis", "底盘号")]: String(order.chassisNumber || "-"),
+      [tr(lang, "Customer", "客户")]: String(order.customer || "-"),
+      [tr(lang, "Dealer", "经销商")]: String(order.dealer || "-"),
+      [tr(lang, "Model", "车型")]: String(order.model || "-"),
+      [tr(lang, "Current Status", "当前状态")]: lang === "zh"
+        ? statusText(lang, String(order.regentProduction || "-"))
+        : vehicleStatusText[String(order.regentProduction || "").trim()] || String(order.regentProduction || "-"),
+      [tr(lang, "Signed Order Received", "签单接收")]: String(order.signedOrderReceived || "-"),
+      [tr(lang, "Vehicle", "车辆")]: String(order.vehicle || "-"),
+      VIN: String(order.vinNumber || "-"),
+    }));
+
+    exportWorkbook(
+      "motorised_schedule",
+      exportRows,
+      `planning_motorised_schedule_${vehicleSearchTerm.trim() || "all"}.xlsx`,
+    );
+  };
+
   const updateVehicleStatus = async (
     order: CampervanScheduleItem,
     nextStatus: string,
@@ -523,12 +597,22 @@ export default function SchedulePage({
       {activeTab === "motorised" ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex flex-col gap-3">
-            <div className="text-sm text-slate-500">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-500">
               {tr(
                 lang,
                 "Using same source as dealer order list > vehicles",
                 "使用与 dealer order list > vehicles 相同的数据源",
               )}
+              </div>
+              <button
+                type="button"
+                onClick={exportMotorisedExcel}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" />
+                {tr(lang, "Download Excel", "下载 Excel")}
+              </button>
             </div>
             <input
               type="text"
@@ -734,11 +818,19 @@ export default function SchedulePage({
             </button>
           </div>
 
-          <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
             <div>
               {tr(lang, "Filtered rows", "筛选后行数")}: {ageFilteredRows.length}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={exportCaravanExcel}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" />
+                {tr(lang, "Download Excel", "下载 Excel")}
+              </button>
               <button
                 type="button"
                 disabled={page <= 1}
