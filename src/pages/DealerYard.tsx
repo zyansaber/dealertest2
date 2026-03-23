@@ -168,6 +168,12 @@ function parseHandoverDate(value?: string | null): Date | null {
   const fromNative = new Date(value);
   return isNaN(fromNative.getTime()) ? null : fromNative;
 }
+function daysSincePGI(pgiDate?: string | null): number {
+  const date = parseDDMMYYYY(pgiDate);
+  if (!date) return 0;
+  const diff = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+  return diff < 0 ? 0 : diff;
+}
 function daysSinceISO(iso?: string | null): number {
   if (!iso) return 0;
   const d = new Date(iso);
@@ -1011,7 +1017,7 @@ export default function DealerYard() {
     () =>
       onTheRoadInRange.filter((row) => {
         const ch = toStr(row.chassis).toUpperCase();
-        if (!ch) return false;
+        if (!ch || daysSincePGI(row.pgidate) > 100) return false;
         return !yardChassisSet.has(ch) && !handoverChassisSet.has(ch);
       }),
     [onTheRoadInRange, yardChassisSet, handoverChassisSet]
@@ -2046,14 +2052,7 @@ export default function DealerYard() {
                             <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
                             <TableCell>{toStr(row.model) || "-"}</TableCell>
                             <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                            <TableCell>
-                              {(() => {
-                                const d = parseDDMMYYYY(row.pgidate);
-                                if (!d) return 0;
-                                const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-                                return diff < 0 ? 0 : diff;
-                              })()}
-                            </TableCell>
+                            <TableCell>{daysSincePGI(row.pgidate)}</TableCell>
                             <TableCell>
                               {yardActionsEnabled ? (
                                 <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => openReceiveDialog(row.chassis, row)}>

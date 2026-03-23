@@ -99,6 +99,12 @@ function parseDDMMYYYY(dateStr?: string | null): Date | null {
   }
   return null;
 }
+function daysSincePGI(pgiDate?: string | null): number {
+  const date = parseDDMMYYYY(pgiDate);
+  if (!date) return 0;
+  const diff = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+  return diff < 0 ? 0 : diff;
+}
 function daysSinceISO(iso?: string | null): number {
   if (!iso) return 0;
   const d = new Date(iso);
@@ -481,7 +487,10 @@ export default function DealerGroupYard() {
   }, [pgi]);
 
   const onTheRoadInRange = useMemo(
-    () => onTheRoadAll.filter((row) => resolveEffectiveDealerSlug(row) === dealerSlug),
+    () =>
+      onTheRoadAll.filter(
+        (row) => resolveEffectiveDealerSlug(row) === dealerSlug && daysSincePGI(row.pgidate) <= 100
+      ),
     [onTheRoadAll, dealerSlug, resolveEffectiveDealerSlug]
   );
 
@@ -1005,14 +1014,7 @@ export default function DealerGroupYard() {
                         <TableCell>{toStr(row.pgidate) || "-"}</TableCell>
                         <TableCell>{toStr(row.model) || "-"}</TableCell>
                         <TableCell>{toStr(row.customer) || "-"}</TableCell>
-                        <TableCell>
-                          {(() => {
-                            const d = parseDDMMYYYY(row.pgidate);
-                            if (!d) return 0;
-                            const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-                            return diff < 0 ? 0 : diff;
-                          })()}
-                        </TableCell>
+                        <TableCell>{daysSincePGI(row.pgidate)}</TableCell>
                         <TableCell>
                           <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReceive(row.chassis, row)}>
                             Receive
